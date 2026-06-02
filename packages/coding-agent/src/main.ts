@@ -429,6 +429,9 @@ function buildSessionOptions(
 	if (parsed.excludeTools) {
 		options.excludeTools = [...parsed.excludeTools];
 	}
+	if (parsed.explorationMode) {
+		options.explorationMode = parsed.explorationMode;
+	}
 
 	return { options, cliThinkingFromModel, diagnostics };
 }
@@ -739,6 +742,7 @@ export async function main(args: string[], options?: MainOptions) {
 			scopedModels: sessionOptions.scopedModels,
 			tools: sessionOptions.tools,
 			excludeTools: sessionOptions.excludeTools,
+			explorationMode: sessionOptions.explorationMode,
 			noTools: sessionOptions.noTools,
 			customTools: sessionOptions.customTools,
 		});

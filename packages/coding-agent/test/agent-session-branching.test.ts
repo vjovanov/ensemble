@@ -71,6 +71,7 @@ describe.skipIf(!API_KEY)("AgentSession forking", () => {
 					sessionManager,
 					sessionStartEvent,
 					model,
+					explorationMode: "classic",
 					tools: ["read", "bash", "edit", "write"],
 				})),
 				services,

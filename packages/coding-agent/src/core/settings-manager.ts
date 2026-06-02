@@ -57,6 +57,10 @@ export interface WarningSettings {
 	anthropicExtraUsage?: boolean; // default: true
 }
 
+export interface ExplorationSettings {
+	mode?: "sidekick" | "classic"; // default: "sidekick"
+}
+
 export type TransportSetting = Transport;
 
 /**
@@ -110,6 +114,7 @@ export interface Settings {
 	showHardwareCursor?: boolean; // Show terminal cursor while still positioning it for IME
 	markdown?: MarkdownSettings;
 	warnings?: WarningSettings;
+	exploration?: ExplorationSettings;
 	sessionDir?: string; // Custom session storage directory (same format as --session-dir CLI flag)
 	httpIdleTimeoutMs?: number; // HTTP header/body idle timeout in milliseconds; 0 disables it
 	websocketConnectTimeoutMs?: number; // WebSocket connect/open handshake timeout in milliseconds; 0 disables it
@@ -725,6 +730,10 @@ export class SettingsManager {
 		this.globalSettings.defaultThinkingLevel = level;
 		this.markModified("defaultThinkingLevel");
 		this.save();
+	}
+
+	getExplorationMode(): "sidekick" | "classic" {
+		return this.settings.exploration?.mode ?? "sidekick";
 	}
 
 	getTransport(): TransportSetting {

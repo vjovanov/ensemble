@@ -1508,16 +1508,16 @@ Manage active tools. This works for both built-in tools and dynamically register
 const active = pi.getActiveTools();
 const all = pi.getAllTools();
 // [{
-//   name: "read",
-//   description: "Read file contents...",
+//   name: "explore",
+//   description: "Explore files through a private graph-based sidekick...",
 //   parameters: ...,
-//   promptGuidelines: ["Use read to examine files instead of cat or sed."],
-//   sourceInfo: { path: "<builtin:read>", source: "builtin", scope: "temporary", origin: "top-level" }
+//   promptGuidelines: ["Use explore for file discovery, search, reading, and pre-edit inspection."],
+//   sourceInfo: { path: "<builtin:explore>", source: "builtin", scope: "temporary", origin: "top-level" }
 // }, ...]
 const names = all.map(t => t.name);
 const builtinTools = all.filter((t) => t.sourceInfo.source === "builtin");
 const extensionTools = all.filter((t) => t.sourceInfo.source !== "builtin" && t.sourceInfo.source !== "sdk");
-pi.setActiveTools(["read", "bash"]); // Switch to read-only
+pi.setActiveTools(["explore"]); // Switch to read-only
 ```
 
 `pi.getAllTools()` returns `name`, `description`, `parameters`, `promptGuidelines`, and `sourceInfo`.
@@ -1844,10 +1844,10 @@ pi.registerTool({
 
 ### Overriding Built-in Tools
 
-Extensions can override built-in tools (`read`, `bash`, `edit`, `write`, `grep`, `find`, `ls`) by registering a tool with the same name. Interactive mode displays a warning when this happens.
+Extensions can override built-in tools (`explore`, `bash`, `edit`, `write`; plus `read`, `grep`, `find`, and `ls` in classic exploration mode) by registering a tool with the same name. Interactive mode displays a warning when this happens.
 
 ```bash
-# Extension's read tool replaces built-in read
+# Extension's explore tool replaces built-in explore
 pi -e ./tool-override.ts
 ```
 

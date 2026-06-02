@@ -62,7 +62,7 @@ const { session } = await createAgentSession();
 // Custom: override specific options
 const { session } = await createAgentSession({
   model: myModel,
-  tools: ["read", "bash"],
+  tools: ["explore", "bash"],
   sessionManager: SessionManager.inMemory(),
 });
 ```
@@ -468,8 +468,9 @@ const { session } = await createAgentSession({ resourceLoader: loader });
 
 Specify which built-in tools to enable:
 
-- Built-in tool names: `read`, `bash`, `edit`, `write`, `grep`, `find`, `ls`
-- Default built-ins: `read`, `bash`, `edit`, `write`
+- Built-in tool names: `explore`, `bash`, `edit`, `write`
+- Default built-ins: `explore`, `bash`, `edit`, `write`
+- Classic exploration mode also registers `read`, `grep`, `find`, and `ls`
 - `noTools: "all"` disables all tools
 - `noTools: "builtin"` disables default built-ins while keeping extension and custom tools enabled
 - `excludeTools` disables specific built-in, extension, or custom tool names after any `tools` allowlist is applied
@@ -481,12 +482,12 @@ import { createAgentSession } from "@earendil-works/pi-coding-agent";
 
 // Read-only mode
 const { session } = await createAgentSession({
-  tools: ["read", "grep", "find", "ls"],
+  tools: ["explore"],
 });
 
 // Pick specific tools
 const { session } = await createAgentSession({
-  tools: ["read", "bash", "grep"],
+  tools: ["explore", "bash"],
 });
 
 // Disable one tool while keeping the rest available
@@ -513,7 +514,7 @@ const { session } = await createAgentSession({
 // Or pick specific tools for custom cwd
 const { session } = await createAgentSession({
   cwd,
-  tools: ["read", "bash", "grep"],
+  tools: ["explore", "bash"],
   sessionManager: SessionManager.inMemory(cwd),
 });
 ```
@@ -550,7 +551,7 @@ Use `defineTool()` for standalone definitions and arrays like `customTools: [myT
 
 Custom tools passed via `customTools` are combined with extension-registered tools. Extensions loaded by the ResourceLoader can also register tools via `pi.registerTool()`.
 
-If you pass `tools`, include each custom or extension tool name you want enabled, for example `tools: ["read", "bash", "my_tool"]`.
+If you pass `tools`, include each custom or extension tool name you want enabled, for example `tools: ["explore", "bash", "my_tool"]`.
 
 > See [examples/sdk/05-tools.ts](../examples/sdk/05-tools.ts)
 
@@ -938,7 +939,7 @@ const { session } = await createAgentSession({
   authStorage,
   modelRegistry,
 
-  tools: ["read", "bash", "status"],
+  tools: ["explore", "bash", "status"],
   customTools: [statusTool],
   resourceLoader: loader,
 

@@ -370,6 +370,11 @@ describe("parseArgs", () => {
 			expect(result.excludeTools).toEqual(["read", "bash"]);
 		});
 
+		test("parses --exploration flag", () => {
+			const result = parseArgs(["--exploration", "classic"]);
+			expect(result.explorationMode).toBe("classic");
+		});
+
 		test("parses --no-tools with explicit --tools flags", () => {
 			const result = parseArgs(["--no-tools", "--tools", "read,bash"]);
 			expect(result.noTools).toBe(true);

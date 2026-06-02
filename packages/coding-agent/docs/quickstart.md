@@ -76,12 +76,12 @@ Summarize this repository and tell me how to run its checks.
 
 By default, pi gives the model four tools:
 
-- `read` - read files
+- `explore` - explore and read files through a graph sidekick
 - `write` - create or overwrite files
 - `edit` - patch files
 - `bash` - run shell commands
 
-Additional built-in read-only tools (`grep`, `find`, `ls`) are available through tool options. Pi runs in your current working directory and can modify files there. Use git or another checkpointing workflow if you want easy rollback.
+Classic exploration mode restores the old `read`, `grep`, `find`, and `ls` tools. Pi runs in your current working directory and can modify files there. Use git or another checkpointing workflow if you want easy rollback.
 
 ## Give pi project instructions
 
