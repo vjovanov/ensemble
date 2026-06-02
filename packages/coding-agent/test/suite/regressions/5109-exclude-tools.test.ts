@@ -39,18 +39,20 @@ describe("regression #5109: exclude tools", () => {
 
 	it("filters built-in and extension tools from available and active tools", async () => {
 		const harness = await createHarness({
-			excludedToolNames: ["read", "ask_question"],
+			excludedToolNames: ["explore", "ask_question"],
 			extensionFactories,
 		});
 		try {
 			await harness.session.bindExtensions({});
 
 			const allToolNames = toolNames(harness.session.getAllTools());
+			expect(allToolNames).not.toContain("explore");
 			expect(allToolNames).not.toContain("read");
 			expect(allToolNames).not.toContain("ask_question");
 			expect(allToolNames).toContain("bash");
 			expect(allToolNames).toContain("dynamic_tool");
 			expect(harness.session.getActiveToolNames().sort()).toEqual(["bash", "dynamic_tool", "edit", "write"]);
+			expect(harness.session.systemPrompt).not.toContain("- explore:");
 			expect(harness.session.systemPrompt).not.toContain("- read:");
 			expect(harness.session.systemPrompt).not.toContain("ask_question");
 			expect(harness.session.systemPrompt).toContain("- dynamic_tool: Run dynamic test behavior");
@@ -61,9 +63,9 @@ describe("regression #5109: exclude tools", () => {
 
 	it("lets excluded tools override the allowlist", async () => {
 		const harness = await createHarness({
-			allowedToolNames: ["read", "bash", "ask_question"],
-			excludedToolNames: ["read", "ask_question"],
-			initialActiveToolNames: ["read", "bash", "ask_question"],
+			allowedToolNames: ["explore", "bash", "ask_question"],
+			excludedToolNames: ["explore", "ask_question"],
+			initialActiveToolNames: ["explore", "bash", "ask_question"],
 			extensionFactories,
 		});
 		try {
@@ -72,7 +74,7 @@ describe("regression #5109: exclude tools", () => {
 			expect(toolNames(harness.session.getAllTools())).toEqual(["bash"]);
 			expect(harness.session.getActiveToolNames()).toEqual(["bash"]);
 			expect(harness.session.systemPrompt).toContain("- bash:");
-			expect(harness.session.systemPrompt).not.toContain("- read:");
+			expect(harness.session.systemPrompt).not.toContain("- explore:");
 			expect(harness.session.systemPrompt).not.toContain("ask_question");
 		} finally {
 			harness.cleanup();

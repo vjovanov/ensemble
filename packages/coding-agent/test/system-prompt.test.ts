@@ -30,7 +30,7 @@ describe("buildSystemPrompt", () => {
 		test("includes all default tools when snippets are provided", () => {
 			const prompt = buildSystemPrompt({
 				toolSnippets: {
-					read: "Read file contents",
+					explore: "Explore code through a graph sidekick",
 					bash: "Execute bash commands",
 					edit: "Make surgical edits",
 					write: "Create or overwrite files",
@@ -40,7 +40,7 @@ describe("buildSystemPrompt", () => {
 				cwd: process.cwd(),
 			});
 
-			expect(prompt).toContain("- read:");
+			expect(prompt).toContain("- explore:");
 			expect(prompt).toContain("- bash:");
 			expect(prompt).toContain("- edit:");
 			expect(prompt).toContain("- write:");

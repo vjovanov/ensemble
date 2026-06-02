@@ -8,7 +8,7 @@ import { formatSkillsForPrompt, type Skill } from "./skills.ts";
 export interface BuildSystemPromptOptions {
 	/** Custom system prompt (replaces default). */
 	customPrompt?: string;
-	/** Tools to include in prompt. Default: [read, bash, edit, write] */
+	/** Tools to include in prompt. Default: [explore, bash, edit, write] */
 	selectedTools?: string[];
 	/** Optional one-line tool snippets keyed by tool name. */
 	toolSnippets?: Record<string, string>;
@@ -67,9 +67,10 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
 			prompt += "</project_context>\n";
 		}
 
-		// Append skills section (only if read tool is available)
-		const customPromptHasRead = !selectedTools || selectedTools.includes("read");
-		if (customPromptHasRead && skills.length > 0) {
+		// Append skills section only when a file-reading tool is available.
+		const customPromptHasFileRead =
+			!selectedTools || selectedTools.includes("read") || selectedTools.includes("explore");
+		if (customPromptHasFileRead && skills.length > 0) {
 			prompt += formatSkillsForPrompt(skills);
 		}
 
@@ -87,7 +88,7 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
 
 	// Build tools list based on selected tools.
 	// A tool appears in Available tools only when the caller provides a one-line snippet.
-	const tools = selectedTools || ["read", "bash", "edit", "write"];
+	const tools = selectedTools || ["explore", "bash", "edit", "write"];
 	const visibleTools = tools.filter((name) => !!toolSnippets?.[name]);
 	const toolsList =
 		visibleTools.length > 0 ? visibleTools.map((name) => `- ${name}: ${toolSnippets![name]}`).join("\n") : "(none)";
@@ -108,9 +109,13 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
 	const hasFind = tools.includes("find");
 	const hasLs = tools.includes("ls");
 	const hasRead = tools.includes("read");
+	const hasExplore = tools.includes("explore");
 
 	// File exploration guidelines
-	if (hasBash && !hasGrep && !hasFind && !hasLs) {
+	if (hasExplore) {
+		addGuideline("Use explore for file discovery, search, reading, and pre-edit inspection");
+		addGuideline("Do not use bash for file-reading commands unless explore fails or shell output is required");
+	} else if (hasBash && !hasGrep && !hasFind && !hasLs) {
 		addGuideline("Use bash for file operations like ls, rg, find");
 	}
 
@@ -160,8 +165,8 @@ Pi documentation (read only when the user asks about pi itself, its SDK, extensi
 		prompt += "</project_context>\n";
 	}
 
-	// Append skills section (only if read tool is available)
-	if (hasRead && skills.length > 0) {
+	// Append skills section only when a file-reading tool is available.
+	if ((hasRead || hasExplore) && skills.length > 0) {
 		prompt += formatSkillsForPrompt(skills);
 	}
 

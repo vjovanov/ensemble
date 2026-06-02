@@ -167,7 +167,7 @@ export interface AgentSessionConfig {
 	customTools?: ToolDefinition[];
 	/** Model registry for API key resolution and model discovery */
 	modelRegistry: ModelRegistry;
-	/** Initial active built-in tool names. Default: [read, bash, edit, write] */
+	/** Initial active built-in tool names. Default depends on exploration mode. */
 	initialActiveToolNames?: string[];
 	/** Optional allowlist of tool names. When provided, only these tool names are exposed. */
 	allowedToolNames?: string[];
@@ -2379,17 +2379,23 @@ export class AgentSession {
 		const autoResizeImages = this.settingsManager.getImageAutoResize();
 		const shellCommandPrefix = this.settingsManager.getShellCommandPrefix();
 		const shellPath = this.settingsManager.getShellPath();
-		const baseToolDefinitions = this._baseToolsOverride
+		const baseToolDefinitions: Partial<Record<string, ToolDefinition>> = this._baseToolsOverride
 			? Object.fromEntries(
 					Object.entries(this._baseToolsOverride).map(([name, tool]) => [
 						name,
-						createToolDefinitionFromAgentTool(tool),
+						createToolDefinitionFromAgentTool(tool) as ToolDefinition,
 					]),
 				)
-			: createAllToolDefinitions(this._cwd, {
+			: (createAllToolDefinitions(this._cwd, {
 					read: { autoResizeImages },
 					bash: { commandPrefix: shellCommandPrefix, shellPath },
-				});
+				}) as Partial<Record<string, ToolDefinition>>);
+		if (!this._baseToolsOverride && this.settingsManager.getExplorationMode() !== "classic") {
+			delete baseToolDefinitions.read;
+			delete baseToolDefinitions.grep;
+			delete baseToolDefinitions.find;
+			delete baseToolDefinitions.ls;
+		}
 
 		this._baseToolDefinitions = new Map(
 			Object.entries(baseToolDefinitions).map(([name, tool]) => [name, tool as ToolDefinition]),
@@ -2417,7 +2423,9 @@ export class AgentSession {
 
 		const defaultActiveToolNames = this._baseToolsOverride
 			? Object.keys(this._baseToolsOverride)
-			: ["read", "bash", "edit", "write"];
+			: this.settingsManager.getExplorationMode() === "classic"
+				? ["read", "bash", "edit", "write"]
+				: ["explore", "bash", "edit", "write"];
 		const baseActiveToolNames = options.activeToolNames ?? defaultActiveToolNames;
 		this._refreshToolRegistry({
 			activeToolNames: baseActiveToolNames,

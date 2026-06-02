@@ -30,6 +30,7 @@ export interface Args {
 	models?: string[];
 	tools?: string[];
 	excludeTools?: string[];
+	explorationMode?: "sidekick" | "classic";
 	noTools?: boolean;
 	noBuiltinTools?: boolean;
 	extensions?: string[];
@@ -126,6 +127,16 @@ export function parseArgs(args: string[]): Args {
 				.split(",")
 				.map((s) => s.trim())
 				.filter((name) => name.length > 0);
+		} else if (arg === "--exploration" && i + 1 < args.length) {
+			const mode = args[++i];
+			if (mode === "sidekick" || mode === "classic") {
+				result.explorationMode = mode;
+			} else {
+				result.diagnostics.push({
+					type: "warning",
+					message: `Invalid exploration mode "${mode}". Valid values: sidekick, classic`,
+				});
+			}
 		} else if (arg === "--thinking" && i + 1 < args.length) {
 			const level = args[++i];
 			if (isValidThinkingLevel(level)) {
@@ -215,7 +226,7 @@ export function printHelp(extensionFlags?: ExtensionFlag[]): void {
 					})
 					.join("\n")}\n`
 			: "";
-	console.log(`${chalk.bold(APP_NAME)} - AI coding assistant with read, bash, edit, write tools
+	console.log(`${chalk.bold(APP_NAME)} - AI coding assistant with explore, bash, edit, write tools
 
 ${chalk.bold("Usage:")}
   ${APP_NAME} [options] [@files...] [messages...]
@@ -253,6 +264,7 @@ ${chalk.bold("Options:")}
                                  Applies to built-in, extension, and custom tools
   --exclude-tools, -xt <tools>   Comma-separated denylist of tool names to disable
                                  Applies to built-in, extension, and custom tools
+  --exploration <mode>           File exploration mode: sidekick (default) or classic
   --thinking <level>             Set thinking level: off, minimal, low, medium, high, xhigh
   --extension, -e <path>         Load an extension file (can be used multiple times)
   --no-extensions, -ne           Disable extension discovery (explicit -e paths still work)
@@ -316,7 +328,7 @@ ${chalk.bold("Examples:")}
   ${APP_NAME} --thinking high "Solve this complex problem"
 
   # Read-only mode (no file modifications possible)
-  ${APP_NAME} --tools read,grep,find,ls -p "Review the code in src/"
+  ${APP_NAME} --tools explore -p "Review the code in src/"
 
   # Disable one tool while keeping the rest available
   ${APP_NAME} --exclude-tools ask_question
@@ -369,12 +381,15 @@ ${chalk.bold("Environment Variables:")}
   PI_SHARE_VIEWER_URL              - Base URL for /share command (default: https://pi.dev/session/)
 
 ${chalk.bold("Built-in Tool Names:")}
-  read   - Read file contents
+  explore - Explore code through a graph sidekick (default read-side tool)
   bash   - Execute bash commands
   edit   - Edit files with find/replace
   write  - Write files (creates/overwrites)
-  grep   - Search file contents (read-only, off by default)
-  find   - Find files by glob pattern (read-only, off by default)
-  ls     - List directory contents (read-only, off by default)
+
+Classic exploration mode also enables:
+  read   - Read file contents
+  grep   - Search file contents
+  find   - Find files by glob pattern
+  ls     - List directory contents
 `);
 }

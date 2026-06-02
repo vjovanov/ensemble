@@ -187,10 +187,13 @@ cat README.md | pi -p "Summarize this text"
 |--------|-------------|
 | `--tools <list>`, `-t <list>` | Allowlist specific built-in, extension, and custom tools |
 | `--exclude-tools <list>`, `-xt <list>` | Disable specific built-in, extension, and custom tools |
+| `--exploration <mode>` | File exploration mode: `sidekick` (default) or `classic` |
 | `--no-builtin-tools`, `-nbt` | Disable built-in tools but keep extension/custom tools enabled |
 | `--no-tools`, `-nt` | Disable all tools |
 
-Built-in tools: `read`, `bash`, `edit`, `write`, `grep`, `find`, `ls`.
+Built-in tools in the default sidekick exploration mode: `explore`, `bash`, `edit`, `write`.
+
+`explore` is the only exploration tool in sidekick mode. It uses a private Graphify-backed sidekick when `nodesify-graphify` is available, and falls back to filesystem nodes otherwise. Use `--exploration classic` to restore the classic exploration tools: `read`, `grep`, `find`, and `ls`.
 
 ### Resource Options
 
@@ -260,7 +263,7 @@ pi --model sonnet:high "Solve this complex problem"
 pi --models "claude-*,gpt-4o"
 
 # Read-only mode
-pi --tools read,grep,find,ls -p "Review the code"
+pi --tools explore -p "Review the code"
 
 # Disable one extension or built-in tool while keeping the rest available
 pi --exclude-tools ask_question

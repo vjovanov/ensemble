@@ -8,6 +8,7 @@ import { type BashOperations, createBashTool, createLocalBashOperations } from "
 import { computeEditsDiff } from "../src/core/tools/edit-diff.ts";
 import {
 	createEditTool,
+	createExploreTool,
 	createFindTool,
 	createGrepTool,
 	createLsTool,
@@ -199,6 +200,27 @@ describe("Coding Agent Tools", () => {
 
 			expect(output).toContain("definitely not a png");
 			expect(result.content.some((c: any) => c.type === "image")).toBe(false);
+		});
+	});
+
+	describe("explore tool", () => {
+		it("fetches whole files as filesystem graph nodes without a sidekick context", async () => {
+			const testFile = join(testDir, "example.ts");
+			writeFileSync(testFile, "export function target() {\n\treturn 42;\n}\n");
+			const exploreTool = createExploreTool(testDir);
+
+			const result = await exploreTool.execute("test-explore-1", {
+				task: "read target implementation",
+				paths: ["example.ts"],
+				wholeFiles: true,
+			});
+
+			const output = getTextOutput(result);
+			expect(output).toContain('<file path="example.ts">');
+			expect(output).toContain("export function target()");
+			expect(result.details).toMatchObject({
+				sidekickUsed: false,
+			});
 		});
 	});
 

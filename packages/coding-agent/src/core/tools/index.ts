@@ -17,6 +17,12 @@ export {
 	type EditToolInput,
 	type EditToolOptions,
 } from "./edit.ts";
+export {
+	createExploreTool,
+	createExploreToolDefinition,
+	type ExploreToolDetails,
+	type ExploreToolInput,
+} from "./explore.ts";
 export { withFileMutationQueue } from "./file-mutation-queue.ts";
 export {
 	createFindTool,
@@ -72,6 +78,7 @@ import type { AgentTool } from "@earendil-works/pi-agent-core";
 import type { ToolDefinition } from "../extensions/types.ts";
 import { type BashToolOptions, createBashTool, createBashToolDefinition } from "./bash.ts";
 import { createEditTool, createEditToolDefinition, type EditToolOptions } from "./edit.ts";
+import { createExploreTool, createExploreToolDefinition } from "./explore.ts";
 import { createFindTool, createFindToolDefinition, type FindToolOptions } from "./find.ts";
 import { createGrepTool, createGrepToolDefinition, type GrepToolOptions } from "./grep.ts";
 import { createLsTool, createLsToolDefinition, type LsToolOptions } from "./ls.ts";
@@ -80,8 +87,8 @@ import { createWriteTool, createWriteToolDefinition, type WriteToolOptions } fro
 
 export type Tool = AgentTool<any>;
 export type ToolDef = ToolDefinition<any, any>;
-export type ToolName = "read" | "bash" | "edit" | "write" | "grep" | "find" | "ls";
-export const allToolNames: Set<ToolName> = new Set(["read", "bash", "edit", "write", "grep", "find", "ls"]);
+export type ToolName = "explore" | "read" | "bash" | "edit" | "write" | "grep" | "find" | "ls";
+export const allToolNames: Set<ToolName> = new Set(["explore", "read", "bash", "edit", "write", "grep", "find", "ls"]);
 
 export interface ToolsOptions {
 	read?: ReadToolOptions;
@@ -95,6 +102,8 @@ export interface ToolsOptions {
 
 export function createToolDefinition(toolName: ToolName, cwd: string, options?: ToolsOptions): ToolDef {
 	switch (toolName) {
+		case "explore":
+			return createExploreToolDefinition(cwd);
 		case "read":
 			return createReadToolDefinition(cwd, options?.read);
 		case "bash":
@@ -116,6 +125,8 @@ export function createToolDefinition(toolName: ToolName, cwd: string, options?: 
 
 export function createTool(toolName: ToolName, cwd: string, options?: ToolsOptions): Tool {
 	switch (toolName) {
+		case "explore":
+			return createExploreTool(cwd);
 		case "read":
 			return createReadTool(cwd, options?.read);
 		case "bash":
@@ -137,7 +148,7 @@ export function createTool(toolName: ToolName, cwd: string, options?: ToolsOptio
 
 export function createCodingToolDefinitions(cwd: string, options?: ToolsOptions): ToolDef[] {
 	return [
-		createReadToolDefinition(cwd, options?.read),
+		createExploreToolDefinition(cwd),
 		createBashToolDefinition(cwd, options?.bash),
 		createEditToolDefinition(cwd, options?.edit),
 		createWriteToolDefinition(cwd, options?.write),
@@ -145,16 +156,13 @@ export function createCodingToolDefinitions(cwd: string, options?: ToolsOptions)
 }
 
 export function createReadOnlyToolDefinitions(cwd: string, options?: ToolsOptions): ToolDef[] {
-	return [
-		createReadToolDefinition(cwd, options?.read),
-		createGrepToolDefinition(cwd, options?.grep),
-		createFindToolDefinition(cwd, options?.find),
-		createLsToolDefinition(cwd, options?.ls),
-	];
+	void options;
+	return [createExploreToolDefinition(cwd)];
 }
 
 export function createAllToolDefinitions(cwd: string, options?: ToolsOptions): Record<ToolName, ToolDef> {
 	return {
+		explore: createExploreToolDefinition(cwd),
 		read: createReadToolDefinition(cwd, options?.read),
 		bash: createBashToolDefinition(cwd, options?.bash),
 		edit: createEditToolDefinition(cwd, options?.edit),
@@ -167,7 +175,7 @@ export function createAllToolDefinitions(cwd: string, options?: ToolsOptions): R
 
 export function createCodingTools(cwd: string, options?: ToolsOptions): Tool[] {
 	return [
-		createReadTool(cwd, options?.read),
+		createExploreTool(cwd),
 		createBashTool(cwd, options?.bash),
 		createEditTool(cwd, options?.edit),
 		createWriteTool(cwd, options?.write),
@@ -175,16 +183,13 @@ export function createCodingTools(cwd: string, options?: ToolsOptions): Tool[] {
 }
 
 export function createReadOnlyTools(cwd: string, options?: ToolsOptions): Tool[] {
-	return [
-		createReadTool(cwd, options?.read),
-		createGrepTool(cwd, options?.grep),
-		createFindTool(cwd, options?.find),
-		createLsTool(cwd, options?.ls),
-	];
+	void options;
+	return [createExploreTool(cwd)];
 }
 
 export function createAllTools(cwd: string, options?: ToolsOptions): Record<ToolName, Tool> {
 	return {
+		explore: createExploreTool(cwd),
 		read: createReadTool(cwd, options?.read),
 		bash: createBashTool(cwd, options?.bash),
 		edit: createEditTool(cwd, options?.edit),
