@@ -17,12 +17,20 @@ import type { Theme } from "../../modes/interactive/theme/theme.ts";
 import { formatPathRelativeToCwdOrAbsolute } from "../../utils/paths.ts";
 import type { ExtensionContext, ToolDefinition, ToolRenderResultOptions } from "../extensions/types.ts";
 import { convertToLlm } from "../messages.ts";
+import { createCallerContextTool } from "./caller-context.ts";
 import { resolveReadPathAsync, resolveToCwd } from "./path-utils.ts";
 import { getTextOutput, renderToolPath, replaceTabs, str } from "./render-utils.ts";
 import { wrapToolDefinition } from "./tool-definition-wrapper.ts";
 import { DEFAULT_MAX_BYTES, formatSize, type TruncationResult, truncateHead, truncateLine } from "./truncate.ts";
 
-const GRAPHIFY_COMMAND = "nodesify-graphify";
+// Real graphify CLI (github.com/safishamsi/graphify). Overridable so tests can point at a
+// specific binary (e.g. a project venv). Note: graphify exits 0 even on errors, so callers
+// must validate stdout, not just the exit code.
+function graphifyCommand(): string {
+	return process.env.GRAPHIFY_COMMAND?.trim() || "graphify";
+}
+const GRAPHIFY_OUT_DIR = "graphify-out";
+const GRAPHIFY_GRAPH_FILE = "graph.json";
 const GRAPHIFY_TIMEOUT_MS = 8_000;
 const GRAPHIFY_BUILD_TIMEOUT_MS = 20_000;
 const MAX_TOOL_OUTPUT_BYTES = 64 * 1024;
@@ -266,7 +274,7 @@ function findSnippetsInFile(filePath: string, content: string, terms: string[], 
 		const end = Math.min(lines.length, i + SNIPPET_CONTEXT_LINES + 1);
 		const text = lines
 			.slice(start, end)
-			.map((line, index) => `${start + index + 1}: ${truncateLine(line)}`)
+			.map((line, index) => `${start + index + 1}: ${truncateLine(line).text}`)
 			.join("\n");
 		snippets.push({
 			path: relativeToCwd(filePath, cwd),
@@ -315,6 +323,17 @@ async function fallbackSearch(
 		.join("\n\n");
 }
 
+// graphify exits 0 on failure, printing an error/empty-result line to stdout. Treat those as
+// "no result" so callers fall back instead of relaying noise to the model.
+function isGraphifyFailureOutput(stdout: string): boolean {
+	const text = stdout.trim();
+	if (!text) return true;
+	return /^error:/i.test(text) || /^no node matching/i.test(text);
+}
+
+// §AR-001-ensemble-explore.5 / §FS-001-ensemble-explore.7.1: backend for the real graphify
+// CLI (github.com/safishamsi/graphify). The graph is built offline by `update` (AST, no LLM)
+// into <cwd>/graphify-out/graph.json; `query`/`explain` traverse it and return node structure.
 class GraphifyBackend {
 	private readonly cwd: string;
 	private availableCache: boolean | undefined;
@@ -323,11 +342,15 @@ class GraphifyBackend {
 		this.cwd = cwd;
 	}
 
+	private graphFile(): string {
+		return resolvePath(this.cwd, GRAPHIFY_OUT_DIR, GRAPHIFY_GRAPH_FILE);
+	}
+
 	async isAvailable(signal?: AbortSignal): Promise<boolean> {
 		if (this.availableCache !== undefined) {
 			return this.availableCache;
 		}
-		this.availableCache = await commandAvailable(GRAPHIFY_COMMAND, this.cwd, signal);
+		this.availableCache = await commandAvailable(graphifyCommand(), this.cwd, signal);
 		return this.availableCache;
 	}
 
@@ -335,17 +358,20 @@ class GraphifyBackend {
 		if (!(await this.isAvailable(signal))) {
 			return false;
 		}
-		const graphDir = resolvePath(this.cwd, ".graphify");
+		// `update` builds the graph when absent and re-extracts when present; both run offline.
 		let hasGraph = false;
 		try {
-			await access(graphDir);
+			await access(this.graphFile());
 			hasGraph = true;
 		} catch {
 			hasGraph = false;
 		}
-		const args = hasGraph ? ["update", this.cwd] : ["run", this.cwd];
 		const timeoutMs = hasGraph ? GRAPHIFY_TIMEOUT_MS : GRAPHIFY_BUILD_TIMEOUT_MS;
-		const result = await runCommand(GRAPHIFY_COMMAND, args, { cwd: this.cwd, signal, timeoutMs });
+		const result = await runCommand(graphifyCommand(), ["update", this.cwd], {
+			cwd: this.cwd,
+			signal,
+			timeoutMs,
+		});
 		return result.code === 0;
 	}
 
@@ -354,11 +380,11 @@ class GraphifyBackend {
 			return undefined;
 		}
 		const result = await runCommand(
-			GRAPHIFY_COMMAND,
-			["query", question, "--graph", this.cwd, "--depth", "2", "--budget", "2400"],
+			graphifyCommand(),
+			["query", question, "--graph", this.graphFile(), "--budget", "2400"],
 			{ cwd: this.cwd, signal, timeoutMs: GRAPHIFY_TIMEOUT_MS },
 		);
-		if (result.code !== 0 || !result.stdout.trim()) {
+		if (result.code !== 0 || isGraphifyFailureOutput(result.stdout)) {
 			return undefined;
 		}
 		return result.stdout.trim();
@@ -368,30 +394,31 @@ class GraphifyBackend {
 		if (!(await this.prepare(signal))) {
 			return undefined;
 		}
-		const result = await runCommand(GRAPHIFY_COMMAND, ["explain", node, "--graph", this.cwd], {
+		const result = await runCommand(graphifyCommand(), ["explain", node, "--graph", this.graphFile()], {
 			cwd: this.cwd,
 			signal,
 			timeoutMs: GRAPHIFY_TIMEOUT_MS,
 		});
-		if (result.code !== 0 || !result.stdout.trim()) {
+		if (result.code !== 0 || isGraphifyFailureOutput(result.stdout)) {
 			return undefined;
 		}
 		return result.stdout.trim();
 	}
 
+	// graphify has no `stats` command; summarize the built graph.json node/edge counts instead.
 	async stats(signal?: AbortSignal): Promise<string | undefined> {
-		if (!(await this.isAvailable(signal))) {
+		if (!(await this.prepare(signal))) {
 			return undefined;
 		}
-		const result = await runCommand(GRAPHIFY_COMMAND, ["stats", "--graph", this.cwd], {
-			cwd: this.cwd,
-			signal,
-			timeoutMs: GRAPHIFY_TIMEOUT_MS,
-		});
-		if (result.code !== 0 || !result.stdout.trim()) {
+		try {
+			const raw = await readFile(this.graphFile(), "utf-8");
+			const graph = JSON.parse(raw) as { nodes?: unknown[]; links?: unknown[] };
+			const nodes = Array.isArray(graph.nodes) ? graph.nodes.length : 0;
+			const edges = Array.isArray(graph.links) ? graph.links.length : 0;
+			return `graphify graph: ${nodes} nodes, ${edges} edges (${relativeToCwd(this.graphFile(), this.cwd)}).`;
+		} catch {
 			return undefined;
 		}
-		return result.stdout.trim();
 	}
 }
 
@@ -414,10 +441,9 @@ function makeTextTool<TParams extends TSchema>(
 	};
 }
 
-// §FS-001-ensemble-explore.2.1 / .5.6: the sidekick's tools and instructions are
-// backend-conditional. With graphify present it stays in graph space and relays nodes
-// unchanged (no post-processing); without it, the sidekick reads raw files and trims them
-// coarse-grained — whole declarations only, never inside a retained body.
+// §FS-001-ensemble-explore.2.1 / .5.6: the sidekick is backend-conditional — with graphify it
+// relays graph nodes unchanged (no post-processing); without it, it reads raw files and trims
+// them coarse-grained (whole declarations only, never inside a retained body).
 async function runSidekick(
 	input: ExploreToolInput,
 	context: ExtensionContext,
@@ -481,15 +507,21 @@ async function runSidekick(
 
 	// Graph present: navigate + explain, relay nodes verbatim (no raw-file fetch).
 	// Graph absent: search + fetch raw files so the sidekick can trim them itself.
+	// Both modes also get caller_context (§FS-002-caller-context.9): read the caller's context.
+	const callerContextTool = createCallerContextTool(context);
 	const tools: AgentTool[] = graphifyAvailable
-		? [graphQueryTool, graphExplainTool, graphStatsTool]
-		: [graphQueryTool, graphFetchNodeTool, graphStatsTool];
+		? [graphQueryTool, graphExplainTool, graphStatsTool, callerContextTool]
+		: [graphQueryTool, graphFetchNodeTool, graphStatsTool, callerContextTool];
 
+	// §FS-002-caller-context.8: announce the capability, push no content.
+	const callerContextLine =
+		'You may call caller_context to read the calling agent\'s transcript, its prior tool results and files, its system prompt, or the user\'s original request — op:"index" to survey, then op:"fetch" by ids/recency/query. Take only what you need.';
 	const systemPrompt = graphifyAvailable
 		? [
 				"You are Pi's private exploration sidekick.",
 				"Explore only through the graph tools; do not read raw file contents.",
 				"Return the relevant graph nodes exactly as the tools provide them — do not trim, reformat, summarize, or otherwise post-process their contents.",
+				callerContextLine,
 				"Do not propose edits. Do not answer the user directly.",
 			].join("\n")
 		: [
@@ -499,6 +531,7 @@ async function runSidekick(
 				"Remove whole declarations — fields, functions, methods, comments — that are not relevant to the task.",
 				"Never remove or alter code inside a function body you keep; reproduce kept bodies verbatim.",
 				"Keep enough enclosing context (such as the class or module header) to locate what you return.",
+				callerContextLine,
 				"Do not propose edits. Do not answer the user directly.",
 			].join("\n");
 

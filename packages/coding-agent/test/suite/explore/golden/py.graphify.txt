@@ -1,0 +1,16 @@
+EDGE .__init__() --references [EXTRACTED context=parameter_type]--> float
+EDGE .compute_total() --rationale_for [EXTRACTED]--> Compute the total for an order including tax.
+EDGE .compute_total() --references [EXTRACTED context=return_type]--> float
+EDGE OrderService --contains [EXTRACTED]--> order_service.py
+EDGE OrderService --method [EXTRACTED]--> .__init__()
+EDGE OrderService --method [EXTRACTED]--> .compute_total()
+EDGE OrderService --method [EXTRACTED]--> .reset()
+EDGE OrderService --rationale_for [EXTRACTED]--> Service that processes orders against inventory.
+NODE .__init__() [src=order_service.py loc=L4 community=1]
+NODE .compute_total() [src=order_service.py loc=L8 community=2]
+NODE .reset() [src=order_service.py loc=L12 community=0]
+NODE Compute the total for an order including tax. [src=order_service.py loc=L9 community=2]
+NODE OrderService [src=order_service.py loc=L1 community=0]
+NODE Service that processes orders against inventory. [src=order_service.py loc=L2 community=0]
+NODE float [src=order_service.py loc=L4 community=1]
+NODE order_service.py [src=order_service.py loc=L1 community=0]

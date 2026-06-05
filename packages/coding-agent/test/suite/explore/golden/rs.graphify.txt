@@ -1,0 +1,7 @@
+EDGE OrderService --contains [EXTRACTED]--> order_service.rs
+EDGE OrderService --method [EXTRACTED]--> .compute_total()
+EDGE OrderService --method [EXTRACTED]--> .reset()
+NODE .compute_total() [src=order_service.rs loc=L9 community=0]
+NODE .reset() [src=order_service.rs loc=L13 community=0]
+NODE OrderService [src=order_service.rs loc=L2 community=0]
+NODE order_service.rs [src=order_service.rs loc=L1 community=0]

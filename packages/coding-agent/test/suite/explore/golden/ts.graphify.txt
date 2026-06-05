@@ -1,0 +1,9 @@
+EDGE OrderService --contains [EXTRACTED]--> order-service.ts
+EDGE OrderService --method [EXTRACTED]--> .computeTotal()
+EDGE OrderService --method [EXTRACTED]--> .constructor()
+EDGE OrderService --method [EXTRACTED]--> .reset()
+NODE .computeTotal() [src=order-service.ts loc=L12 community=0]
+NODE .constructor() [src=order-service.ts loc=L6 community=0]
+NODE .reset() [src=order-service.ts loc=L16 community=0]
+NODE OrderService [src=order-service.ts loc=L2 community=0]
+NODE order-service.ts [src=order-service.ts loc=L1 community=0]

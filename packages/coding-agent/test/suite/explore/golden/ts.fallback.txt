@@ -1,0 +1,47 @@
+## order-service.ts:9-13
+9: 	}
+10: 
+11: 	/** Compute the total for an order including tax. */
+12: 	computeTotal(amount: number): number {
+13: 		return amount + amount * this.taxRate;
+
+## order-service.ts:1-4
+1: /** Service that processes orders against inventory. */
+2: export class OrderService {
+3: 	private readonly taxRate: number;
+4: 	private pending: number;
+
+## order-service.ts:1-5
+1: /** Service that processes orders against inventory. */
+2: export class OrderService {
+3: 	private readonly taxRate: number;
+4: 	private pending: number;
+5: 
+
+## order-service.ts:4-8
+4: 	private pending: number;
+5: 
+6: 	constructor(taxRate: number) {
+7: 		this.taxRate = taxRate;
+8: 		this.pending = 0;
+
+## order-service.ts:5-9
+5: 
+6: 	constructor(taxRate: number) {
+7: 		this.taxRate = taxRate;
+8: 		this.pending = 0;
+9: 	}
+
+## order-service.ts:10-14
+10: 
+11: 	/** Compute the total for an order including tax. */
+12: 	computeTotal(amount: number): number {
+13: 		return amount + amount * this.taxRate;
+14: 	}
+
+## order-service.ts:11-15
+11: 	/** Compute the total for an order including tax. */
+12: 	computeTotal(amount: number): number {
+13: 		return amount + amount * this.taxRate;
+14: 	}
+15:

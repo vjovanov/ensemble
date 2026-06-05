@@ -1,0 +1,7 @@
+[u1] transcript · ~14t · "Refactor GraphifyBackend.query to add a timeout guard."
+[a1] transcript · ~12t · "I'll inspect the backend implementation first."
+[tr1] tool_result · ~27t · "<file path="explore.ts">class GraphifyBackend { async query() { /* spawns witho…"
+[be1] tool_result · ~11t · "Ran `npm test -- explore` ``` 1 passed ```"
+[cs1] summary · ~20t · "Earlier the team chose graph-only exploration with dedup against caller context."
+[a2] transcript · ~18t · "query() spawns without a timeout; I'll add a GRAPHIFY_TIMEOUT_MS guard."
+[u2] transcript · ~4t · "Yes, do that."
