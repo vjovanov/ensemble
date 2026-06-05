@@ -1,7 +1,7 @@
 # FS-002-caller-context: Sub-agents read the caller's context on demand
 
-A sub-agent that pi spawns (the `explore` sidekick of §FS-001-ensemble-explore, the ensemble
-agent, and any future sub-agent) starts with an empty conversation: none of the calling
+A sub-agent that pi spawns (the explore agent of §FS-001-ensemble-explore, and any future
+sub-agent) starts with an empty conversation: none of the calling
 agent's history flows down. This spec defines a **reusable capability** — exposed to the
 sub-agent as a single tool, `caller_context` — through which the sub-agent may **see and take
 parts of the caller's context on demand**: the conversation transcript, the caller's prior
@@ -18,8 +18,8 @@ The mechanism that implements this contract is specified in §AR-002-caller-cont
 ## 1. Vocabulary
 
 - **Caller** (also *parent*): the agent whose turn spawned the sub-agent. For the `explore`
-  sidekick this is the main pi agent (cf. §FS-001-ensemble-explore.1).
-- **Sub-agent**: any agent pi spawns within a tool call — the `explore` sidekick, the ensemble
+  explore agent this is the main pi agent (cf. §FS-001-ensemble-explore.1).
+- **Sub-agent**: any agent pi spawns within a tool call — the explore agent, the ensemble
   agent, or a future one. The capability is identical for all of them (§9).
 - **Caller branch**: the caller's conversation as the path from the current leaf to the root
   (user and assistant messages, tool results, bash executions, model/thinking changes, and
@@ -145,15 +145,15 @@ demand.)
 ## 9. Reusable across sub-agents
 
 The capability is a single reusable unit, not bound to `explore`. It is created from the
-caller's context and attached to a sub-agent's toolset; the `explore` sidekick
-(§FS-001-ensemble-explore) and the ensemble agent attach it the same way, and any future
-sub-agent does too. Its observable contract (§2–§8) does not vary by consumer.
+caller's context and attached to a sub-agent's toolset; the explore agent
+(§FS-001-ensemble-explore) attaches it, and any future sub-agent does the same. Its
+observable contract (§2–§8) does not vary by consumer.
 
 ### 9.1 Composes with graph-only selection
 
-For the `explore` sidekick, this capability is additive and does not weaken
+For the explore agent, this capability is additive and does not weaken
 §FS-001-ensemble-explore.2.1: `caller_context` exposes the *caller's* already-gathered context,
-not raw repository file bodies the sidekick is otherwise barred from reading. The sidekick
+not raw repository file bodies the explore agent is otherwise barred from reading. The explore agent
 still selects code through the graph; it may now also consult what the caller already knows.
 
 ## 10. Trust and failure
@@ -176,7 +176,7 @@ sub-agent that calls it on a fresh caller is not aborted.
 
 The sub-agent cannot, through this capability, send messages to the caller, edit its session,
 or call the caller's tools. The sub-agent's product still reaches the caller only through its
-normal return path (for the sidekick, the selected nodes of §FS-001-ensemble-explore).
+normal return path (for the explore agent, the selected nodes of §FS-001-ensemble-explore).
 
 ### 11.2 No cross-session access
 

@@ -4,7 +4,7 @@ This is the mechanism for §FS-002-caller-context. It is a single reusable modul
 one `AgentTool` from the caller's `ExtensionContext`; the tool closes over that context and
 reads the caller's session on demand. Implementation lives in
 `packages/coding-agent/src/core/tools/caller-context.ts`, wired into sub-agent spawners
-(`runSidekick` in `explore.ts`, and the ensemble agent).
+(`runSidekick` in `explore.ts`).
 
 ## 1. Where the seam is
 
@@ -148,14 +148,14 @@ const tools: AgentTool[] = [ /* graph_query, graph_explain, graph_stats … */,
 //   "Use op:\"index\" to survey, then op:\"fetch\" by ids/recency/query. Take only what you need.";
 ```
 
-The ensemble agent attaches it identically from its own `ExtensionContext`. Because the
+Any future sub-agent attaches it identically from its own `ExtensionContext`. Because the
 factory's only input is `ExtensionContext`, no consumer-specific code is required
 (§FS-002-caller-context.9).
 
-For the `explore` sidekick this is additive to §AR-001-ensemble-explore.3.2: the sidekick's
+For the explore agent this is additive to §AR-001-ensemble-explore.3.2: the explore agent's
 graph-only toolset gains `caller_context`, which exposes the *caller's* gathered context, not
 raw repo bodies (§FS-002-caller-context.9.1) — the §FS-001-ensemble-explore.2.1 bar on the
-sidekick reading file bodies is unchanged.
+explore agent reading file bodies is unchanged.
 
 ## 10. Build order
 
@@ -163,7 +163,7 @@ sidekick reading file bodies is unchanged.
    (§2–§3); lift `extractTextContent` to a shared export.
 2. `index` and `fetch` ops with selectors and the byte cap (§4–§6).
 3. `system_prompt` / `user_request` ops and empty-branch degradation (§7–§8).
-4. Wire into `runSidekick` and the ensemble agent with the announce-only seed (§9).
+4. Wire into `runSidekick` with the announce-only seed (§9).
 5. Tests: index lists each kind; fetch by ids / recency / query; unparameterised fetch is
    bounded; over-cap output reports truncation; compacted branch surfaces `summary` entries;
    empty/absent session manager degrades to the no-context result.
