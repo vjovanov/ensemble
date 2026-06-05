@@ -1,0 +1,2 @@
+[tr1] tool_result · ~27t · "<file path="explore.ts">class GraphifyBackend { async query() { /* spawns witho…"
+[be1] tool_result · ~11t · "Ran `npm test -- explore` ``` 1 passed ```"

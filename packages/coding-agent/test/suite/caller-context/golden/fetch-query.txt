@@ -1,0 +1,8 @@
+=== [u1] transcript ===
+Refactor GraphifyBackend.query to add a timeout guard.
+
+=== [tr1] tool_result ===
+<file path="explore.ts">class GraphifyBackend { async query() { /* spawns without a timeout */ } }</file>
+
+=== [a2] transcript ===
+query() spawns without a timeout; I'll add a GRAPHIFY_TIMEOUT_MS guard.

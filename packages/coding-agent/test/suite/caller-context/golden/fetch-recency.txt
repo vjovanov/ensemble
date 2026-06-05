@@ -1,0 +1,5 @@
+=== [a2] transcript ===
+query() spawns without a timeout; I'll add a GRAPHIFY_TIMEOUT_MS guard.
+
+=== [u2] transcript ===
+Yes, do that.

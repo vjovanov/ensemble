@@ -1,0 +1,7 @@
+EDGE OrderService --contains [EXTRACTED]--> order_service.go
+EDGE OrderService --method [EXTRACTED]--> .ComputeTotal()
+EDGE OrderService --method [EXTRACTED]--> .Reset()
+NODE .ComputeTotal() [src=order_service.go loc=L10 community=0]
+NODE .Reset() [src=order_service.go loc=L14 community=0]
+NODE OrderService [src=order_service.go loc=L4 community=0]
+NODE order_service.go [src=order_service.go loc=L1 community=0]

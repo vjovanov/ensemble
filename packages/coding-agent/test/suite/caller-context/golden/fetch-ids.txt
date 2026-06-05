@@ -1,0 +1,2 @@
+=== [tr1] tool_result ===
+<file path="explore.ts">class GraphifyBackend { async query() { /* spawns without a timeout */ } }</file>

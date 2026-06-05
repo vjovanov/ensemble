@@ -1,0 +1,48 @@
+## order_service.go:7-11
+7: }
+8: 
+9: // ComputeTotal returns the total for an order including tax.
+10: func (s *OrderService) ComputeTotal(amount float64) float64 {
+11: 	return amount + amount*s.taxRate
+
+## order_service.go:8-12
+8: 
+9: // ComputeTotal returns the total for an order including tax.
+10: func (s *OrderService) ComputeTotal(amount float64) float64 {
+11: 	return amount + amount*s.taxRate
+12: }
+
+## order_service.go:1-5
+1: package orders
+2: 
+3: // OrderService processes orders against inventory.
+4: type OrderService struct {
+5: 	taxRate float64
+
+## order_service.go:2-6
+2: 
+3: // OrderService processes orders against inventory.
+4: type OrderService struct {
+5: 	taxRate float64
+6: 	pending int
+
+## order_service.go:3-7
+3: // OrderService processes orders against inventory.
+4: type OrderService struct {
+5: 	taxRate float64
+6: 	pending int
+7: }
+
+## order_service.go:9-13
+9: // ComputeTotal returns the total for an order including tax.
+10: func (s *OrderService) ComputeTotal(amount float64) float64 {
+11: 	return amount + amount*s.taxRate
+12: }
+13: 
+
+## order_service.go:12-16
+12: }
+13: 
+14: func (s *OrderService) Reset() {
+15: 	s.pending = 0
+16: }

@@ -1,0 +1,9 @@
+EDGE OrderService --contains [EXTRACTED]--> OrderService.java
+EDGE OrderService --method [EXTRACTED]--> .OrderService()
+EDGE OrderService --method [EXTRACTED]--> .computeTotal()
+EDGE OrderService --method [EXTRACTED]--> .reset()
+NODE .OrderService() [src=OrderService.java loc=L6 community=0]
+NODE .computeTotal() [src=OrderService.java loc=L12 community=0]
+NODE .reset() [src=OrderService.java loc=L16 community=0]
+NODE OrderService [src=OrderService.java loc=L2 community=0]
+NODE OrderService.java [src=OrderService.java loc=L1 community=0]
