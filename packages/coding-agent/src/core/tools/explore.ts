@@ -414,11 +414,16 @@ function makeTextTool<TParams extends TSchema>(
 	};
 }
 
+// §FS-001-ensemble-explore.2.1 / .5.6: the sidekick's tools and instructions are
+// backend-conditional. With graphify present it stays in graph space and relays nodes
+// unchanged (no post-processing); without it, the sidekick reads raw files and trims them
+// coarse-grained — whole declarations only, never inside a retained body.
 async function runSidekick(
 	input: ExploreToolInput,
 	context: ExtensionContext,
 	backend: GraphifyBackend,
 	maxSnippets: number,
+	graphifyAvailable: boolean,
 	signal?: AbortSignal,
 ): Promise<string | undefined> {
 	const model = context.model;
@@ -431,60 +436,76 @@ async function runSidekick(
 	const graphFetchNodeSchema = Type.Object({ node: Type.String() });
 	const graphStatsSchema = Type.Object({});
 
-	const tools: AgentTool[] = [
-		makeTextTool(
-			"graph_query",
-			"Query the code knowledge graph for relevant nodes and relationships.",
-			graphQuerySchema,
-			async ({ question }, toolSignal) => {
-				return (
-					(await backend.query(question, toolSignal)) ??
-					fallbackSearch(question, input.paths, context.cwd, maxSnippets)
-				);
-			},
-		),
-		makeTextTool(
-			"graph_explain",
-			"Explain a graph node and its neighboring code relationships.",
-			graphExplainSchema,
-			async ({ node }, toolSignal) => {
-				return (
-					(await backend.explain(node, toolSignal)) ?? fallbackSearch(node, input.paths, context.cwd, maxSnippets)
-				);
-			},
-		),
-		makeTextTool(
-			"graph_fetch_node",
-			"Fetch full content for a graph node or file path.",
-			graphFetchNodeSchema,
-			async ({ node }) => {
-				try {
-					return (await fetchFileContent(node, context.cwd)).text;
-				} catch (error) {
-					return `Unable to fetch node "${node}": ${error instanceof Error ? error.message : String(error)}`;
-				}
-			},
-		),
-		makeTextTool(
-			"graph_stats",
-			"Inspect code graph availability and size.",
-			graphStatsSchema,
-			async (params, toolSignal) => {
-				void params;
-				return (await backend.stats(toolSignal)) ?? "Graphify is not available; using filesystem nodes.";
-			},
-		),
-	];
+	const graphQueryTool = makeTextTool(
+		"graph_query",
+		"Query the code knowledge graph for relevant nodes and relationships.",
+		graphQuerySchema,
+		async ({ question }, toolSignal) => {
+			return (
+				(await backend.query(question, toolSignal)) ??
+				fallbackSearch(question, input.paths, context.cwd, maxSnippets)
+			);
+		},
+	);
+	const graphExplainTool = makeTextTool(
+		"graph_explain",
+		"Explain a graph node and its neighboring code relationships.",
+		graphExplainSchema,
+		async ({ node }, toolSignal) => {
+			return (
+				(await backend.explain(node, toolSignal)) ?? fallbackSearch(node, input.paths, context.cwd, maxSnippets)
+			);
+		},
+	);
+	const graphFetchNodeTool = makeTextTool(
+		"graph_fetch_node",
+		"Fetch full content for a graph node or file path so it can be trimmed to the relevant code.",
+		graphFetchNodeSchema,
+		async ({ node }) => {
+			try {
+				return (await fetchFileContent(node, context.cwd)).text;
+			} catch (error) {
+				return `Unable to fetch node "${node}": ${error instanceof Error ? error.message : String(error)}`;
+			}
+		},
+	);
+	const graphStatsTool = makeTextTool(
+		"graph_stats",
+		"Inspect code graph availability and size.",
+		graphStatsSchema,
+		async (params, toolSignal) => {
+			void params;
+			return (await backend.stats(toolSignal)) ?? "Graphify is not available; using filesystem nodes.";
+		},
+	);
+
+	// Graph present: navigate + explain, relay nodes verbatim (no raw-file fetch).
+	// Graph absent: search + fetch raw files so the sidekick can trim them itself.
+	const tools: AgentTool[] = graphifyAvailable
+		? [graphQueryTool, graphExplainTool, graphStatsTool]
+		: [graphQueryTool, graphFetchNodeTool, graphStatsTool];
+
+	const systemPrompt = graphifyAvailable
+		? [
+				"You are Pi's private exploration sidekick.",
+				"Explore only through the graph tools; do not read raw file contents.",
+				"Return the relevant graph nodes exactly as the tools provide them — do not trim, reformat, summarize, or otherwise post-process their contents.",
+				"Do not propose edits. Do not answer the user directly.",
+			].join("\n")
+		: [
+				"You are Pi's private exploration sidekick.",
+				"The code graph is unavailable; you are working from raw filesystem results.",
+				"Return only the code relevant to the task and remove everything unnecessary.",
+				"Remove whole declarations — fields, functions, methods, comments — that are not relevant to the task.",
+				"Never remove or alter code inside a function body you keep; reproduce kept bodies verbatim.",
+				"Keep enough enclosing context (such as the class or module header) to locate what you return.",
+				"Do not propose edits. Do not answer the user directly.",
+			].join("\n");
 
 	const thinkingLevel = clampThinkingLevel(model, "low") as ThinkingLevel;
 	const sidekick = new Agent({
 		initialState: {
-			systemPrompt: [
-				"You are Pi's private exploration sidekick.",
-				"You may only explore code through graph tools.",
-				"Return only relevant file paths, line ranges, and concise snippets or full nodes requested by the main agent.",
-				"Do not propose edits. Do not answer the user directly.",
-			].join("\n"),
+			systemPrompt,
 			model,
 			thinkingLevel,
 			tools,
@@ -565,6 +586,8 @@ function formatExploreResult(
 	return text;
 }
 
+// §FS-001-ensemble-explore: graph-only node selection + dedup against caller context.
+// Mechanism (sidekick/NodeRef/registry/assembly): §AR-001-ensemble-explore.
 export function createExploreToolDefinition(
 	cwd: string,
 ): ToolDefinition<typeof exploreSchema, ExploreToolDetails | undefined> {
@@ -602,7 +625,9 @@ export function createExploreToolDefinition(
 				};
 			}
 
-			const sidekickText = context ? await runSidekick(input, context, backend, maxSnippets, signal) : undefined;
+			const sidekickText = context
+				? await runSidekick(input, context, backend, maxSnippets, graphifyAvailable, signal)
+				: undefined;
 			if (sidekickText) {
 				return {
 					content: [{ type: "text", text: sidekickText }],
