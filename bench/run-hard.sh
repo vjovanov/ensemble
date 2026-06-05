@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# Fetch and run 10 "hard" Multi-SWE-bench instances — large, real-world repos
+# Fetch and run 9 "hard" Multi-SWE-bench instances — large, real-world repos
 # across the graphify-supported languages (go/rust/ts/java) — through all 3 arms.
 #
 #   ./run-hard.sh                 # fetch + run (streams to run-hard.log)
 #   nohup ./run-hard.sh &         # detached; then: tail -f run-hard.log
 #
 # Honest expectations:
-#   - 10 instances x 3 arms = 30 agent runs on oca/gpt-5.5; budget ~$25-60.
+#   - 9 instances x 3 arms = 27 agent runs on oca/gpt-5.5; budget ~$25-55.
 #   - ~2-5h sequential, plus large clones (FORCE=1 bypasses the 400MB guard).
 #   - Run this AFTER any in-flight sweep finishes (avoid concurrent agents).
 #   - Grade afterward with ./eval/run-eval.sh && node collect.mjs
@@ -15,7 +15,8 @@ cd "$(dirname "${BASH_SOURCE[0]}")"
 
 # (repo/dataset path, instance index) — large/gnarly codebases.
 HARD=(
-  "rust/tokio-rs__tokio_dataset.jsonl 0"               # async runtime
+  # tokio removed: graphify segfaults building its graph (no graph.json) — would
+  # silently degrade the ensemble-graphify arm to whole-file fetches.
   "rust/clap-rs__clap_dataset.jsonl 0"                 # arg parser, large
   "rust/nushell__nushell_dataset.jsonl 0"              # shell, big codebase
   "rust/tokio-rs__tracing_dataset.jsonl 0"             # instrumentation

@@ -81,6 +81,33 @@ PROMPT="$(node "$BENCH_DIR/lib/build-prompt.mjs" "$INSTANCE_JSON")"
 SESSION_DIR="$OUT/session"
 rm -rf "$SESSION_DIR"; mkdir -p "$SESSION_DIR"
 
+# --- 4b. Run bundle: commit link + the exact prompts this run uses -----------
+# Every run is self-describing: prompts + tool calls (session/ + explore-debug) +
+# logs, all pinned to the product commit it ran against.
+COMMIT="$(git -C "$REPO_ROOT" rev-parse HEAD 2>/dev/null || echo unknown)"
+DIRTY=false; [ -n "$(git -C "$REPO_ROOT" status --porcelain 2>/dev/null)" ] && DIRTY=true
+DBG=off; [ "$ARM" != classic ] && DBG=full   # sidekick arms run with PI_EXPLORE_DEBUG=full
+node -e '
+  const fs=require("fs");
+  const [out,commit,dirty,model,provider,arm,inst,lang,expl,rg,dbg]=process.argv.slice(1);
+  fs.writeFileSync(out+"/manifest.json", JSON.stringify({
+    instance:inst, arm, language:lang,
+    commit, dirty:dirty==="true",
+    model, provider, exploration:expl, require_graph:rg==="1",
+    explore_debug: dbg,
+    tool_calls: {lead:"session/*.jsonl", sidekick: arm==="classic" ? null : "explore-debug.jsonl"},
+    prompts_dir: arm==="classic" ? null : "prompts/",
+  },null,2)+"\n");
+' "$OUT" "$COMMIT" "$DIRTY" "$MODEL" "${PROVIDER:-}" "$ARM" "$ID" "$LANG" "$EXPLORATION" "$([ "$ARM" = ensemble-strict ] && echo 1 || echo 0)" "$DBG"
+if [ "$ARM" = "classic" ]; then
+  mkdir -p "$OUT/prompts"
+  printf 'classic arm: no explore sidekick. Uses the base pi system prompt (pinned by\ncommit %s) plus read/grep/find/ls tools. No explore tool, no sidekick prompt.\n' "$COMMIT" > "$OUT/prompts/NOTE.txt"
+else
+  "$TSX" --tsconfig "$REPO_ROOT/tsconfig.json" "$BENCH_DIR/lib/dump-prompts.mjs" "$OUT/prompts" >/dev/null 2>&1 \
+    || log "WARN: could not dump prompts"
+fi
+[ "$DIRTY" = "true" ] && log "NOTE: repo tree is dirty — commit before runs you intend to publish (manifest records commit=$COMMIT, dirty=true)"
+
 # --- 5. Run the agent --------------------------------------------------------
 if [ "$DRY_RUN" = "1" ]; then
   log "DRY_RUN=1 -> skipping paid agent call"

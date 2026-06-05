@@ -78,6 +78,31 @@ collect.mjs          metrics + final_report.json -> results.csv + summary
 work/  raw/  patches/  instances/  results/   (generated; git-ignored)
 ```
 
+## Run bundle format
+
+Every `(instance, arm)` run writes a self-describing bundle under `raw/<id>__<arm>/`,
+pinned to the product commit it ran against:
+
+```
+manifest.json          commit (+ dirty flag), model/provider, arm, exploration, require_graph
+prompts/
+  lead-explore-tool.txt    the explore tool as the LEAD agent sees it (desc + guidelines + params)
+  sidekick-graph.txt       explore sub-agent prompt, graph-backed mode
+  sidekick-filesystem.txt  explore sub-agent prompt, filesystem-fallback mode
+  NOTE.txt                 (classic arm only — no sidekick; base prompt pinned by commit)
+session/*.jsonl        all LEAD-agent turns + tool calls
+explore-debug.jsonl    all SIDEKICK tool calls (PI_EXPLORE_DEBUG=full; sidekick arms only)
+agent.out / agent.err  logs    graphify.log   graph build log (strict arm)
+metrics.json           tokens/cost/turns/strict     patch.diff / patch.jsonl
+```
+
+So each run carries **both prompts + all tool calls (lead & sidekick) + logs, linked to a
+commit**. Prompts are dumped from source via `lib/dump-prompts.mjs` (which imports the exported
+`exploreSidekickSystemPrompt` / `createExploreToolDefinition`), so they match the committed code
+exactly. `manifest.json.dirty=true` warns that the tree had uncommitted changes — commit before
+runs you intend to publish, so `commit` fully pins the prompts. Archive a set with
+`snapshots/<name>/` (tracked; the live `raw/` is git-ignored).
+
 ## Caveats
 
 - **graphify language coverage** — verify it produces a non-trivial `graph.json` for each

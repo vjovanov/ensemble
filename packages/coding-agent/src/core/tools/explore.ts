@@ -618,6 +618,36 @@ function makeTextTool<TParams extends TSchema>(
 	};
 }
 
+// The explore sidekick's system prompt. Exported so harnesses can capture the exact
+// instructions a run used; the two variants are graph-backed vs filesystem fallback.
+export function exploreSidekickSystemPrompt(graphifyAvailable: boolean): string {
+	// §FS-002-caller-context.8: announce the capability, push no content.
+	const callerContextLine =
+		'You may call caller_context to read the calling agent\'s transcript, its prior tool results and files, its system prompt, or the user\'s original request — op:"index" to survey, then op:"fetch" by ids/recency/query. Take only what you need.';
+	return graphifyAvailable
+		? [
+				"You are Pi's private exploration sidekick.",
+				"Explore only through the graph tools; do not read raw file contents.",
+				"Think carefully about what the task genuinely needs before fetching. Select the minimal set of nodes that answers it; do not pull in neighboring or related nodes speculatively.",
+				"Prefer fetching a whole node or file once when the task will need most of it, over many partial fetches of the same file — repeated partial fetches cost the caller more than one whole fetch.",
+				"Return the relevant graph nodes exactly as the tools provide them — do not trim, reformat, summarize, or otherwise post-process their contents (your job is to choose which nodes to fetch, not to edit their bodies).",
+				callerContextLine,
+				"Do not propose edits. Do not answer the user directly.",
+			].join("\n")
+		: [
+				"You are Pi's private exploration sidekick.",
+				"The code graph is unavailable; you are working from raw filesystem results.",
+				"Think carefully about what the task genuinely needs, then return only that.",
+				"Return only the code relevant to the task and remove everything unnecessary.",
+				"Remove whole declarations — fields, functions, methods, comments — that are not relevant to the task.",
+				"If the task needs most of a file, return the whole file once rather than scattered fragments; if only a small part is relevant, return just that part.",
+				"Never remove or alter code inside a function body you keep; reproduce kept bodies verbatim.",
+				"Keep enough enclosing context (such as the class or module header) to locate what you return.",
+				callerContextLine,
+				"Do not propose edits. Do not answer the user directly.",
+			].join("\n");
+}
+
 // §FS-001-ensemble-explore.2.1 / .5.6: the sidekick is backend-conditional — with graphify it
 // relays graph nodes unchanged (no post-processing); without it, it reads raw files and trims
 // them coarse-grained (whole declarations only, never inside a retained body).
@@ -708,31 +738,7 @@ async function runSidekick(
 	const debugSink = debugLevel === "off" ? undefined : resolveExploreDebugSink(context.cwd);
 	const tools = debugSink ? instrumentToolsForDebug(baseTools, debugLevel, debugSink) : baseTools;
 
-	// §FS-002-caller-context.8: announce the capability, push no content.
-	const callerContextLine =
-		'You may call caller_context to read the calling agent\'s transcript, its prior tool results and files, its system prompt, or the user\'s original request — op:"index" to survey, then op:"fetch" by ids/recency/query. Take only what you need.';
-	const systemPrompt = graphifyAvailable
-		? [
-				"You are Pi's private exploration sidekick.",
-				"Explore only through the graph tools; do not read raw file contents.",
-				"Think carefully about what the task genuinely needs before fetching. Select the minimal set of nodes that answers it; do not pull in neighboring or related nodes speculatively.",
-				"Prefer fetching a whole node or file once when the task will need most of it, over many partial fetches of the same file — repeated partial fetches cost the caller more than one whole fetch.",
-				"Return the relevant graph nodes exactly as the tools provide them — do not trim, reformat, summarize, or otherwise post-process their contents (your job is to choose which nodes to fetch, not to edit their bodies).",
-				callerContextLine,
-				"Do not propose edits. Do not answer the user directly.",
-			].join("\n")
-		: [
-				"You are Pi's private exploration sidekick.",
-				"The code graph is unavailable; you are working from raw filesystem results.",
-				"Think carefully about what the task genuinely needs, then return only that.",
-				"Return only the code relevant to the task and remove everything unnecessary.",
-				"Remove whole declarations — fields, functions, methods, comments — that are not relevant to the task.",
-				"If the task needs most of a file, return the whole file once rather than scattered fragments; if only a small part is relevant, return just that part.",
-				"Never remove or alter code inside a function body you keep; reproduce kept bodies verbatim.",
-				"Keep enough enclosing context (such as the class or module header) to locate what you return.",
-				callerContextLine,
-				"Do not propose edits. Do not answer the user directly.",
-			].join("\n");
+	const systemPrompt = exploreSidekickSystemPrompt(graphifyAvailable);
 
 	const thinkingLevel = clampThinkingLevel(model, "low") as ThinkingLevel;
 	const sidekick = new Agent({
