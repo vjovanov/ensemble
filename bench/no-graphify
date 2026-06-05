@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# Stub used by the sidekick-fs and classic arms: a real executable that always
+# fails, so explore's `commandAvailable` (runs `<cmd> --help`) returns false and
+# the explore tool takes the filesystem path instead of graphify.
+exit 1

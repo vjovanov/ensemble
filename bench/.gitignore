@@ -1,0 +1,9 @@
+work/
+raw/
+patches/
+results/
+instances/
+eval/workdir/
+eval/repos/
+eval/dataset.jsonl
+eval/config.*.json
