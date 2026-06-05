@@ -618,8 +618,9 @@ function makeTextTool<TParams extends TSchema>(
 	};
 }
 
-// The explore sidekick's system prompt. Exported so harnesses can capture the exact
-// instructions a run used; the two variants are graph-backed vs filesystem fallback.
+// The explore sidekick's system prompt (exported so harnesses can capture the exact
+// instructions a run used). §RM-001-bash-sidekick.2.1: the "fetch only what the task
+// needs" wording is the digest-tightening that lets delegation reduce lead-model cost.
 export function exploreSidekickSystemPrompt(graphifyAvailable: boolean): string {
 	// §FS-002-caller-context.8: announce the capability, push no content.
 	const callerContextLine =
