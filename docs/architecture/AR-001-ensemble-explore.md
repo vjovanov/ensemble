@@ -1,7 +1,7 @@
 # AR-001-ensemble-explore: How `explore` selects, dedups, and assembles graph nodes
 
 This is the mechanism for §FS-001-ensemble-explore. It splits the `explore` tool into a
-graph-only **selection** phase (an LLM sidekick) and a deterministic **assembly** phase (the
+graph-only **selection** phase (an explore agent) and a deterministic **assembly** phase (the
 tool), with a typed `NodeRef` boundary between them. Implementation lives in
 `packages/coding-agent/src/core/tools/explore.ts`.
 
@@ -10,7 +10,7 @@ tool), with a typed `NodeRef` boundary between them. Implementation lives in
 ```
 caller → explore tool
    │
-   ├─ Phase 1  sidekick (LLM, graph-only)  ──►  { summary, nodes: NodeRef[] }   §FS-001-ensemble-explore.2
+   ├─ Phase 1  explore agent (LLM, graph-only)  ──►  { summary, nodes: NodeRef[] }   §FS-001-ensemble-explore.2
    │
    └─ Phase 2  algorithm (deterministic)
         ├─ fingerprint each node's current source      §FS-001-ensemble-explore.3
@@ -19,12 +19,12 @@ caller → explore tool
         └─ compose the single caller message           §FS-001-ensemble-explore.5
 ```
 
-The boundary is a typed value, not prose: the sidekick can only hand back `NodeRef`s, so it
+The boundary is a typed value, not prose: the explore agent can only hand back `NodeRef`s, so it
 cannot leak file bodies or presentation decisions into the caller's context.
 
 ## 2. The `NodeRef` contract
 
-The sidekick's terminal tool, `select_nodes`, takes the result for §FS-001-ensemble-explore.2.2:
+The explore agent's terminal tool, `select_nodes`, takes the result for §FS-001-ensemble-explore.2.2:
 
 ```ts
 interface NodeRef {
@@ -37,7 +37,7 @@ interface NodeRef {
 interface SelectNodesResult { summary: string; nodes: NodeRef[]; }
 ```
 
-Identity (§FS-001-ensemble-explore.3.1) is computed by the tool, not supplied by the sidekick:
+Identity (§FS-001-ensemble-explore.3.1) is computed by the tool, not supplied by the explore agent:
 
 ```
 id = sha1(path + "#" + (symbol ?? span?.join("-") ?? "file"))
@@ -46,29 +46,29 @@ id = sha1(path + "#" + (symbol ?? span?.join("-") ?? "file"))
 Structural identity is independent of content, so it survives edits and graph rebuilds, and
 is well-defined under the filesystem fallback where no backend node IDs exist.
 
-## 3. Phase 1 — graph-only sidekick
+## 3. Phase 1 — graph-only explore agent
 
 ### 3.1 Structured terminal return
 
-Replaces the free-form-text return of the current sidekick (the `runSidekick`
+Replaces the free-form-text return of the current explore agent (the `runSidekick`
 last-assistant-text scrape in `explore.ts`) with the structured `select_nodes` terminal tool.
 The tool reads the call argument, not the prose.
 
 ### 3.2 Backend-conditional toolset
 
-The sidekick's toolset is **backend-conditional** (§FS-001-ensemble-explore.2.1):
+The explore agent's toolset is **backend-conditional** (§FS-001-ensemble-explore.2.1):
 
 - **Graph backend present** — tools are `graph_query`, `graph_explain`, `graph_neighbors`,
-  `graph_stats`; `graph_fetch_node` is removed. The sidekick stays in graph space and relays
+  `graph_stats`; `graph_fetch_node` is removed. The explore agent stays in graph space and relays
   node-granular results unchanged — **no post-processing** (§FS-001-ensemble-explore.5.6).
-- **Graph backend absent** — the sidekick gets filesystem search + read tools, because it must
+- **Graph backend absent** — the explore agent gets filesystem search + read tools, because it must
   see raw code to trim it. It post-processes the results down to the relevant code.
 
 ### 3.3 Mode-selected system prompt
 
-System prompt is selected per mode. In graph mode it directs the sidekick to navigate the
+System prompt is selected per mode. In graph mode it directs the explore agent to navigate the
 graph, identify relevant nodes, and relay them verbatim. In fallback mode it directs the
-sidekick to keep only task-relevant declarations and drop the rest, **coarse-grained only**:
+explore agent to keep only task-relevant declarations and drop the rest, **coarse-grained only**:
 whole fields/functions/methods/comments may be removed, but a retained function body is kept
 verbatim — never edited or partially elided (§FS-001-ensemble-explore.5.6).
 
@@ -107,7 +107,7 @@ The map is held on the `createExploreToolDefinition` closure, keyed by
 ## 5. Phase 2 — message assembly
 
 The tool emits one tool result for §FS-001-ensemble-explore.5. The trimmed, node-granular
-shape is produced **upstream** — by the graph backend when present, or by the sidekick when
+shape is produced **upstream** — by the graph backend when present, or by the explore agent when
 absent (§3.2) — never by a deterministic trimming algorithm in the tool
 (§FS-001-ensemble-explore.5.6). The assembly phase composes and labels what it receives.
 Members sharing an enclosing node are grouped under one envelope; selected members are shown
@@ -143,14 +143,14 @@ which the selected `NodeRef`s do not carry — the assembly phase would need an 
 `graph_neighbors`/parse call on the parent. Therefore the default path computes no roster and
 the knob is opt-in. The recall-preserving pointer set for *selected-but-unchanged* nodes
 (§FS-001-ensemble-explore.5.3) is independent of this knob and always cheap, since those nodes
-were already named by the sidekick.
+were already named by the explore agent.
 
 ## 6. Fallbacks
 
 6.1 Filesystem fallback (§FS-001-ensemble-explore.7.1) supplies `NodeRef`s from the existing
 ranked-snippet search when the graph backend is unavailable; Phase 2 is unchanged.
 
-6.2 Sidekick error/abort (§FS-001-ensemble-explore.7.2) falls back to a direct
+6.2 Explore agent error/abort (§FS-001-ensemble-explore.7.2) falls back to a direct
 backend/filesystem query for the task, as the current tool already does.
 
 6.3 The whole-file request path (§FS-001-ensemble-explore.7.3) skips Phase 1 but still records
@@ -158,7 +158,7 @@ deliveries so later selections of those files dedup.
 
 ## 7. Build order
 
-1. `NodeRef` schema + `select_nodes`; convert sidekick to graph-only + structured return (§3).
+1. `NodeRef` schema + `select_nodes`; convert explore agent to graph-only + structured return (§3).
 2. Registry, fingerprinting, four-way classification, message assembly (§4, §5).
 3. Branch/compaction reconciliation against `sessionManager` (§4.3).
 4. Tests: new, unchanged-omit, modified-resend, span-grow, post-compaction-resend.

@@ -1,9 +1,10 @@
 # FS-003-agent-protocol: How the super-agent and a sub-agent communicate
 
 Pi runs work in two tiers. A **super-agent** (the caller) delegates a bounded task to a
-**sub-agent** it spawns inside a tool call — the `explore` sidekick of §FS-001-ensemble-explore,
-the ensemble agent, or any future one. This spec defines the communication contract between the
-two, stated from **each side's perspective**, independent of which sub-agent is used.
+**sub-agent** it spawns inside a tool call — the explore agent of §FS-001-ensemble-explore, or
+any future one. This spec defines the communication contract between the two, stated from
+**each side's perspective**, independent of which sub-agent is used. (*ensemble* is the product
+name, not an agent; the sub-agent that exists today is the *explore agent*.)
 
 It unifies three channels that today live in separate specs: the **request** path (left implicit
 by §FS-001-ensemble-explore), the **pull** path (§FS-002-caller-context), and the **product**
@@ -12,10 +13,10 @@ path (§FS-001-ensemble-explore.5). The mechanism is §AR-003-agent-protocol.
 ## 1. Vocabulary
 
 - **Super-agent** (also *caller* / *parent*): the agent whose turn spawns the sub-agent. It is
-  the main pi agent for the `explore` sidekick (cf. §FS-001-ensemble-explore.1,
+  the main pi agent for the explore agent (cf. §FS-001-ensemble-explore.1,
   §FS-002-caller-context.1).
-- **Sub-agent**: the agent spawned within a tool call — the sidekick, the ensemble agent, or a
-  future one. It runs to completion and returns once.
+- **Sub-agent**: the agent spawned within a tool call — the explore agent, or a future one. It
+  runs to completion and returns once.
 - **Request**: the payload the super-agent pushes down at spawn (§5).
 - **Product**: the single value the sub-agent returns up at the end (§6).
 - **Pull**: a `caller_context` read the sub-agent itself initiates (§FS-002-caller-context.2.1).
@@ -83,12 +84,12 @@ super-agent's prior turns.
 
 To learn more it calls tools itself: `caller_context` for the super-agent's gathered context
 (index→fetch / system_prompt / user_request, §FS-002-caller-context.4), and its task tools — for
-the sidekick, the graph tools, never raw file bodies when a graph backend is present
+the explore agent, the graph tools, never raw file bodies when a graph backend is present
 (§FS-001-ensemble-explore.2.1).
 
 ### 4.3 It must terminate with a structured product
 
-The sub-agent ends by producing one product (§6): the sidekick emits an ordered `NodeRef` list
+The sub-agent ends by producing one product (§6): the explore agent emits an ordered `NodeRef` list
 plus a one-line summary (§FS-001-ensemble-explore.2.2); a generic sub-agent returns its final
 text. Presentation and selection downstream are not its job (§FS-001-ensemble-explore.2.3).
 
@@ -159,9 +160,9 @@ domain (§FS-002-caller-context.10.1): it may read the super-agent's context wit
 ## 9. Reusable across sub-agent types
 
 Channels and lifecycle (§2–§8) are identical for every sub-agent. Only the **request** (§5) and
-the **product** (§6) payloads specialize per sub-agent type: the sidekick's request is an
-exploration task and its product is `NodeRef`s; the ensemble agent's request and product are its
-own. The capability set (graph tools, `caller_context`) is attached the same way for each
+the **product** (§6) payloads specialize per sub-agent type: the explore agent's request is an
+exploration task and its product is `NodeRef`s; a future sub-agent's request and product would
+be its own. The capability set (graph tools, `caller_context`) is attached the same way for each
 (§FS-002-caller-context.9).
 
 ## 10. Non-goals

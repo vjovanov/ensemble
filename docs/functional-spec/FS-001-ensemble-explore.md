@@ -1,8 +1,8 @@
 # FS-001-ensemble-explore: Ensemble `explore` returns deduplicated graph nodes
 
-Pi's `explore` tool delegates discovery to a private exploration sidekick that works on
+Pi's `explore` tool delegates discovery to a private explore agent that works on
 the code **graph representation only** and reports the **nodes of interest** for a task.
-The `explore` tool itself — not the sidekick — then decides what reaches the caller model:
+The `explore` tool itself — not the explore agent — then decides what reaches the caller model:
 it suppresses nodes the caller already holds unchanged, re-sends nodes whose source has
 changed, and composes a single message that pairs freshly fetched content with pointers to
 context the caller already has.
@@ -13,36 +13,36 @@ implements it is specified in §AR-001-ensemble-explore.
 ## 1. Vocabulary
 
 - **Caller** (also *parent*): the main pi agent whose turn issued the `explore` tool call.
-- **Sidekick**: the private sub-agent the tool spawns to navigate the graph. It is invisible
+- **Explore agent**: the private sub-agent the tool spawns to navigate the graph. It is invisible
   to the user and to the caller; only its selected nodes (via the tool) reach the caller.
 - **Node**: a citable unit of code in the graph — a file, or a symbol within a file (a
   function, method, class, …) addressed by `path` plus an optional line `span`/`symbol`.
-- **NodeRef**: the typed description of a node the sidekick returns — identity and location,
+- **NodeRef**: the typed description of a node the explore agent returns — identity and location,
   never content. Defined in §AR-001-ensemble-explore.2.
 - **Registry**: the tool-owned, per-session record of which nodes have already been delivered
   to the caller and the content fingerprint that was delivered (§3).
 
 ## 2. Graph-only selection
 
-### 2.1 Backend-conditional input to the sidekick
+### 2.1 Backend-conditional input to the explore agent
 
-When the graph backend is present, the sidekick navigates the graph and does not read raw
+When the graph backend is present, the explore agent navigates the graph and does not read raw
 file bodies into its own context; its tool surface is graph navigation (query, explain,
 neighbors, stats) and it relays the backend's node-granular results unchanged (§5.6). When
-the backend is absent, the sidekick instead works from raw filesystem results and is
+the backend is absent, the explore agent instead works from raw filesystem results and is
 responsible for trimming them down to the relevant code (§5.6, §7.1).
 
 ### 2.2 Structured selection result
 
-The sidekick terminates by emitting a structured result: an ordered list of `NodeRef`
+The explore agent terminates by emitting a structured result: an ordered list of `NodeRef`
 values (most relevant first) plus a one-line natural-language `summary` of what it found.
 A run that produces no nodes is valid and yields an empty list.
 
-### 2.3 The sidekick does not present or edit
+### 2.3 The explore agent does not present or edit
 
-The sidekick does not format code for the caller, does not propose edits, and does not
+The explore agent does not format code for the caller, does not propose edits, and does not
 address the user. Presentation and content selection are the tool's responsibility (§5),
-not the sidekick's.
+not the explore agent's.
 
 ## 3. Node identity and modification
 
@@ -67,7 +67,7 @@ fallback (§7.1).
 
 ## 4. Deduplication against caller context
 
-For each `NodeRef` the sidekick selects, the tool classifies it against the registry (§6)
+For each `NodeRef` the explore agent selects, the tool classifies it against the registry (§6)
 and acts as follows:
 
 ### 4.1 New
@@ -98,7 +98,7 @@ MUST NOT silently omit the node.
 ### 5.1 One deterministic result
 
 The tool returns exactly one tool result to the caller, composed deterministically by the
-tool (never formatted by the sidekick). It opens with the sidekick `summary` (§2.2).
+tool (never formatted by the explore agent). It opens with the explore agent `summary` (§2.2).
 
 ### 5.2 Grouped, anchored rendering
 
@@ -139,7 +139,7 @@ and the enclosing roster is cheaply available.
 
 When the graph backend is present its results are already node-granular, so the tool performs
 **no post-processing**: backend nodes are relayed to the caller unchanged. When the backend is
-absent, the sidekick post-processes the raw filesystem results to remove code irrelevant to
+absent, the explore agent post-processes the raw filesystem results to remove code irrelevant to
 the task. This trimming is **coarse-grained only** — whole declarations (fields, functions,
 methods, comments) may be dropped, but the content inside a *retained* function body is never
 partially removed or rewritten; kept bodies appear verbatim. Fine-grained edits inside a body
@@ -170,26 +170,26 @@ unchanged content in its live context. When in doubt, the tool re-sends.
 ### 7.1 Graph backend unavailable
 
 When the graph backend is unavailable, `explore` falls back to filesystem search for node
-selection, and the sidekick trims the raw results per §5.6. Identity, fingerprinting, dedup
+selection, and the explore agent trims the raw results per §5.6. Identity, fingerprinting, dedup
 (§4), and message composition (§5) behave identically; only the selection source and the
 trimming responsibility differ.
 
-### 7.2 Sidekick error or abort
+### 7.2 Explore agent error or abort
 
-When the sidekick errors or is aborted, `explore` falls back to a direct backend/filesystem
+When the explore agent errors or is aborted, `explore` falls back to a direct backend/filesystem
 query for the task and returns that result; dedup is best-effort in this path.
 
 ### 7.3 Whole-file request
 
 The explicit whole-file request path (caller asks for complete file content for given paths)
-bypasses the sidekick and returns the requested files; it still records deliveries in the
+bypasses the explore agent and returns the requested files; it still records deliveries in the
 registry so subsequent selections of those files dedup correctly.
 
 ## 8. Non-goals
 
 ### 8.1 No editing
 
-`explore` does not edit code, and the sidekick never proposes edits (§2.3).
+`explore` does not edit code, and the explore agent never proposes edits (§2.3).
 
 ### 8.2 No backend format dependency
 

@@ -33,7 +33,7 @@ The sub-agent runs on the super-agent's resources, all read from `context`:
 
 - **model** — `context.model`.
 - **auth / transport** — the `streamFn` resolves `context.modelRegistry.getApiKeyAndHeaders(model)`
-  then calls `streamSimple` (`explore.ts` sidekick `streamFn`).
+  then calls `streamSimple` (`explore.ts` explore agent `streamFn`).
 - **working dir** — `context.cwd`.
 
 The super-agent's conversation is *not* among these — it is reachable only by pull (§4).
@@ -67,4 +67,4 @@ A new sub-agent type reuses this seam unchanged: build its `Agent` from the spaw
 `ExtensionContext`, attach `createCallerContextTool(context)` plus its own task tools, push the
 request as the prompt, and read its product on return. Only the request schema (§2) and the
 product extraction (§5) are sub-agent-specific; channels, substrate, pull, and abort (§2–§6) are
-identical. The ensemble agent attaches the capability the same way (§AR-002-caller-context.9).
+identical. Any future sub-agent attaches the capability the same way (§AR-002-caller-context.9).
