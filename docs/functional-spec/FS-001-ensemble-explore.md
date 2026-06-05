@@ -167,12 +167,14 @@ unchanged content in its live context. When in doubt, the tool re-sends.
 
 ## 7. Fallbacks and failure modes
 
-### 7.1 Graph backend unavailable
+### 7.1 Graph backend unavailable (default: fall back)
 
-When the graph backend is unavailable, `explore` falls back to filesystem search for node
-selection, and the explore agent trims the raw results per §5.6. Identity, fingerprinting, dedup
-(§4), and message composition (§5) behave identically; only the selection source and the
-trimming responsibility differ.
+By default, when the graph backend (graphify) is unavailable, `explore` falls back to filesystem
+search for node selection, and the explore agent trims the raw results per §5.6. Identity,
+fingerprinting, dedup (§4), and message composition (§5) behave identically; only the selection
+source and the trimming responsibility differ. This availability-first behaviour is the default;
+deployments that require graph-derived results instead select **required-graph mode** (§7.4),
+which refuses to run rather than fall back.
 
 ### 7.2 Explore agent error or abort
 
@@ -184,6 +186,43 @@ query for the task and returns that result; dedup is best-effort in this path.
 The explicit whole-file request path (caller asks for complete file content for given paths)
 bypasses the explore agent and returns the requested files; it still records deliveries in the
 registry so subsequent selections of those files dedup correctly.
+
+### 7.4 Required-graph mode (fail-fast, no fallback)
+
+The §7.1 filesystem fallback trades graph-quality selection for availability: a run with no
+backend still returns something, but its results are filesystem-derived and trimmed by the explore
+agent (§5.6) rather than graph-derived (§2.1). Some deployments need the opposite guarantee — that
+**every** `explore` result is graph-derived and no run ever silently degrades. **Required-graph
+mode** provides it.
+
+#### 7.4.1 A configurable precondition, off by default
+
+Required-graph mode is opt-in; the default is the §7.1 fallback. When it is on, an enabled graph
+backend (graphify) is a **hard precondition** for the agent. "Enabled" means the backend is both
+configured and reachable enough to serve graph navigation (query, explain, neighbors, stats —
+§2.1); a backend that is configured but unreachable counts as **not** enabled for this gate.
+
+#### 7.4.2 Refuse to start, do not degrade
+
+When required-graph mode is on and the backend is not enabled (§7.4.1), the agent **refuses to
+start** rather than run degraded. The refusal is a fail-fast at startup / session initialisation,
+not a silent or per-call failure, and it MUST carry a clear diagnostic naming the missing
+graph backend as the unmet precondition. In this mode the §7.1 fallback is disabled: `explore`
+never selects from the filesystem and the explore agent never trims raw results (§5.6).
+
+#### 7.4.3 Mid-session loss is also fail-fast
+
+If the backend was enabled at startup but becomes unavailable mid-session while required-graph mode
+is on, the agent does not silently fall back. Subsequent `explore` calls fail explicitly with the
+same precondition diagnostic (§7.4.2) rather than degrading to filesystem search. This preserves
+the mode's guarantee for the whole session, not only at startup.
+
+#### 7.4.4 Relation to the explore-agent error path
+
+Required-graph mode governs only the **backend-absent** case. It does not change §7.2: a runtime
+error or abort of the explore agent *while the backend is enabled* still degrades to a direct
+backend query for the task (never to the filesystem in this mode), and dedup remains best-effort
+there.
 
 ## 8. Non-goals
 

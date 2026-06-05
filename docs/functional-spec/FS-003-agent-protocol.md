@@ -44,7 +44,10 @@ The sub-agent returns one upward value (§6), surfaced to the super-agent as a s
 
 There is no mid-run messaging, no streaming of partial products, and no path by which the
 sub-agent writes to the super-agent's session, edits it, or calls its tools
-(§FS-002-caller-context.11.1). The three channels of §2.1–§2.3 are exhaustive.
+(§FS-002-caller-context.11.1). The three channels of §2.1–§2.3 are exhaustive. The opt-in debug
+channel (§10) may surface the sub-agent's activity to the operator and to logs, but it is
+**out-of-band**: it carries nothing into the super-agent, so it is not a fourth protocol channel
+(§11.4).
 
 ## 3. The super-agent's perspective
 
@@ -165,18 +168,93 @@ exploration task and its product is `NodeRef`s; a future sub-agent's request and
 be its own. The capability set (graph tools, `caller_context`) is attached the same way for each
 (§FS-002-caller-context.9).
 
-## 10. Non-goals
+## 10. Observability and debug visibility
 
-### 10.1 No upward writes
+By default the sub-agent is invisible to both the super-agent and the user beyond its product
+(§3.1, §3.3): its tools, transcript, and intermediate reasoning never surface. This is correct for
+the protocol but opaque for debugging — when an `explore` call returns surprising nodes, the
+operator has no way to see *which* tools the explore agent called to get there. This section defines
+an **opt-in debug channel** that exposes the sub-agent's tool activity to the operator (the
+developer or user running pi) and to logs. It is an **observation** of the sub-agent, not a
+participant in the protocol of §2: it carries nothing into the super-agent (§11.4).
+
+### 10.1 Off by default; observation only
+
+Debug visibility is opt-in. With it off, behaviour is exactly §3.1 — the sub-agent's tools,
+transcript, and reasoning are invisible and only the product surfaces. Enabling it MUST NOT change
+the product the super-agent receives, the sub-agent's selections, or the sub-agent's behaviour in
+any way: it only attaches an observation sink. Observation is passive (§10.6).
+
+### 10.2 What the trace exposes
+
+When enabled, each sub-agent tool call is reported as an event carrying the tool name, its
+start/end timing, its success-or-error status, and its ordinal position in the run. For the explore
+agent these are its graph navigation calls (query, explain, neighbors, stats —
+§FS-001-ensemble-explore.2.1) and its `caller_context` pulls (§FS-002-caller-context). The terminal
+product is reported too — for the explore agent, the ordered `NodeRef` list and one-line summary
+(§FS-001-ensemble-explore.2.2) — so the trace shows the full path from tools called to nodes
+selected.
+
+### 10.3 Tiered verbosity, cheapest first
+
+The channel is tiered so its cost matches the need:
+
+- **off** (default) — nothing is captured;
+- **metadata** — tool names, timing, counts, and status only, no payloads;
+- **full** — additionally the tool arguments, a bounded preview of each tool result, and
+  optionally the sub-agent's reasoning.
+
+The tiers follow the safe/unsafe-by-default split of pi's observability design
+(`packages/agent/docs/observability.md`): names, timing, counts, and status are safe to capture;
+arguments, results, file contents, and reasoning are captured **only** at the **full** tier, under
+the same trust domain as `caller_context` (§FS-002-caller-context.10.1, §8). Captured payloads are
+bounded and truncated like §FS-002-caller-context.6 — large content is never dumped unbounded, and
+truncation is stated.
+
+### 10.4 An out-of-band sink, nested under the spawning span
+
+Debug events are emitted to an observation sink — logs, observability subscribers, or an
+interactive debug surface — never into any agent's conversation. They nest as child spans of the
+super-agent's spawning tool call, so a sub-agent's activity is attributable to the turn that
+spawned it (and, for any nested sub-agent, to its parent). This reuses pi's existing observability
+event contract; debug mode is simply the opt-in that turns on content capture for sub-agent spans.
+
+### 10.5 Reusable across sub-agent types
+
+Like the rest of the protocol (§9), the debug channel is identical for every sub-agent. Only the
+set of tool names that appear in the trace specializes per sub-agent type — for the explore agent,
+graph tools and `caller_context`; for a future sub-agent, its own tools.
+
+### 10.6 Passive — never affects the run
+
+Observation never alters execution. A failing, slow, or absent sink MUST NOT abort, delay, or
+change the sub-agent run (mirroring `observability.md`: observability must never affect pi
+execution). When no sink is attached, debug capture is a no-op.
+
+## 11. Non-goals
+
+### 11.1 No upward writes
 
 The sub-agent cannot, through this protocol, message the super-agent mid-run, edit its session,
 or invoke its tools (§2.4, §FS-002-caller-context.11.1).
 
-### 10.2 No peer or cross-session channel
+### 11.2 No peer or cross-session channel
 
 The protocol is strictly super-to-sub within one session. Sub-agent-to-sub-agent messaging and
 reading other sessions are out of scope (§FS-002-caller-context.11.2).
 
-### 10.3 No streaming product
+### 11.3 No streaming product
 
 The product is a single terminal value (§6.1); incremental or partial delivery is out of scope.
+
+### 11.4 The debug channel never reaches the caller model
+
+Debug visibility (§10) surfaces the sub-agent's activity to the operator and logs only. It never
+injects tool traces into the super-agent's context, never becomes part of or alters the product
+(§6), and never adds a sub→super channel (§2.4). Turning it on or off leaves the super-agent's
+input byte-for-byte identical (§10.1).
+
+### 11.5 The debug channel is not a control channel
+
+Debug visibility is read-only observation. It cannot steer, pause, single-step, or otherwise
+control the sub-agent; interactive breakpoints and stepping are out of scope.

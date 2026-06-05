@@ -1,5 +1,5 @@
-import { access, readdir, readFile, stat } from "node:fs/promises";
-import { extname, resolve as resolvePath, sep } from "node:path";
+import { access, appendFile, mkdir, readdir, readFile, stat } from "node:fs/promises";
+import { dirname, extname, resolve as resolvePath, sep } from "node:path";
 import { Agent, type AgentTool, type ThinkingLevel } from "@earendil-works/pi-agent-core";
 import {
 	type Api,
@@ -12,6 +12,7 @@ import {
 import { Text } from "@earendil-works/pi-tui";
 import { spawn } from "child_process";
 import { type Static, type TSchema, Type } from "typebox";
+import { getExploreDebugLogPath } from "../../config.ts";
 import { keyHint } from "../../modes/interactive/components/keybinding-hints.ts";
 import type { Theme } from "../../modes/interactive/theme/theme.ts";
 import { formatPathRelativeToCwdOrAbsolute } from "../../utils/paths.ts";
@@ -37,6 +38,182 @@ const MAX_TOOL_OUTPUT_BYTES = 64 * 1024;
 const DEFAULT_MAX_SNIPPETS = 8;
 const MAX_FALLBACK_FILES = 1_000;
 const SNIPPET_CONTEXT_LINES = 2;
+// §FS-003-agent-protocol.10.3: bound captured payloads like §FS-002-caller-context.6.
+const DEBUG_PAYLOAD_PREVIEW_BYTES = 2_000;
+
+// =============================================================================
+// Required-graph mode (§FS-001-ensemble-explore.7.4)
+// =============================================================================
+
+// §FS-001-ensemble-explore.7.4.1: opt-in, off by default. When on, an enabled graph backend
+// is a hard precondition — explore fails fast instead of falling back to the filesystem (§7.1).
+// Enforced in two places: the CLI startup gate (main.ts, §7.4.2) refuses to start; for embedders
+// that bypass main() (the SDK), the explore tool itself fails fast on each call (createExplore-
+// ToolDefinition, §7.4.3). The startup gate is CLI-only by design; the tool-level check is the
+// backstop that holds the guarantee everywhere.
+export function requireGraphMode(): boolean {
+	const raw = process.env.PI_REQUIRE_GRAPH?.trim().toLowerCase();
+	return raw === "1" || raw === "true" || raw === "yes";
+}
+
+// §FS-001-ensemble-explore.7.4.1: "enabled" means graphify is both configured and reachable
+// enough to answer (the binary resolves and runs). Deeper "can actually serve" failures are
+// caught lazily and surface as the mid-session fail-fast of §7.4.3.
+export async function graphBackendEnabled(cwd: string, signal?: AbortSignal): Promise<boolean> {
+	return commandAvailable(graphifyCommand(), cwd, signal);
+}
+
+// §FS-001-ensemble-explore.7.4.2: the diagnostic naming graphify as the unmet precondition.
+export function requireGraphUnavailableMessage(cwd: string): string {
+	return [
+		`Required-graph mode is on (PI_REQUIRE_GRAPH) but the graph backend (graphify) is not enabled in ${cwd}.`,
+		`Install and configure graphify, or unset PI_REQUIRE_GRAPH to allow the filesystem fallback.`,
+		`See FS-001-ensemble-explore §7.4.`,
+	].join(" ");
+}
+
+// =============================================================================
+// Explore debug visibility (§FS-003-agent-protocol.10)
+// =============================================================================
+
+// §FS-003-agent-protocol.10.3: tiered verbosity, cheapest first.
+export type ExploreDebugLevel = "off" | "metadata" | "full";
+
+// §FS-003-agent-protocol.10: an observed tool call (or product) of the explore agent. This is an
+// out-of-band observation for the operator/logs — it never reaches the caller model (§10.4, §11.4).
+export interface ExploreDebugEvent {
+	type: "tool_call" | "product";
+	// tool_call: status is "ok" | "error". product: status is "ok" | "aborted" (the sub-agent
+	// errored or was aborted before producing a result).
+	tool?: string;
+	ordinal?: number;
+	phase?: "start" | "end";
+	status?: "ok" | "error" | "aborted";
+	durationMs?: number;
+	args?: unknown; // full level only (§10.3)
+	resultPreview?: string; // full level only (§10.3)
+	// product:
+	// The current sub-agent returns free-form text, not structured NodeRefs (AR-001 future work),
+	// so we report whether it produced output rather than a real node count.
+	producedOutput?: boolean;
+	summaryPreview?: string;
+}
+
+export type ExploreDebugSink = (event: ExploreDebugEvent) => void;
+
+// §FS-003-agent-protocol.10.3: off by default; "1"/"true"/"yes"/"metadata" -> metadata; "full" -> full.
+export function exploreDebugLevel(): ExploreDebugLevel {
+	const raw = process.env.PI_EXPLORE_DEBUG?.trim().toLowerCase();
+	if (!raw || raw === "off" || raw === "0" || raw === "false" || raw === "no") {
+		return "off";
+	}
+	return raw === "full" ? "full" : "metadata";
+}
+
+// Tests and embedders may capture events directly instead of reading the log file.
+let debugSinkOverride: ExploreDebugSink | undefined;
+export function setExploreDebugSink(sink: ExploreDebugSink | undefined): void {
+	debugSinkOverride = sink;
+}
+
+function previewPayload(value: unknown): string {
+	let text: string;
+	try {
+		text = typeof value === "string" ? value : JSON.stringify(value);
+	} catch {
+		text = String(value);
+	}
+	if (text === undefined) {
+		return "";
+	}
+	if (text.length <= DEBUG_PAYLOAD_PREVIEW_BYTES) {
+		return text;
+	}
+	// §FS-003-agent-protocol.10.3 / §FS-002-caller-context.6.1: never dump unbounded; state truncation.
+	return `${text.slice(0, DEBUG_PAYLOAD_PREVIEW_BYTES)}… [truncated ${text.length - DEBUG_PAYLOAD_PREVIEW_BYTES} bytes]`;
+}
+
+// Serialize appends through one chain so concurrent events cannot interleave in the JSONL file.
+let debugLogChain: Promise<void> = Promise.resolve();
+
+// §FS-003-agent-protocol.10.4: the default out-of-band sink appends JSONL to the debug log.
+// §FS-003-agent-protocol.10.6: passive — every failure is swallowed so it never affects the run.
+function defaultExploreDebugSink(cwd: string): ExploreDebugSink {
+	return (event) => {
+		try {
+			const line = `${JSON.stringify({ ts: new Date().toISOString(), cwd, ...event })}\n`;
+			const path = getExploreDebugLogPath();
+			debugLogChain = debugLogChain
+				.then(() => mkdir(dirname(path), { recursive: true }))
+				.then(() => appendFile(path, line))
+				.catch(() => {});
+		} catch {}
+	};
+}
+
+function resolveExploreDebugSink(cwd: string): ExploreDebugSink {
+	return debugSinkOverride ?? defaultExploreDebugSink(cwd);
+}
+
+// §FS-003-agent-protocol.10.1: observation only — the wrapped tools return identical results.
+// §FS-003-agent-protocol.10.2: each call reports name, ordinal, timing, and status.
+function instrumentToolsForDebug(tools: AgentTool[], level: ExploreDebugLevel, sink: ExploreDebugSink): AgentTool[] {
+	if (level === "off") {
+		return tools;
+	}
+	const safeEmit = (event: ExploreDebugEvent) => {
+		try {
+			sink(event);
+		} catch {}
+	};
+	let ordinal = 0;
+	return tools.map((tool) => ({
+		...tool,
+		execute: async (toolCallId, params, signal, onUpdate) => {
+			const n = ++ordinal;
+			const startedAt = Date.now();
+			safeEmit({
+				type: "tool_call",
+				tool: tool.name,
+				ordinal: n,
+				phase: "start",
+				args: level === "full" ? params : undefined,
+			});
+			try {
+				const result = await tool.execute(toolCallId, params, signal, onUpdate);
+				safeEmit({
+					type: "tool_call",
+					tool: tool.name,
+					ordinal: n,
+					phase: "end",
+					status: "ok",
+					durationMs: Date.now() - startedAt,
+					resultPreview: level === "full" ? previewPayload(getToolResultText(result)) : undefined,
+				});
+				return result;
+			} catch (error) {
+				safeEmit({
+					type: "tool_call",
+					tool: tool.name,
+					ordinal: n,
+					phase: "end",
+					status: "error",
+					durationMs: Date.now() - startedAt,
+					resultPreview:
+						level === "full" ? previewPayload(error instanceof Error ? error.message : String(error)) : undefined,
+				});
+				throw error;
+			}
+		},
+	}));
+}
+
+function getToolResultText(result: { content: (TextContent | ImageContent)[] }): string {
+	return result.content
+		.filter((part): part is TextContent => part.type === "text")
+		.map((part) => part.text)
+		.join("\n");
+}
 
 const exploreSchema = Type.Object({
 	task: Type.String({
@@ -450,6 +627,7 @@ async function runSidekick(
 	backend: GraphifyBackend,
 	maxSnippets: number,
 	graphifyAvailable: boolean,
+	requireGraph: boolean,
 	signal?: AbortSignal,
 ): Promise<string | undefined> {
 	const model = context.model;
@@ -462,15 +640,21 @@ async function runSidekick(
 	const graphFetchNodeSchema = Type.Object({ node: Type.String() });
 	const graphStatsSchema = Type.Object({});
 
+	// §FS-001-ensemble-explore.7.4.4: in required-graph mode a runtime graph miss never degrades to
+	// the filesystem; it surfaces an explicit no-result instead so the caller only ever sees
+	// graph-derived content.
 	const graphQueryTool = makeTextTool(
 		"graph_query",
 		"Query the code knowledge graph for relevant nodes and relationships.",
 		graphQuerySchema,
 		async ({ question }, toolSignal) => {
-			return (
-				(await backend.query(question, toolSignal)) ??
-				fallbackSearch(question, input.paths, context.cwd, maxSnippets)
-			);
+			const result = await backend.query(question, toolSignal);
+			if (result !== undefined) {
+				return result;
+			}
+			return requireGraph
+				? `No graph result for "${question}". (Required-graph mode: filesystem fallback disabled.)`
+				: fallbackSearch(question, input.paths, context.cwd, maxSnippets);
 		},
 	);
 	const graphExplainTool = makeTextTool(
@@ -478,9 +662,13 @@ async function runSidekick(
 		"Explain a graph node and its neighboring code relationships.",
 		graphExplainSchema,
 		async ({ node }, toolSignal) => {
-			return (
-				(await backend.explain(node, toolSignal)) ?? fallbackSearch(node, input.paths, context.cwd, maxSnippets)
-			);
+			const result = await backend.explain(node, toolSignal);
+			if (result !== undefined) {
+				return result;
+			}
+			return requireGraph
+				? `No graph result for "${node}". (Required-graph mode: filesystem fallback disabled.)`
+				: fallbackSearch(node, input.paths, context.cwd, maxSnippets);
 		},
 	);
 	const graphFetchNodeTool = makeTextTool(
@@ -509,9 +697,16 @@ async function runSidekick(
 	// Graph absent: search + fetch raw files so the sidekick can trim them itself.
 	// Both modes also get caller_context (§FS-002-caller-context.9): read the caller's context.
 	const callerContextTool = createCallerContextTool(context);
-	const tools: AgentTool[] = graphifyAvailable
+	const baseTools: AgentTool[] = graphifyAvailable
 		? [graphQueryTool, graphExplainTool, graphStatsTool, callerContextTool]
 		: [graphQueryTool, graphFetchNodeTool, graphStatsTool, callerContextTool];
+
+	// §FS-003-agent-protocol.10: when debug is enabled, observe the sub-agent's tool calls through
+	// an out-of-band sink. Observation is passive (§10.6) and changes neither the toolset's
+	// behaviour nor the product (§10.1, §11.4).
+	const debugLevel = exploreDebugLevel();
+	const debugSink = debugLevel === "off" ? undefined : resolveExploreDebugSink(context.cwd);
+	const tools = debugSink ? instrumentToolsForDebug(baseTools, debugLevel, debugSink) : baseTools;
 
 	// §FS-002-caller-context.8: announce the capability, push no content.
 	const callerContextLine =
@@ -566,11 +761,27 @@ async function runSidekick(
 		await sidekick.prompt(
 			`Explore this task and return relevant code evidence only:\n${input.task}${focus}${wholeFiles}`,
 		);
+		// §FS-003-agent-protocol.10.2: always report a terminal product event so the trace shows the
+		// full path from tools called to the outcome — including the abort/error case (§10.6).
+		const emitProduct = (status: "ok" | "aborted", text?: string) => {
+			if (!debugSink) {
+				return;
+			}
+			try {
+				debugSink({
+					type: "product",
+					status,
+					producedOutput: !!text && text.length > 0,
+					summaryPreview: debugLevel === "full" ? previewPayload(text ?? "") : undefined,
+				});
+			} catch {}
+		};
 		const last = sidekick.state.messages
 			.slice()
 			.reverse()
 			.find((message) => message.role === "assistant");
 		if (!last || last.role !== "assistant" || last.stopReason === "error" || last.stopReason === "aborted") {
+			emitProduct("aborted");
 			return undefined;
 		}
 		const text = last.content
@@ -578,6 +789,7 @@ async function runSidekick(
 			.map((content) => content.text)
 			.join("\n")
 			.trim();
+		emitProduct("ok", text);
 		return text.length > 0 ? text : undefined;
 	} finally {
 		signal?.removeEventListener("abort", abortSidekick);
@@ -637,8 +849,16 @@ export function createExploreToolDefinition(
 		parameters: exploreSchema,
 		async execute(_toolCallId, input: ExploreToolInput, signal, _onUpdate, context) {
 			const maxSnippets = clampSnippetCount(input.maxSnippets);
+			const requireGraph = requireGraphMode();
 			const backend = new GraphifyBackend(cwd);
 			const graphifyAvailable = await backend.isAvailable(signal);
+			// §FS-001-ensemble-explore.7.4.2/.7.4.3: required-graph mode never degrades. If the backend
+			// is not enabled (including mid-session loss after a clean start), fail fast rather than
+			// falling back to the filesystem. Throwing surfaces the precondition to the caller as a
+			// tool error instead of silently returning filesystem-derived content.
+			if (requireGraph && !graphifyAvailable) {
+				throw new Error(requireGraphUnavailableMessage(cwd));
+			}
 			if (input.wholeFiles && input.paths && input.paths.length > 0) {
 				const contents: string[] = [];
 				let truncation: TruncationResult | undefined;
@@ -659,7 +879,7 @@ export function createExploreToolDefinition(
 			}
 
 			const sidekickText = context
-				? await runSidekick(input, context, backend, maxSnippets, graphifyAvailable, signal)
+				? await runSidekick(input, context, backend, maxSnippets, graphifyAvailable, requireGraph, signal)
 				: undefined;
 			if (sidekickText) {
 				return {
@@ -672,9 +892,13 @@ export function createExploreToolDefinition(
 				};
 			}
 
-			const fallbackText =
-				(await backend.query(input.task, signal)) ??
-				(await fallbackSearch(input.task, input.paths, cwd, maxSnippets));
+			// §FS-001-ensemble-explore.7.4.4: with the backend enabled but no sidekick result, fall back
+			// to a direct backend query — never to the filesystem in required-graph mode.
+			const fallbackText = requireGraph
+				? ((await backend.query(input.task, signal)) ??
+					`No graph result for "${input.task}". (Required-graph mode: filesystem fallback disabled.)`)
+				: ((await backend.query(input.task, signal)) ??
+					(await fallbackSearch(input.task, input.paths, cwd, maxSnippets)));
 			return {
 				content: [{ type: "text", text: fallbackText }],
 				details: {
