@@ -1,0 +1,4 @@
+instance,arm,resolved,input,output,cacheRead,cacheWrite,totalTokens,costUsd,turns,exploreCalls,exploreFallbacks,strictOk,strictNote
+darkreader__darkreader-7241,classic,1,36922,2263,122368,0,161553,0.3137,11,0,0,,
+darkreader__darkreader-7241,ensemble-strict,1,15362,2049,65536,0,82947,0.171,9,5,0,true,5 graph-derived explore calls
+darkreader__darkreader-7241,sidekick-fs,1,17654,3734,101376,0,122764,0.251,12,4,0,,

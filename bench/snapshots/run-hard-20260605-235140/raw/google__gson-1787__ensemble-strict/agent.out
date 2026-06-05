@@ -1,0 +1,18 @@
+Implemented the fix in source only.
+
+Changed:
+- `gson/src/main/java/com/google/gson/internal/bind/TypeAdapterRuntimeTypeWrapper.java`
+  - Adapter selection now treats delegating adapters as reflective when their serialization delegate is reflective.
+- `gson/src/main/java/com/google/gson/Gson.java`
+  - `FutureTypeAdapter` now exposes its serialization delegate.
+- `gson/src/main/java/com/google/gson/internal/bind/TreeTypeAdapter.java`
+  - Exposes serialization delegate for consistency with the same runtime-type selection logic.
+- Added:
+  - `gson/src/main/java/com/google/gson/internal/bind/SerializationDelegatingTypeAdapter.java`
+
+Validation:
+- Manually compiled Gson sources with `javac --release 8`.
+- Verified the reported cyclic `Base` / `Sub` serialization case now outputs:
+  - `{"f":{"i":2}}`
+
+Note: `mvn -pl gson -DskipTests compile` is blocked in this environment by the configured Java release / warning-as-error setup, not by the source changes.

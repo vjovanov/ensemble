@@ -17,6 +17,14 @@ command -v docker >/dev/null || die "docker not found"
 python -c "import multi_swe_bench" 2>/dev/null \
   || die "multi_swe_bench not installed. Run: pip install multi-swe-bench"
 
+# The Python docker SDK defaults to /var/run/docker.sock. Under rootless Docker
+# the daemon is on a user socket; point the SDK at whatever the CLI's active
+# context uses (else: PermissionError on the root socket).
+if [ -z "${DOCKER_HOST:-}" ]; then
+  ctx_host="$(docker context inspect 2>/dev/null | python -c 'import sys,json; print(json.load(sys.stdin)[0]["Endpoints"]["docker"]["Host"])' 2>/dev/null)"
+  [ -n "$ctx_host" ] && export DOCKER_HOST="$ctx_host" && log "DOCKER_HOST=$DOCKER_HOST (from active docker context)"
+fi
+
 # Dataset = the full instance records (need test_patch + f2p/p2p for grading).
 : > "$DATASET"
 for j in "$INST_DIR"/*.json; do node -e 'process.stdout.write(JSON.stringify(require(process.argv[1]))+"\n")' "$j" >> "$DATASET"; done
@@ -32,10 +40,14 @@ for arm in "${ARM_LIST[@]}"; do
   done
   [ -s "$patch" ] || { log "skip $arm (no patches)"; continue; }
   out="$RESULTS_DIR/$arm"; mkdir -p "$out/logs"
+  # Per-arm workdir: the harness caches reports by instance id within workdir, so a
+  # shared workdir makes later arms reuse the first arm's report. Isolate per arm.
+  awork="$EVAL_DIR/workdir/$arm"; rm -rf "$awork"; mkdir -p "$awork"
   cfg="$EVAL_DIR/config.${arm}.json"
   node -e '
     const fs=require("fs");
-    const [,,patch,dataset,workdir,repos,out]=process.argv;
+    // node -e has no script-path slot: argv = [node, ...userArgs].
+    const [patch,dataset,workdir,repos,out,cfgPath]=process.argv.slice(1);
     const cfg={
       mode:"evaluation",
       workdir, repo_dir:repos, need_clone:true, force_build:false,
@@ -45,8 +57,8 @@ for arm in "${ARM_LIST[@]}"; do
       max_workers:2, max_workers_build_image:2, max_workers_run_instance:2,
       global_env:[], specifics:[], skips:[],
     };
-    fs.writeFileSync(process.argv[8], JSON.stringify(cfg,null,2));
-  ' "$patch" "$DATASET" "$EVAL_DIR/workdir" "$EVAL_DIR/repos" "$out" "$cfg"
+    fs.writeFileSync(cfgPath, JSON.stringify(cfg,null,2));
+  ' "$patch" "$DATASET" "$awork" "$EVAL_DIR/repos" "$out" "$cfg"
   log "evaluating arm=$arm (config: $cfg)"
   python -m multi_swe_bench.harness.run_evaluation --config "$cfg" \
     || log "harness returned nonzero for $arm (check $out/logs)"

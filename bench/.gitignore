@@ -1,9 +1,11 @@
-work/
-raw/
-patches/
-results/
-instances/
-eval/workdir/
-eval/repos/
-eval/dataset.jsonl
-eval/config.*.json
+# Generated working dirs at the bench root (anchored with leading / so that
+# snapshots/*/raw, snapshots/*/results, etc. stay tracked for the record).
+/work/
+/raw/
+/patches/
+/results/
+/instances/
+/eval/workdir/
+/eval/repos/
+/eval/dataset.jsonl
+/eval/config.*.json

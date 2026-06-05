@@ -1,0 +1,14 @@
+Implemented the fix in:
+
+- `clap_builder/src/parser/parser.rs`
+
+Change made:
+- Prevent `did_you_mean_error` from mutating `ArgMatcher` when `ignore_errors(true)` is set.
+- Previously, a fuzzy match like `--ig` would mark `ignore_immutable` as `CommandLine` while constructing the ignored error, which blocked the default value from being inserted.
+- Now ignored parse errors no longer leave this suggested argument state behind, so defaults are applied correctly.
+
+Validation run:
+- `cargo check -p clap_builder`
+- Reproduced the provided example against the local workspace; both assertions pass.
+- `cargo test -p clap_builder --lib ignore_errors -- --nocapture`
+- `cargo fmt --check`

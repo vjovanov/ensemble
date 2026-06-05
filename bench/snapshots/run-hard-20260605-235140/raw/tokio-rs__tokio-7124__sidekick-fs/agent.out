@@ -1,0 +1,20 @@
+Implemented the check-cfg migration.
+
+Changes made:
+- Added `[lints.rust] unexpected_cfgs = { ..., check-cfg = [...] }` entries to:
+  - `tokio/Cargo.toml`
+  - `tokio-util/Cargo.toml`
+  - `tokio-stream/Cargo.toml`
+  - `tokio-test/Cargo.toml`
+  - `tokio-macros/Cargo.toml`
+  - `examples/Cargo.toml`
+- Removed non-test `#![allow(unknown_lints, unexpected_cfgs)]` workaround attributes from crate/example sources.
+- Removed hidden doctest workaround lines in `tokio-macros/src/lib.rs`.
+- Updated CI to use `nightly-2024-05-19` and removed the manual `--check-cfg=...` RUSTFLAGS workaround.
+
+Validation run:
+- `RUSTFLAGS='-Dwarnings' cargo check --all-features --tests`
+- `RUSTFLAGS='-Dwarnings -Funexpected_cfgs -Funknown_lints' cargo check -p tokio --all-features --lib`
+- `RUSTFLAGS='-Dwarnings -Funexpected_cfgs -Funknown_lints' cargo check -p tokio-util -p tokio-stream -p tokio-test --all-features --lib`
+- `RUSTFLAGS='-Dwarnings -Funexpected_cfgs -Funknown_lints' cargo check -p examples --all-features --example dump`
+- `RUSTFLAGS='-Dwarnings -Funexpected_cfgs -Funknown_lints' cargo check -p tokio-macros --all-features --lib`

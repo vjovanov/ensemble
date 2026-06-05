@@ -1,0 +1,20 @@
+Implemented minimal source changes to support serializing struct fields through getters while preserving existing field serialization attributes.
+
+Changed files:
+- `serde_derive/src/ser.rs`
+  - Allows `#[serde(getter = "...")]` for non-remote structs during serialization.
+  - Uses getter output wherever field access is generated, including transparent fields.
+  - Supports bare method names like `#[serde(getter = "get_value_with_prefix")]` as `self.get_value_with_prefix()`, while keeping path-style getters like `Type::getter(self)` working.
+
+- `serde_derive/src/internals/check.rs`
+  - Removed the restriction that getters require `#[serde(remote = "...")]`.
+  - Still rejects getters on enum fields.
+
+- `serde_derive/src/de.rs`
+  - Ensures getter-specific deserialize construction behavior only applies to remote derives, so local structs can derive both `Serialize` and `Deserialize` with a getter attribute.
+
+Validation:
+- Ran `cargo check -p serde_derive` successfully.
+- Verified a temporary crate compiles with:
+  - `#[derive(Serialize, Deserialize)]`
+  - `#[serde(getter = "get_value_with_prefix", skip_serializing_if = "String::is_empty")]`

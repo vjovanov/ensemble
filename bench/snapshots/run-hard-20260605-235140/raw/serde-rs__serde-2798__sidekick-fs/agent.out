@@ -1,0 +1,14 @@
+Implemented the minimal source changes in:
+
+- `serde_derive/src/internals/check.rs`
+- `serde_derive/src/ser.rs`
+
+What changed:
+- `#[serde(getter = "...")]` is no longer restricted to `#[serde(remote = "...")]` structs.
+- Local struct serialization now uses the getter value when serializing the field.
+- Unqualified local getter method names like `#[serde(getter = "get_value_with_prefix")]` are supported as method calls on `self`.
+- Existing field attributes like `skip_serializing_if`, `serialize_with`, etc. continue to operate on the getter-produced value.
+
+Validation:
+- Ran `cargo check -p serde_derive` successfully.
+- Also verified a temporary crate compiling a local struct with `#[serde(getter = "...", skip_serializing_if = "...")]`.

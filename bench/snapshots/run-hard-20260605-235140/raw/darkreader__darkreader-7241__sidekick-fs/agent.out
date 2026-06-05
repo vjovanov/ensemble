@@ -1,0 +1,19 @@
+Implemented the fix in:
+
+- `src/generators/utils/parse.ts`
+
+Changed the block delimiter regex used by `indexSitesFixesConfig()` so it only matches delimiter lines made of `==...`, instead of matching any `==` sequence inside CSS/base64 data URLs.
+
+```ts
+const delimiterRegex = /^[^\S\n]*={2,}[^\S\n]*$/gm;
+```
+
+This prevents padded base64 strings ending in `==` from being treated as config block separators.
+
+Validation:
+- Confirmed the new regex matches real delimiter lines and ignores the reported base64 padding case.
+- Attempted to run the relevant Jest test, but local dependencies are unavailable:
+
+```text
+sh: 1: jest: not found
+```

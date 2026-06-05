@@ -1,0 +1,26 @@
+Implemented the check-cfg lint migration.
+
+Changes made:
+- Added `[lints.rust] unexpected_cfgs = { ..., check-cfg = [...] }` entries to relevant manifests:
+  - `tokio/Cargo.toml`
+  - `tokio-util/Cargo.toml`
+  - `tokio-stream/Cargo.toml`
+  - `tokio-test/Cargo.toml`
+  - `tokio-macros/Cargo.toml`
+  - `examples/Cargo.toml`
+- Removed crate-level `#![allow(unknown_lints, unexpected_cfgs)]` workaround from non-test source files.
+- Removed hidden doctest workaround lines in `tokio-macros/src/lib.rs`.
+- Fixed one actual cfg typo caught by the lint:
+  - `#[cfg_attr(not(fs), ...)]` → `#[cfg_attr(not(feature = "fs"), ...)]`
+
+Validation run:
+- `cargo check -p tokio --all-features`
+- `cargo check -p tokio --tests --all-features`
+- `cargo check -p tokio-util --all-features`
+- `cargo check -p tokio-util --tests --all-features`
+- `cargo check -p tokio-stream --all-features`
+- `cargo check -p tokio-stream --tests --all-features`
+- `cargo check -p examples --example dump`
+- `cargo check -p tokio-macros`
+
+Also ran `cargo test -p tokio-macros --doc`; it still has two pre-existing doctest failures around `start_paused`, unrelated to this change.

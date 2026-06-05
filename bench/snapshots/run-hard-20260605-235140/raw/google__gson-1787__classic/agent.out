@@ -1,0 +1,21 @@
+Implemented the fix in source only.
+
+Changed files:
+- `gson/src/main/java/com/google/gson/internal/SerializationDelegatingTypeAdapter.java`
+- `gson/src/main/java/com/google/gson/Gson.java`
+- `gson/src/main/java/com/google/gson/internal/bind/TreeTypeAdapter.java`
+- `gson/src/main/java/com/google/gson/internal/bind/TypeAdapterRuntimeTypeWrapper.java`
+
+What changed:
+- Added an internal interface for adapters which delegate serialization.
+- Made `Gson.FutureTypeAdapter` expose its resolved serialization delegate.
+- Made `TreeTypeAdapter` expose its effective serialization delegate when serialization is delegated.
+- Updated `TypeAdapterRuntimeTypeWrapper` to determine whether an adapter is effectively reflective by unwrapping serialization-delegating adapters before applying the reflective/custom preference logic.
+
+Validation:
+- Compiled sources with `javac --release 8`.
+- Ran a local reproducer for the cyclic `Base` / `Sub` case; output is now:
+
+```json
+{"f":{"i":2}}
+```

@@ -1,0 +1,19 @@
+Implemented the minimal fix in:
+
+- `balancer/rls/internal/keys/builder.go`
+
+Changes:
+- Removed the `github.com/google/go-cmp/cmp` import.
+- Replaced `cmp.Equal(..., cmp.AllowUnexported(...))` with explicit equality helpers for:
+  - `BuilderMap`
+  - `builder`
+  - `matcher`
+  - `[]string`
+
+I attempted to run formatting/tests, but the environment does not have `gofmt`/`go` available:
+
+```text
+/bin/bash: line 1: gofmt: command not found
+```
+
+Verified that `builder.go` no longer references `go-cmp/cmp` or `cmp.Equal`.

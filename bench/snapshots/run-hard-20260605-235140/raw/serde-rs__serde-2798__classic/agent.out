@@ -1,0 +1,17 @@
+Implemented the minimal derive changes to support serializing a field via a getter while keeping other field attributes working.
+
+Changed:
+- Added parsing for `#[serde(serialize_getter = "...")]`
+- Also supports `#[serde(serialize_getter(...))]`
+- Serialization now uses the getter expression for:
+  - normal struct serialization
+  - `skip_serializing_if`
+  - `serialize_with`
+  - tuple/named struct fields
+- Bare getter names like `#[serde(serialize_getter(get_value_with_prefix))]` are treated as methods on `self`
+- Existing `#[serde(getter = "...")]` is now allowed for non-remote `Serialize` derives
+- Getter attributes remain rejected on enum fields
+
+Validation:
+- Ran `cargo fmt`
+- Ran `cargo check -p serde_derive -p serde_derive_internals` successfully, with only pre-existing lifetime-syntax warnings.

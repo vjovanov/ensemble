@@ -1,0 +1,19 @@
+Implemented the minimal fix in:
+
+- `src/generators/utils/parse.ts`
+
+Changed the site-fix delimiter regex used by `indexSitesFixesConfig()` so it only matches delimiter lines, not `==` padding inside base64 strings:
+
+```ts
+const delimiterRegex = /^\s*={2,}\s*$/gm;
+```
+
+This aligns the indexing parser with the existing full parser behavior and prevents base64 padding like `...Jggg==')` from being treated as a block separator.
+
+Validation attempted:
+
+```sh
+npm test -- --runInBand tests/generators/utils/parse.tests.ts
+```
+
+but the repo environment is missing `jest` (`sh: 1: jest: not found`).

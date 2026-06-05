@@ -1,0 +1,17 @@
+Implemented the minimal source fix.
+
+Changed:
+- `crates/nu-protocol/src/process/child.rs`
+  - Added a `check_exit_code` flag to `ChildProcess`.
+  - `into_bytes()`/`wait()` now only turn non-zero exits into errors when that flag is enabled.
+- `crates/nu-command/src/system/run_external.rs`
+  - External commands whose stdout/stderr is piped to another command no longer enable exit-code error propagation.
+- Updated direct `ChildProcess::new/from_raw` callers accordingly.
+
+Verified:
+- `cargo check -q -p nu-protocol -p nu-command -p nu-cmd-lang`
+- `cargo fmt --check`
+- Reproduced behavior:
+  - external as final pipeline command still errors on exit code 1
+  - external piped into `lines` does not error
+  - external piped into `detect columns` no longer errors on exit code 1

@@ -1,0 +1,95 @@
+diff --git c/serde_derive/src/de.rs i/serde_derive/src/de.rs
+index 996e97e869..f2ca003ba5 100644
+--- c/serde_derive/src/de.rs
++++ i/serde_derive/src/de.rs
+@@ -133,7 +133,7 @@ impl Parameters {
+         let this_value = this::this_value(cont);
+         let borrowed = borrowed_lifetimes(cont);
+         let generics = build_generics(cont, &borrowed);
+-        let has_getter = cont.data.has_getter();
++        let has_getter = cont.attrs.remote().is_some() && cont.data.has_getter();
+         let is_packed = cont.attrs.is_packed();
+ 
+         Parameters {
+diff --git c/serde_derive/src/internals/check.rs i/serde_derive/src/internals/check.rs
+index 52b0f379fd..5b52420b4b 100644
+--- c/serde_derive/src/internals/check.rs
++++ i/serde_derive/src/internals/check.rs
+@@ -73,25 +73,14 @@ fn check_remote_generic(cx: &Ctxt, cont: &Container) {
+     }
+ }
+ 
+-// Getters are only allowed inside structs (not enums) with the `remote`
+-// attribute.
++// Getters are only allowed inside structs (not enums).
+ fn check_getter(cx: &Ctxt, cont: &Container) {
+-    match cont.data {
+-        Data::Enum(_) => {
+-            if cont.data.has_getter() {
+-                cx.error_spanned_by(
+-                    cont.original,
+-                    "#[serde(getter = \"...\")] is not allowed in an enum",
+-                );
+-            }
+-        }
+-        Data::Struct(_, _) => {
+-            if cont.data.has_getter() && cont.attrs.remote().is_none() {
+-                cx.error_spanned_by(
+-                    cont.original,
+-                    "#[serde(getter = \"...\")] can only be used in structs that have #[serde(remote = \"...\")]",
+-                );
+-            }
++    if let Data::Enum(_) = cont.data {
++        if cont.data.has_getter() {
++            cx.error_spanned_by(
++                cont.original,
++                "#[serde(getter = \"...\")] is not allowed in an enum",
++            );
+         }
+     }
+ }
+diff --git c/serde_derive/src/ser.rs i/serde_derive/src/ser.rs
+index 35f8ca4bd4..51683a4414 100644
+--- c/serde_derive/src/ser.rs
++++ i/serde_derive/src/ser.rs
+@@ -189,9 +189,9 @@ fn serialize_transparent(cont: &Container, params: &Parameters) -> Fragment {
+         Data::Enum(_) => unreachable!(),
+     };
+ 
+-    let self_var = &params.self_var;
+     let transparent_field = fields.iter().find(|f| f.attrs.transparent()).unwrap();
+     let member = &transparent_field.member;
++    let field_expr = get_member(params, transparent_field, member);
+ 
+     let path = match transparent_field.attrs.serialize_with() {
+         Some(path) => quote!(#path),
+@@ -202,7 +202,7 @@ fn serialize_transparent(cont: &Container, params: &Parameters) -> Fragment {
+     };
+ 
+     quote_block! {
+-        #path(&#self_var.#member, __serializer)
++        #path(#field_expr, __serializer)
+     }
+ }
+ 
+@@ -1280,8 +1280,18 @@ fn get_member(params: &Parameters, field: &Field, member: &Member) -> TokenStrea
+             let ty = field.ty;
+             quote!(_serde::__private::ser::constrain::<#ty>(&#getter(#self_var)))
+         }
+-        (false, Some(_)) => {
+-            unreachable!("getter is only allowed for remote impls");
++        (false, Some(getter)) => {
++            let ty = field.ty;
++            if getter.qself.is_none()
++                && getter.path.leading_colon.is_none()
++                && getter.path.segments.len() == 1
++                && getter.path.segments[0].arguments.is_none()
++            {
++                let getter = &getter.path.segments[0].ident;
++                quote!(_serde::__private::ser::constrain::<#ty>(&#self_var.#getter()))
++            } else {
++                quote!(_serde::__private::ser::constrain::<#ty>(&#getter(#self_var)))
++            }
+         }
+     }
+ }

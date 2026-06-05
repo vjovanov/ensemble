@@ -1,0 +1,33 @@
+{
+    "total_instances": 4,
+    "submitted_instances": 4,
+    "completed_instances": 4,
+    "incomplete_instances": 0,
+    "resolved_instances": 1,
+    "unresolved_instances": 3,
+    "empty_patch_instances": 0,
+    "error_instances": 0,
+    "submitted_ids": [
+        "darkreader/darkreader:pr-7241",
+        "serde-rs/serde:pr-2798",
+        "grpc/grpc-go:pr-3476",
+        "google/gson:pr-1787"
+    ],
+    "completed_ids": [
+        "darkreader/darkreader:pr-7241",
+        "serde-rs/serde:pr-2798",
+        "grpc/grpc-go:pr-3476",
+        "google/gson:pr-1787"
+    ],
+    "incomplete_ids": [],
+    "resolved_ids": [
+        "darkreader/darkreader:pr-7241"
+    ],
+    "unresolved_ids": [
+        "serde-rs/serde:pr-2798",
+        "grpc/grpc-go:pr-3476",
+        "google/gson:pr-1787"
+    ],
+    "empty_patch_ids": [],
+    "error_ids": []
+}

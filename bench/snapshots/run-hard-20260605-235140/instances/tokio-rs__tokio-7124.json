@@ -1,0 +1,2186 @@
+{
+  "org": "tokio-rs",
+  "repo": "tokio",
+  "number": 7124,
+  "state": "closed",
+  "title": "chore: use [lints] to address unexpected_cfgs lint",
+  "body": "<!--\r\nThank you for your Pull Request. Please provide a description above and review\r\nthe requirements below.\r\n\r\nBug fixes and new features should include tests.\r\n\r\nContributors guide: https://github.com/tokio-rs/tokio/blob/master/CONTRIBUTING.md\r\n\r\nThe contributors guide includes instructions for running rustfmt and building the\r\ndocumentation, which requires special commands beyond `cargo fmt` and `cargo doc`.\r\n-->\r\n\r\n## Motivation\r\n\r\nCloses #6583\r\n\r\n\r\n## Solution\r\n\r\nThis uses `[lints.rust.unexpected_cfgs.check-cfg]` as suggested in #6583.\r\n\r\nThis also bumps nightly toolchain to the latest (nightly-2025-01-25) because the above config is not recognized in old nightly.\r\n\r\n```\r\nwarning: /home/runner/work/tokio/tokio/Cargo.toml: unused manifest key: workspace.lints.rust.unexpected_cfgs.check-cfg\r\n```",
+  "base": {
+    "label": "tokio-rs:master",
+    "ref": "master",
+    "sha": "fb7dec0e952d0d796b98650998c44a21d6775564"
+  },
+  "resolved_issues": [
+    {
+      "number": 6583,
+      "title": "Use `[lints.rust.unexpected_cfgs.check-cfg]` instead of hacky check-cfg workaround",
+      "body": "With the release of rust-lang/cargo#13913 (in nightly-2024-05-19), there is no longer any need for the kind of workarounds employed in [#6538](https://github.com/tokio-rs/tokio/pull/6538). Cargo has gain the ability to declare `--check-cfg` args directly inside the `[lints]` table with [`[lints.rust.unexpected_cfgs.check-cfg]`](https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html#check-cfg-in-lintsrust-table)[^1]:\r\n\r\n`Cargo.toml`:\r\n```toml\r\n[lints.rust]\r\nunexpected_cfgs = { level = \"warn\", check-cfg = ['cfg(foo)'] }\r\n```\r\n\r\n> Note that the diagnostic output of the lint has been updated to suggest the `[lints]` approach first. You can use it to guide you through the `--check-cfg` arguments that may need to be added.\r\n\r\n[^1]: take effect on Rust 1.80 (current nightly), is ignored on Rust 1.79 (current beta), and produce an unused warning below\r\n\r\n_Originally posted by @Urgau in https://github.com/tokio-rs/tokio/issues/6538#issuecomment-2128036174_\r\n            "
+    }
+  ],
+  "fix_patch": "diff --git a/.cirrus.yml b/.cirrus.yml\nindex a7ce0d9d456..6a4e7b8e5af 100644\n--- a/.cirrus.yml\n+++ b/.cirrus.yml\n@@ -4,7 +4,7 @@ freebsd_instance:\n   image_family: freebsd-14-1\n env:\n   RUST_STABLE: stable\n-  RUST_NIGHTLY: nightly-2024-05-05\n+  RUST_NIGHTLY: nightly-2025-01-25\n   RUSTFLAGS: -D warnings\n \n # Test FreeBSD in a full VM on cirrus-ci.com.  Test the i686 target too, in the\ndiff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml\nindex a867a6e105f..f7e9102d7ec 100644\n--- a/.github/workflows/ci.yml\n+++ b/.github/workflows/ci.yml\n@@ -16,9 +16,9 @@ env:\n   RUSTUP_WINDOWS_PATH_ADD_BIN: 1\n   # Change to specific Rust release to pin\n   rust_stable: stable\n-  rust_nightly: nightly-2024-05-05\n+  rust_nightly: nightly-2025-01-25\n   # Pin a specific miri version\n-  rust_miri_nightly: nightly-2024-10-21\n+  rust_miri_nightly: nightly-2025-01-25\n   rust_clippy: '1.77'\n   # When updating this, also update:\n   # - README.md\n@@ -1086,23 +1086,6 @@ jobs:\n         run: cargo check-external-types --all-features\n         working-directory: tokio\n \n-  check-unexpected-lints-cfgs:\n-    name: check unexpected lints and cfgs\n-    needs: basics\n-    runs-on: ubuntu-latest\n-    steps:\n-      - uses: actions/checkout@v4\n-      - name: Install Rust ${{ env.rust_nightly }}\n-        uses: dtolnay/rust-toolchain@master\n-        with:\n-          toolchain: ${{ env.rust_nightly }}\n-      - name: don't allow warnings\n-        run: sed -i '/#!\\[allow(unknown_lints, unexpected_cfgs)\\]/d' */src/lib.rs */tests/*.rs\n-      - name: check for unknown lints and cfgs\n-        run: cargo check --all-features --tests\n-        env:\n-          RUSTFLAGS: -Dwarnings --check-cfg=cfg(loom,tokio_unstable,tokio_taskdump,fuzzing,mio_unsupported_force_poll_poll,tokio_internal_mt_counters,fs,tokio_no_parking_lot,tokio_no_tuning_tests) -Funexpected_cfgs -Funknown_lints\n-\n   check-fuzzing:\n     name: check-fuzzing\n     needs: basics\ndiff --git a/Cargo.toml b/Cargo.toml\nindex 2238deac71c..c215946f421 100644\n--- a/Cargo.toml\n+++ b/Cargo.toml\n@@ -17,3 +17,15 @@ members = [\n \n [workspace.metadata.spellcheck]\n config = \"spellcheck.toml\"\n+\n+[workspace.lints.rust]\n+unexpected_cfgs = { level = \"warn\", check-cfg = [\n+  'cfg(fuzzing)',\n+  'cfg(loom)',\n+  'cfg(mio_unsupported_force_poll_poll)',\n+  'cfg(tokio_internal_mt_counters)',\n+  'cfg(tokio_no_parking_lot)',\n+  'cfg(tokio_no_tuning_tests)',\n+  'cfg(tokio_taskdump)',\n+  'cfg(tokio_unstable)',\n+] }\ndiff --git a/benches/Cargo.toml b/benches/Cargo.toml\nindex 44156fcbfb5..de39565b398 100644\n--- a/benches/Cargo.toml\n+++ b/benches/Cargo.toml\n@@ -95,3 +95,6 @@ harness = false\n name = \"time_timeout\"\n path = \"time_timeout.rs\"\n harness = false\n+\n+[lints]\n+workspace = true\ndiff --git a/examples/Cargo.toml b/examples/Cargo.toml\nindex 54f2ecb8a4f..84112c08dab 100644\n--- a/examples/Cargo.toml\n+++ b/examples/Cargo.toml\n@@ -95,3 +95,6 @@ path = \"named-pipe-multi-client.rs\"\n [[example]]\n name = \"dump\"\n path = \"dump.rs\"\n+\n+[lints]\n+workspace = true\ndiff --git a/examples/dump.rs b/examples/dump.rs\nindex 6f744713f7c..c7ece458ff8 100644\n--- a/examples/dump.rs\n+++ b/examples/dump.rs\n@@ -1,5 +1,3 @@\n-#![allow(unknown_lints, unexpected_cfgs)]\n-\n //! This example demonstrates tokio's experimental task dumping functionality.\n //! This application deadlocks. Input CTRL+C to display traces of each task, or\n //! input CTRL+C twice within 1 second to quit.\ndiff --git a/tokio-macros/Cargo.toml b/tokio-macros/Cargo.toml\nindex e47e4116049..3305385d94e 100644\n--- a/tokio-macros/Cargo.toml\n+++ b/tokio-macros/Cargo.toml\n@@ -31,3 +31,6 @@ tokio = { version = \"1.0.0\", path = \"../tokio\", features = [\"full\"] }\n \n [package.metadata.docs.rs]\n all-features = true\n+\n+[lints]\n+workspace = true\ndiff --git a/tokio-macros/src/lib.rs b/tokio-macros/src/lib.rs\nindex 29ea2867cff..32353b3807b 100644\n--- a/tokio-macros/src/lib.rs\n+++ b/tokio-macros/src/lib.rs\n@@ -1,4 +1,3 @@\n-#![allow(unknown_lints, unexpected_cfgs)]\n #![allow(clippy::needless_doctest_main)]\n #![warn(\n     missing_debug_implementations,\n@@ -211,7 +210,6 @@ use proc_macro::TokenStream;\n /// This option is only compatible with the `current_thread` runtime.\n ///\n /// ```no_run\n-/// # #![allow(unknown_lints, unexpected_cfgs)]\n /// #[cfg(tokio_unstable)]\n /// #[tokio::main(flavor = \"current_thread\", unhandled_panic = \"shutdown_runtime\")]\n /// async fn main() {\n@@ -226,7 +224,6 @@ use proc_macro::TokenStream;\n /// Equivalent code not using `#[tokio::main]`\n ///\n /// ```no_run\n-/// # #![allow(unknown_lints, unexpected_cfgs)]\n /// #[cfg(tokio_unstable)]\n /// fn main() {\n ///     tokio::runtime::Builder::new_current_thread()\n@@ -480,7 +477,6 @@ pub fn main_rt(args: TokenStream, item: TokenStream) -> TokenStream {\n /// This option is only compatible with the `current_thread` runtime.\n ///\n /// ```no_run\n-/// # #![allow(unknown_lints, unexpected_cfgs)]\n /// #[cfg(tokio_unstable)]\n /// #[tokio::test(flavor = \"current_thread\", unhandled_panic = \"shutdown_runtime\")]\n /// async fn my_test() {\n@@ -495,7 +491,6 @@ pub fn main_rt(args: TokenStream, item: TokenStream) -> TokenStream {\n /// Equivalent code not using `#[tokio::test]`\n ///\n /// ```no_run\n-/// # #![allow(unknown_lints, unexpected_cfgs)]\n /// #[cfg(tokio_unstable)]\n /// #[test]\n /// fn my_test() {\ndiff --git a/tokio-stream/Cargo.toml b/tokio-stream/Cargo.toml\nindex 81d9b9d2022..547d7f5deaf 100644\n--- a/tokio-stream/Cargo.toml\n+++ b/tokio-stream/Cargo.toml\n@@ -56,3 +56,6 @@ rustdoc-args = [\"--cfg\", \"docsrs\"]\n # This should allow `docsrs` to be read across projects, so that `tokio-stream`\n # can pick up stubbed types exported by `tokio`.\n rustc-args = [\"--cfg\", \"docsrs\"]\n+\n+[lints]\n+workspace = true\ndiff --git a/tokio-stream/src/lib.rs b/tokio-stream/src/lib.rs\nindex f2b463bcb9a..28fa22a2ff6 100644\n--- a/tokio-stream/src/lib.rs\n+++ b/tokio-stream/src/lib.rs\n@@ -1,4 +1,3 @@\n-#![allow(unknown_lints, unexpected_cfgs)]\n #![allow(\n     clippy::cognitive_complexity,\n     clippy::large_enum_variant,\ndiff --git a/tokio-util/Cargo.toml b/tokio-util/Cargo.toml\nindex d215590d9f2..b5a93dc3b50 100644\n--- a/tokio-util/Cargo.toml\n+++ b/tokio-util/Cargo.toml\n@@ -68,3 +68,6 @@ rustc-args = [\"--cfg\", \"docsrs\", \"--cfg\", \"tokio_unstable\"]\n \n [package.metadata.playground]\n features = [\"full\"]\n+\n+[lints]\n+workspace = true\ndiff --git a/tokio-util/src/lib.rs b/tokio-util/src/lib.rs\nindex 34f69fd14e3..1df4de1b459 100644\n--- a/tokio-util/src/lib.rs\n+++ b/tokio-util/src/lib.rs\n@@ -1,4 +1,3 @@\n-#![allow(unknown_lints, unexpected_cfgs)]\n #![allow(clippy::needless_doctest_main)]\n #![warn(\n     missing_debug_implementations,\ndiff --git a/tokio/Cargo.toml b/tokio/Cargo.toml\nindex 86017871680..2b0c1127a71 100644\n--- a/tokio/Cargo.toml\n+++ b/tokio/Cargo.toml\n@@ -173,3 +173,6 @@ allowed_external_types = [\n   \"bytes::buf::buf_mut::BufMut\",\n   \"tokio_macros::*\",\n ]\n+\n+[lints]\n+workspace = true\ndiff --git a/tokio/src/lib.rs b/tokio/src/lib.rs\nindex b85921f31de..a69def93634 100644\n--- a/tokio/src/lib.rs\n+++ b/tokio/src/lib.rs\n@@ -1,4 +1,3 @@\n-#![allow(unknown_lints, unexpected_cfgs)]\n #![allow(\n     clippy::cognitive_complexity,\n     clippy::large_enum_variant,\ndiff --git a/tokio/src/runtime/blocking/pool.rs b/tokio/src/runtime/blocking/pool.rs\nindex a5f09d936dd..23180dc5245 100644\n--- a/tokio/src/runtime/blocking/pool.rs\n+++ b/tokio/src/runtime/blocking/pool.rs\n@@ -128,7 +128,7 @@ pub(crate) struct Task {\n \n #[derive(PartialEq, Eq)]\n pub(crate) enum Mandatory {\n-    #[cfg_attr(not(fs), allow(dead_code))]\n+    #[cfg_attr(not(feature = \"fs\"), allow(dead_code))]\n     Mandatory,\n     NonMandatory,\n }\n",
+  "test_patch": "diff --git a/stress-test/Cargo.toml b/stress-test/Cargo.toml\nindex 60c07e4eabd..79db8ce1da1 100644\n--- a/stress-test/Cargo.toml\n+++ b/stress-test/Cargo.toml\n@@ -13,3 +13,6 @@ tokio = { version = \"1.0.0\", path = \"../tokio/\", features = [\"full\"] }\n \n [dev-dependencies]\n rand = \"0.8\"\n+\n+[lints]\n+workspace = true\ndiff --git a/tests-build/Cargo.toml b/tests-build/Cargo.toml\nindex 639dc3d1292..ee27d6b5ab5 100644\n--- a/tests-build/Cargo.toml\n+++ b/tests-build/Cargo.toml\n@@ -15,3 +15,6 @@ tokio = { version = \"1.0.0\", path = \"../tokio\", optional = true }\n \n [dev-dependencies]\n trybuild = \"1.0\"\n+\n+[lints]\n+workspace = true\ndiff --git a/tests-integration/Cargo.toml b/tests-integration/Cargo.toml\nindex 74724917f15..5b15017b943 100644\n--- a/tests-integration/Cargo.toml\n+++ b/tests-integration/Cargo.toml\n@@ -61,3 +61,6 @@ tokio-test = { version = \"0.4\", path = \"../tokio-test\", optional = true }\n doc-comment = \"0.3.1\"\n futures = { version = \"0.3.0\", features = [\"async-await\"] }\n bytes = \"1.0.0\"\n+\n+[lints]\n+workspace = true\ndiff --git a/tokio-test/Cargo.toml b/tokio-test/Cargo.toml\nindex 536c5a848e8..c8d998fd368 100644\n--- a/tokio-test/Cargo.toml\n+++ b/tokio-test/Cargo.toml\n@@ -30,3 +30,6 @@ futures-util = \"0.3.0\"\n \n [package.metadata.docs.rs]\n all-features = true\n+\n+[lints]\n+workspace = true\ndiff --git a/tokio-test/src/lib.rs b/tokio-test/src/lib.rs\nindex 9f60faf7952..87e63861210 100644\n--- a/tokio-test/src/lib.rs\n+++ b/tokio-test/src/lib.rs\n@@ -1,4 +1,3 @@\n-#![allow(unknown_lints, unexpected_cfgs)]\n #![warn(\n     missing_debug_implementations,\n     missing_docs,\ndiff --git a/tokio-util/tests/task_join_map.rs b/tokio-util/tests/task_join_map.rs\nindex 8757f8b5c6e..1ab5f9ba832 100644\n--- a/tokio-util/tests/task_join_map.rs\n+++ b/tokio-util/tests/task_join_map.rs\n@@ -1,4 +1,3 @@\n-#![allow(unknown_lints, unexpected_cfgs)]\n #![warn(rust_2018_idioms)]\n #![cfg(all(feature = \"rt\", tokio_unstable))]\n \ndiff --git a/tokio/tests/_require_full.rs b/tokio/tests/_require_full.rs\nindex 81c25179615..d33943a960d 100644\n--- a/tokio/tests/_require_full.rs\n+++ b/tokio/tests/_require_full.rs\n@@ -1,5 +1,3 @@\n-#![allow(unknown_lints, unexpected_cfgs)]\n-\n #[cfg(not(any(feature = \"full\", target_family = \"wasm\")))]\n compile_error!(\"run main Tokio tests with `--features full`\");\n \ndiff --git a/tokio/tests/dump.rs b/tokio/tests/dump.rs\nindex 68b53aaf291..c946f38436c 100644\n--- a/tokio/tests/dump.rs\n+++ b/tokio/tests/dump.rs\n@@ -1,4 +1,3 @@\n-#![allow(unknown_lints, unexpected_cfgs)]\n #![cfg(all(\n     tokio_unstable,\n     tokio_taskdump,\ndiff --git a/tokio/tests/macros_select.rs b/tokio/tests/macros_select.rs\nindex fdf7fde1342..0c5ae6d9ab0 100644\n--- a/tokio/tests/macros_select.rs\n+++ b/tokio/tests/macros_select.rs\n@@ -1,4 +1,3 @@\n-#![allow(unknown_lints, unexpected_cfgs)]\n #![cfg(feature = \"macros\")]\n #![allow(clippy::disallowed_names)]\n \ndiff --git a/tokio/tests/macros_test.rs b/tokio/tests/macros_test.rs\nindex bed443cf293..bcc230f34fa 100644\n--- a/tokio/tests/macros_test.rs\n+++ b/tokio/tests/macros_test.rs\n@@ -1,4 +1,3 @@\n-#![allow(unknown_lints, unexpected_cfgs)]\n #![cfg(all(feature = \"full\", not(target_os = \"wasi\")))] // Wasi doesn't support threading\n \n use tokio::test;\ndiff --git a/tokio/tests/rt_basic.rs b/tokio/tests/rt_basic.rs\nindex f2ec0df9ff6..cedea3811a3 100644\n--- a/tokio/tests/rt_basic.rs\n+++ b/tokio/tests/rt_basic.rs\n@@ -1,4 +1,3 @@\n-#![allow(unknown_lints, unexpected_cfgs)]\n #![warn(rust_2018_idioms)]\n #![cfg(feature = \"full\")]\n #![cfg(not(miri))] // Possible bug on Miri.\ndiff --git a/tokio/tests/rt_common.rs b/tokio/tests/rt_common.rs\nindex 26a2adbadaf..c07e3e9ddb9 100644\n--- a/tokio/tests/rt_common.rs\n+++ b/tokio/tests/rt_common.rs\n@@ -1,4 +1,3 @@\n-#![allow(unknown_lints, unexpected_cfgs)]\n #![allow(clippy::needless_range_loop)]\n #![warn(rust_2018_idioms)]\n #![cfg(feature = \"full\")]\ndiff --git a/tokio/tests/rt_handle.rs b/tokio/tests/rt_handle.rs\nindex 3773b8972af..bfbeff1b2e4 100644\n--- a/tokio/tests/rt_handle.rs\n+++ b/tokio/tests/rt_handle.rs\n@@ -1,4 +1,3 @@\n-#![allow(unknown_lints, unexpected_cfgs)]\n #![warn(rust_2018_idioms)]\n #![cfg(feature = \"full\")]\n \ndiff --git a/tokio/tests/rt_local.rs b/tokio/tests/rt_local.rs\nindex 1f14f5444d3..5d276250b34 100644\n--- a/tokio/tests/rt_local.rs\n+++ b/tokio/tests/rt_local.rs\n@@ -1,4 +1,3 @@\n-#![allow(unknown_lints, unexpected_cfgs)]\n #![warn(rust_2018_idioms)]\n #![cfg(all(feature = \"full\", tokio_unstable))]\n \ndiff --git a/tokio/tests/rt_metrics.rs b/tokio/tests/rt_metrics.rs\nindex e9f351007d5..ad3b0e367e0 100644\n--- a/tokio/tests/rt_metrics.rs\n+++ b/tokio/tests/rt_metrics.rs\n@@ -1,4 +1,3 @@\n-#![allow(unknown_lints, unexpected_cfgs)]\n #![warn(rust_2018_idioms)]\n #![cfg(all(feature = \"full\", not(target_os = \"wasi\"), target_has_atomic = \"64\"))]\n \ndiff --git a/tokio/tests/rt_threaded.rs b/tokio/tests/rt_threaded.rs\nindex 777b0d6a07c..f0ed8443f9c 100644\n--- a/tokio/tests/rt_threaded.rs\n+++ b/tokio/tests/rt_threaded.rs\n@@ -1,4 +1,3 @@\n-#![allow(unknown_lints, unexpected_cfgs)]\n #![warn(rust_2018_idioms)]\n // Too slow on miri.\n #![cfg(all(feature = \"full\", not(target_os = \"wasi\"), not(miri)))]\ndiff --git a/tokio/tests/rt_threaded_alt.rs b/tokio/tests/rt_threaded_alt.rs\nindex f7e52af83dd..c1dc71dedc1 100644\n--- a/tokio/tests/rt_threaded_alt.rs\n+++ b/tokio/tests/rt_threaded_alt.rs\n@@ -1,4 +1,3 @@\n-#![allow(unknown_lints, unexpected_cfgs)]\n #![warn(rust_2018_idioms)]\n #![cfg(all(feature = \"full\", not(target_os = \"wasi\")))]\n #![cfg(tokio_unstable)]\ndiff --git a/tokio/tests/rt_unstable_metrics.rs b/tokio/tests/rt_unstable_metrics.rs\nindex 85eba07d389..60cdc525ff1 100644\n--- a/tokio/tests/rt_unstable_metrics.rs\n+++ b/tokio/tests/rt_unstable_metrics.rs\n@@ -1,4 +1,3 @@\n-#![allow(unknown_lints, unexpected_cfgs)]\n #![warn(rust_2018_idioms)]\n #![cfg(all(\n     feature = \"full\",\ndiff --git a/tokio/tests/task_builder.rs b/tokio/tests/task_builder.rs\nindex 4d1248500ab..c700f229f9f 100644\n--- a/tokio/tests/task_builder.rs\n+++ b/tokio/tests/task_builder.rs\n@@ -1,4 +1,3 @@\n-#![allow(unknown_lints, unexpected_cfgs)]\n #![cfg(all(tokio_unstable, feature = \"tracing\"))]\n \n use std::rc::Rc;\ndiff --git a/tokio/tests/task_hooks.rs b/tokio/tests/task_hooks.rs\nindex 1e2de7e4b4c..185b9126cca 100644\n--- a/tokio/tests/task_hooks.rs\n+++ b/tokio/tests/task_hooks.rs\n@@ -1,4 +1,3 @@\n-#![allow(unknown_lints, unexpected_cfgs)]\n #![warn(rust_2018_idioms)]\n #![cfg(all(feature = \"full\", tokio_unstable, target_has_atomic = \"64\"))]\n \ndiff --git a/tokio/tests/task_id.rs b/tokio/tests/task_id.rs\nindex c0aed66f16f..0cbf80d5ace 100644\n--- a/tokio/tests/task_id.rs\n+++ b/tokio/tests/task_id.rs\n@@ -1,4 +1,3 @@\n-#![allow(unknown_lints, unexpected_cfgs)]\n #![warn(rust_2018_idioms)]\n #![cfg(feature = \"full\")]\n \ndiff --git a/tokio/tests/task_join_set.rs b/tokio/tests/task_join_set.rs\nindex d07a2824889..f705fa507d7 100644\n--- a/tokio/tests/task_join_set.rs\n+++ b/tokio/tests/task_join_set.rs\n@@ -1,4 +1,3 @@\n-#![allow(unknown_lints, unexpected_cfgs)]\n #![warn(rust_2018_idioms)]\n #![cfg(feature = \"full\")]\n \ndiff --git a/tokio/tests/task_local_set.rs b/tokio/tests/task_local_set.rs\nindex d910efb8b65..30f20ed0d1d 100644\n--- a/tokio/tests/task_local_set.rs\n+++ b/tokio/tests/task_local_set.rs\n@@ -1,4 +1,3 @@\n-#![allow(unknown_lints, unexpected_cfgs)]\n #![warn(rust_2018_idioms)]\n #![cfg(feature = \"full\")]\n \ndiff --git a/tokio/tests/task_yield_now.rs b/tokio/tests/task_yield_now.rs\nindex 3b462e92240..e6fe5d2009a 100644\n--- a/tokio/tests/task_yield_now.rs\n+++ b/tokio/tests/task_yield_now.rs\n@@ -1,4 +1,3 @@\n-#![allow(unknown_lints, unexpected_cfgs)]\n #![cfg(all(feature = \"full\", not(target_os = \"wasi\"), tokio_unstable))]\n \n use tokio::task;\ndiff --git a/tokio/tests/tracing_sync.rs b/tokio/tests/tracing_sync.rs\nindex 7391cd8b735..7065282c44b 100644\n--- a/tokio/tests/tracing_sync.rs\n+++ b/tokio/tests/tracing_sync.rs\n@@ -2,7 +2,6 @@\n //!\n //! These tests ensure that the instrumentation for tokio\n //! synchronization primitives is correct.\n-#![allow(unknown_lints, unexpected_cfgs)]\n #![warn(rust_2018_idioms)]\n #![cfg(all(tokio_unstable, feature = \"tracing\", target_has_atomic = \"64\"))]\n \ndiff --git a/tokio/tests/tracing_task.rs b/tokio/tests/tracing_task.rs\nindex 5466ad960f0..a9317bf5b12 100644\n--- a/tokio/tests/tracing_task.rs\n+++ b/tokio/tests/tracing_task.rs\n@@ -2,7 +2,6 @@\n //!\n //! These tests ensure that the instrumentation for task spawning and task\n //! lifecycles is correct.\n-#![allow(unknown_lints, unexpected_cfgs)]\n #![warn(rust_2018_idioms)]\n #![cfg(all(tokio_unstable, feature = \"tracing\", target_has_atomic = \"64\"))]\n \ndiff --git a/tokio/tests/tracing_time.rs b/tokio/tests/tracing_time.rs\nindex a227cde7a73..f251cc780b9 100644\n--- a/tokio/tests/tracing_time.rs\n+++ b/tokio/tests/tracing_time.rs\n@@ -2,7 +2,6 @@\n //!\n //! These tests ensure that the instrumentation for tokio\n //! synchronization primitives is correct.\n-#![allow(unknown_lints, unexpected_cfgs)]\n #![warn(rust_2018_idioms)]\n #![cfg(all(tokio_unstable, feature = \"tracing\", target_has_atomic = \"64\"))]\n \n",
+  "fixed_tests": {
+    "signal::unix::tests::into_c_int": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "sync::rwlock::bounds": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "process::imp::pidfd_reaper::test::test_pidfd_reaper_drop": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "runtime::tests::inject::push_and_pop": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "util::memchr::tests::memchr_all": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "open_options_write": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "signal::reusable_box::test::test_different_futures": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "path_read_write": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "io::util::lines::tests::assert_unpin": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "sync::tests::semaphore_batch::cancel_acquire_releases_permits": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "open_options_custom_flags_linux": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "basic_write": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "sync::tests::semaphore_batch::try_acquire_one_available": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "signal::registry::tests::broadcast_returns_if_at_least_one_event_fired": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "pin": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "sync::tests::semaphore_batch::poll_acquire_many_unavailable": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "sync::broadcast::tests::receiver_count_on_channel_constructor": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "sync::tests::semaphore_batch::release_permits_at_drop": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "basic_read": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "runtime::time::wheel::level::test::test_slot_for": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "fs::file::tests::read_err_then_read_success": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "file_debug_fmt": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "set_max_buf_size_read": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "fs::file::tests::incomplete_read_followed_by_flush": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "task::local::tests::local_current_thread_scheduler": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "process::test::no_kill_if_already_killed": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "sync::tests::semaphore_batch::forget_permits_basic": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "remove": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "sync::mpsc::block::assert_no_stack_overflow": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "read_file_from_unix_fd": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "process::imp::orphan::test::no_reap_if_no_signal_received": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "fs::file::tests::open_set_len_ok": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "sync::tests::semaphore_batch::close_semaphore_notifies_permit2": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "fs::file::tests::incomplete_partial_read_followed_by_write": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "util::memchr::tests::memchr_test": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "fs::file::tests::open_set_len_err": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "fs::file::tests::sync_all_ordered_after_write": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "fs::file::tests::read_with_smaller_buf": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "io::util::buf_reader::tests::assert_unpin": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "future::maybe_done::miri_tests::maybe_done_miri": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "fs::file::tests::incomplete_read_followed_by_write": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "runtime::time::tests::poll_process_levels_targeted": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "open_options_create": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "unix_fd_is_valid": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "fs::file::tests::sync_data_ordered_after_write": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "runtime::time::tests::single_timer": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "util::linked_list::tests::push_pop_push_pop": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "process::imp::orphan::test::does_nothing_if_signal_could_not_be_registered": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "sync::tests::semaphore_batch::max_permits_doesnt_panic": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "signal::unix::tests::signal_enable_error_on_forbidden_input": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "io::stdio_common::tests::test_pseudo_text": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "coop_budget_udp_send_recv": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "fs::file::tests::write_seek_flush_err": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "runtime::scheduler::multi_thread::queue::test_local_queue_capacity": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "runtime::tests::inject::push_batch_and_pop": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "io::util::sink::tests::assert_unpin": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "sync::tests::notify::notify_clones_waker_before_lock": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "sync::tests::semaphore_batch::poll_acquire_many_available": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "open_options_create_new": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "fs::file::tests::read_with_bigger_buf": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "open_options_truncate": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "sync::broadcast::tests::receiver_count_on_sender_constructor": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "signal::reusable_box::test::test_different_sizes": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "util::linked_list::tests::const_new": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "sync::tests::semaphore_batch::try_acquire_one_unavailable": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "fs::file::tests::flush_while_idle": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "runtime::scheduler::multi_thread::idle::test_state": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "sync::tests::semaphore_batch::try_acquire_many_available": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "runtime::tests::queue::steal_batch": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "process::imp::reap::test::drop_reaps_if_possible": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "canonicalize_root_dir_unix": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "write_into_std_immediate": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "io::util::buf_stream::tests::assert_unpin": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "process::test::kills_on_drop_if_specified": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "build_dir_mode_read_only": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "fs::file::tests::open_write": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "sync::tests::semaphore_batch::poll_acquire_one_zero_permits": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "runtime::tests::queue::fits_256_one_at_a_time": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "io::util::split::tests::assert_unpin": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "signal::unix::tests::from_c_int": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "rename_file": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "runtime::task::core::header_lte_cache_line": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "fs::file::tests::read_twice_before_dispatch": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "runtime::coop::test::budgeting": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "basic_write_and_shutdown": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "copy": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "create_dir": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "io::util::repeat::tests::assert_unpin": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "fs::file::tests::write_seek_write_err": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "fs::file::tests::open_read": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "process::imp::pidfd_reaper::test::test_pidfd_reaper_kill": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "io::util::take::tests::assert_unpin": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "util::linked_list::tests::remove_by_address": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "coop": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "process::imp::reap::test::drop_enqueues_orphan_if_wait_fails": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "runtime::tests::queue::stress1": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "sync::tests::semaphore_batch::poll_acquire_one_available": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "sync::tests::atomic_waker::basic_usage": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "test_symlink": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "io::util::buf_writer::tests::assert_unpin": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "set_max_buf_size_write": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "remove_file": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "open_options_append": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "process::test::no_kill_if_reaped": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "io::stdio_common::tests::test_splitter": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "fs::file::tests::write_read_flush_err": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "runtime::task::list::tests::test_id_not_broken": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "util::linked_list::tests::push_and_drain": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "sync::tests::notify::notify_waiters_handles_panicking_waker": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "runtime::time::wheel::test::test_level_for": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "fs::file::tests::write_write_err": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "signal::registry::tests::record_invalid_event_does_nothing": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "runtime::time::tests::reset_future": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "runtime::time::tests::instant_to_tick_max": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "echo_server": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "sync::tests::semaphore_batch::close_semaphore_prevents_acquire": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "read_dir_entry_info": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "create_all": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "io::util::chain::tests::assert_unpin": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "process::imp::reap::test::kill": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "sync::tests::atomic_waker::wake_without_register": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "test_hard_link": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "fs::file::tests::write_read_write_err": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "sync::mutex::bounds": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "fs::file::tests::incomplete_flush_followed_by_write": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "write_into_std": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "runtime::time::tests::change_waker": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "process::imp::reap::test::reaper": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "util::idle_notified_set::tests::join_set_test": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "runtime::tests::queue::stress2": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "signal::registry::tests::smoke": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "io::util::empty::tests::assert_unpin": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "sync::tests::semaphore_batch::update_permits_many_times": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "runtime::time::tests::poll_process_levels": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "sync::tests::notify::notify_simple": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "fs::file::tests::sync_data_err_ordered_after_write": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "sync::tests::atomic_waker::atomic_waker_panic_safe": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "sync::tests::notify::watch_test": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "signal::reusable_box::test::test_zero_sized": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "write_to_clone": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "sync::semaphore::bounds": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "compile_fail_full": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "fs::file::tests::busy_file_seek_error": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "sync::tests::semaphore_batch::poll_acquire_one_unavailable": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "process::test::no_kill_on_drop_by_default": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "signal::unix::tests::signal_enable_error_on_invalid_input": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "io::util::copy_buf::tests::assert_unpin": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "copy_permissions": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "process::imp::orphan::test::does_not_register_signal_if_queue_empty": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "process::imp::orphan::test::no_reap_if_signal_lock_held": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "fs::file::tests::write_twice_before_dispatch": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "remove_dir_all": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "fs::file::tests::read_err": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "fs::file::tests::partial_read_set_len_ok": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "read_inherent": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "build_dir": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "read_file_from_std": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "runtime::tests::queue::fits_256_all_at_once": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "fs::file::tests::write_with_buffer_larger_than_max": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "runtime::time::tests::drop_timer": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "fs::file::tests::sync_all_err_ordered_after_write": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "process::imp::pidfd_reaper::test::test_pidfd_reaper_poll": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "sync::tests::semaphore_batch::try_acquire_many_unavailable": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "fs::file::tests::read_with_buffer_larger_than_max": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "open_options_mode": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "util::memchr::tests::memchr_empty": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "runtime::tests::task_combinations::test_combinations": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "write_vectored": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "process::imp::orphan::test::drain_attempts_a_single_reap_of_all_queued_orphans": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "write_vectored_and_shutdown": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "runtime::tests::queue::fits_256_all_in_chunks": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "runtime::tests::inject::pop_n_drains_on_drop": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "sync::tests::semaphore_batch::close_semaphore_notifies_permit1": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "task::local::tests::wakes_to_local_queue": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "rewind_seek_position": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "runtime::tests::queue::overflow": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "open_with_open_options_and_read": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    }
+  },
+  "p2p_tests": {},
+  "f2p_tests": {},
+  "s2p_tests": {},
+  "n2p_tests": {
+    "signal::unix::tests::into_c_int": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "sync::rwlock::bounds": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "process::imp::pidfd_reaper::test::test_pidfd_reaper_drop": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "runtime::tests::inject::push_and_pop": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "util::memchr::tests::memchr_all": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "open_options_write": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "signal::reusable_box::test::test_different_futures": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "path_read_write": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "io::util::lines::tests::assert_unpin": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "sync::tests::semaphore_batch::cancel_acquire_releases_permits": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "open_options_custom_flags_linux": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "basic_write": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "sync::tests::semaphore_batch::try_acquire_one_available": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "signal::registry::tests::broadcast_returns_if_at_least_one_event_fired": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "pin": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "sync::tests::semaphore_batch::poll_acquire_many_unavailable": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "sync::broadcast::tests::receiver_count_on_channel_constructor": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "sync::tests::semaphore_batch::release_permits_at_drop": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "basic_read": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "runtime::time::wheel::level::test::test_slot_for": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "fs::file::tests::read_err_then_read_success": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "file_debug_fmt": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "set_max_buf_size_read": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "fs::file::tests::incomplete_read_followed_by_flush": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "task::local::tests::local_current_thread_scheduler": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "process::test::no_kill_if_already_killed": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "sync::tests::semaphore_batch::forget_permits_basic": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "remove": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "sync::mpsc::block::assert_no_stack_overflow": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "read_file_from_unix_fd": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "process::imp::orphan::test::no_reap_if_no_signal_received": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "fs::file::tests::open_set_len_ok": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "sync::tests::semaphore_batch::close_semaphore_notifies_permit2": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "fs::file::tests::incomplete_partial_read_followed_by_write": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "util::memchr::tests::memchr_test": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "fs::file::tests::open_set_len_err": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "fs::file::tests::sync_all_ordered_after_write": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "fs::file::tests::read_with_smaller_buf": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "io::util::buf_reader::tests::assert_unpin": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "future::maybe_done::miri_tests::maybe_done_miri": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "fs::file::tests::incomplete_read_followed_by_write": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "runtime::time::tests::poll_process_levels_targeted": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "open_options_create": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "unix_fd_is_valid": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "fs::file::tests::sync_data_ordered_after_write": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "runtime::time::tests::single_timer": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "util::linked_list::tests::push_pop_push_pop": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "process::imp::orphan::test::does_nothing_if_signal_could_not_be_registered": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "sync::tests::semaphore_batch::max_permits_doesnt_panic": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "signal::unix::tests::signal_enable_error_on_forbidden_input": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "io::stdio_common::tests::test_pseudo_text": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "coop_budget_udp_send_recv": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "fs::file::tests::write_seek_flush_err": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "runtime::scheduler::multi_thread::queue::test_local_queue_capacity": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "runtime::tests::inject::push_batch_and_pop": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "io::util::sink::tests::assert_unpin": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "sync::tests::notify::notify_clones_waker_before_lock": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "sync::tests::semaphore_batch::poll_acquire_many_available": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "open_options_create_new": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "fs::file::tests::read_with_bigger_buf": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "open_options_truncate": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "sync::broadcast::tests::receiver_count_on_sender_constructor": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "signal::reusable_box::test::test_different_sizes": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "util::linked_list::tests::const_new": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "sync::tests::semaphore_batch::try_acquire_one_unavailable": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "fs::file::tests::flush_while_idle": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "runtime::scheduler::multi_thread::idle::test_state": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "sync::tests::semaphore_batch::try_acquire_many_available": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "runtime::tests::queue::steal_batch": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "process::imp::reap::test::drop_reaps_if_possible": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "canonicalize_root_dir_unix": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "write_into_std_immediate": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "io::util::buf_stream::tests::assert_unpin": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "process::test::kills_on_drop_if_specified": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "build_dir_mode_read_only": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "fs::file::tests::open_write": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "sync::tests::semaphore_batch::poll_acquire_one_zero_permits": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "runtime::tests::queue::fits_256_one_at_a_time": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "io::util::split::tests::assert_unpin": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "signal::unix::tests::from_c_int": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "rename_file": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "runtime::task::core::header_lte_cache_line": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "fs::file::tests::read_twice_before_dispatch": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "runtime::coop::test::budgeting": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "basic_write_and_shutdown": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "copy": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "create_dir": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "io::util::repeat::tests::assert_unpin": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "fs::file::tests::write_seek_write_err": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "fs::file::tests::open_read": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "process::imp::pidfd_reaper::test::test_pidfd_reaper_kill": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "io::util::take::tests::assert_unpin": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "util::linked_list::tests::remove_by_address": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "coop": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "process::imp::reap::test::drop_enqueues_orphan_if_wait_fails": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "runtime::tests::queue::stress1": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "sync::tests::semaphore_batch::poll_acquire_one_available": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "sync::tests::atomic_waker::basic_usage": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "test_symlink": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "io::util::buf_writer::tests::assert_unpin": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "set_max_buf_size_write": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "remove_file": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "open_options_append": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "process::test::no_kill_if_reaped": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "io::stdio_common::tests::test_splitter": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "fs::file::tests::write_read_flush_err": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "runtime::task::list::tests::test_id_not_broken": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "util::linked_list::tests::push_and_drain": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "sync::tests::notify::notify_waiters_handles_panicking_waker": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "runtime::time::wheel::test::test_level_for": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "fs::file::tests::write_write_err": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "signal::registry::tests::record_invalid_event_does_nothing": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "runtime::time::tests::reset_future": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "runtime::time::tests::instant_to_tick_max": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "echo_server": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "sync::tests::semaphore_batch::close_semaphore_prevents_acquire": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "read_dir_entry_info": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "create_all": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "io::util::chain::tests::assert_unpin": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "process::imp::reap::test::kill": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "sync::tests::atomic_waker::wake_without_register": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "test_hard_link": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "fs::file::tests::write_read_write_err": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "sync::mutex::bounds": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "fs::file::tests::incomplete_flush_followed_by_write": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "write_into_std": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "runtime::time::tests::change_waker": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "process::imp::reap::test::reaper": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "util::idle_notified_set::tests::join_set_test": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "runtime::tests::queue::stress2": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "signal::registry::tests::smoke": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "io::util::empty::tests::assert_unpin": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "sync::tests::semaphore_batch::update_permits_many_times": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "runtime::time::tests::poll_process_levels": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "sync::tests::notify::notify_simple": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "fs::file::tests::sync_data_err_ordered_after_write": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "sync::tests::atomic_waker::atomic_waker_panic_safe": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "sync::tests::notify::watch_test": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "signal::reusable_box::test::test_zero_sized": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "write_to_clone": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "sync::semaphore::bounds": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "compile_fail_full": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "fs::file::tests::busy_file_seek_error": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "sync::tests::semaphore_batch::poll_acquire_one_unavailable": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "process::test::no_kill_on_drop_by_default": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "signal::unix::tests::signal_enable_error_on_invalid_input": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "io::util::copy_buf::tests::assert_unpin": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "copy_permissions": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "process::imp::orphan::test::does_not_register_signal_if_queue_empty": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "process::imp::orphan::test::no_reap_if_signal_lock_held": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "fs::file::tests::write_twice_before_dispatch": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "remove_dir_all": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "fs::file::tests::read_err": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "fs::file::tests::partial_read_set_len_ok": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "read_inherent": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "build_dir": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "read_file_from_std": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "runtime::tests::queue::fits_256_all_at_once": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "fs::file::tests::write_with_buffer_larger_than_max": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "runtime::time::tests::drop_timer": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "fs::file::tests::sync_all_err_ordered_after_write": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "process::imp::pidfd_reaper::test::test_pidfd_reaper_poll": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "sync::tests::semaphore_batch::try_acquire_many_unavailable": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "fs::file::tests::read_with_buffer_larger_than_max": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "open_options_mode": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "util::memchr::tests::memchr_empty": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "runtime::tests::task_combinations::test_combinations": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "write_vectored": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "process::imp::orphan::test::drain_attempts_a_single_reap_of_all_queued_orphans": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "write_vectored_and_shutdown": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "runtime::tests::queue::fits_256_all_in_chunks": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "runtime::tests::inject::pop_n_drains_on_drop": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "sync::tests::semaphore_batch::close_semaphore_notifies_permit1": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "task::local::tests::wakes_to_local_queue": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "rewind_seek_position": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "runtime::tests::queue::overflow": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "open_with_open_options_and_read": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    }
+  },
+  "run_result": {
+    "passed_count": 177,
+    "failed_count": 1,
+    "skipped_count": 0,
+    "passed_tests": [
+      "signal::unix::tests::into_c_int",
+      "sync::rwlock::bounds",
+      "process::imp::pidfd_reaper::test::test_pidfd_reaper_drop",
+      "runtime::tests::inject::push_and_pop",
+      "util::memchr::tests::memchr_all",
+      "open_options_write",
+      "signal::reusable_box::test::test_different_futures",
+      "path_read_write",
+      "io::util::lines::tests::assert_unpin",
+      "sync::tests::semaphore_batch::cancel_acquire_releases_permits",
+      "open_options_custom_flags_linux",
+      "basic_write",
+      "sync::tests::semaphore_batch::try_acquire_one_available",
+      "signal::registry::tests::broadcast_returns_if_at_least_one_event_fired",
+      "pin",
+      "sync::tests::semaphore_batch::poll_acquire_many_unavailable",
+      "sync::broadcast::tests::receiver_count_on_channel_constructor",
+      "sync::tests::semaphore_batch::release_permits_at_drop",
+      "basic_read",
+      "runtime::time::wheel::level::test::test_slot_for",
+      "fs::file::tests::read_err_then_read_success",
+      "file_debug_fmt",
+      "set_max_buf_size_read",
+      "fs::file::tests::incomplete_read_followed_by_flush",
+      "task::local::tests::local_current_thread_scheduler",
+      "process::test::no_kill_if_already_killed",
+      "sync::tests::semaphore_batch::forget_permits_basic",
+      "remove",
+      "sync::mpsc::block::assert_no_stack_overflow",
+      "read_file_from_unix_fd",
+      "process::imp::orphan::test::no_reap_if_no_signal_received",
+      "fs::file::tests::open_set_len_ok",
+      "sync::tests::semaphore_batch::close_semaphore_notifies_permit2",
+      "fs::file::tests::incomplete_partial_read_followed_by_write",
+      "util::memchr::tests::memchr_test",
+      "fs::file::tests::open_set_len_err",
+      "fs::file::tests::sync_all_ordered_after_write",
+      "fs::file::tests::read_with_smaller_buf",
+      "io::util::buf_reader::tests::assert_unpin",
+      "future::maybe_done::miri_tests::maybe_done_miri",
+      "fs::file::tests::incomplete_read_followed_by_write",
+      "runtime::time::tests::poll_process_levels_targeted",
+      "open_options_create",
+      "unix_fd_is_valid",
+      "fs::file::tests::sync_data_ordered_after_write",
+      "runtime::time::tests::single_timer",
+      "util::linked_list::tests::push_pop_push_pop",
+      "process::imp::orphan::test::does_nothing_if_signal_could_not_be_registered",
+      "sync::tests::semaphore_batch::max_permits_doesnt_panic",
+      "signal::unix::tests::signal_enable_error_on_forbidden_input",
+      "io::stdio_common::tests::test_pseudo_text",
+      "coop_budget_udp_send_recv",
+      "fs::file::tests::write_seek_flush_err",
+      "runtime::scheduler::multi_thread::queue::test_local_queue_capacity",
+      "runtime::tests::inject::push_batch_and_pop",
+      "io::util::sink::tests::assert_unpin",
+      "sync::tests::notify::notify_clones_waker_before_lock",
+      "sync::tests::semaphore_batch::poll_acquire_many_available",
+      "open_options_create_new",
+      "fs::file::tests::read_with_bigger_buf",
+      "open_options_truncate",
+      "sync::broadcast::tests::receiver_count_on_sender_constructor",
+      "signal::reusable_box::test::test_different_sizes",
+      "util::linked_list::tests::const_new",
+      "sync::tests::semaphore_batch::try_acquire_one_unavailable",
+      "fs::file::tests::flush_while_idle",
+      "runtime::scheduler::multi_thread::idle::test_state",
+      "sync::tests::semaphore_batch::try_acquire_many_available",
+      "runtime::tests::queue::steal_batch",
+      "process::imp::reap::test::drop_reaps_if_possible",
+      "canonicalize_root_dir_unix",
+      "write_into_std_immediate",
+      "open_with_open_options_and_read",
+      "io::util::buf_stream::tests::assert_unpin",
+      "process::test::kills_on_drop_if_specified",
+      "build_dir_mode_read_only",
+      "fs::file::tests::open_write",
+      "sync::tests::semaphore_batch::poll_acquire_one_zero_permits",
+      "runtime::tests::queue::fits_256_one_at_a_time",
+      "io::util::split::tests::assert_unpin",
+      "signal::unix::tests::from_c_int",
+      "rename_file",
+      "runtime::task::core::header_lte_cache_line",
+      "fs::file::tests::read_twice_before_dispatch",
+      "runtime::coop::test::budgeting",
+      "basic_write_and_shutdown",
+      "copy",
+      "create_dir",
+      "io::util::repeat::tests::assert_unpin",
+      "fs::file::tests::write_seek_write_err",
+      "fs::file::tests::open_read",
+      "process::imp::pidfd_reaper::test::test_pidfd_reaper_kill",
+      "io::util::take::tests::assert_unpin",
+      "util::linked_list::tests::remove_by_address",
+      "coop",
+      "process::imp::reap::test::drop_enqueues_orphan_if_wait_fails",
+      "runtime::tests::queue::stress1",
+      "sync::tests::semaphore_batch::poll_acquire_one_available",
+      "sync::tests::atomic_waker::basic_usage",
+      "test_symlink",
+      "io::util::buf_writer::tests::assert_unpin",
+      "set_max_buf_size_write",
+      "remove_file",
+      "open_options_append",
+      "process::test::no_kill_if_reaped",
+      "io::stdio_common::tests::test_splitter",
+      "fs::file::tests::write_read_flush_err",
+      "runtime::task::list::tests::test_id_not_broken",
+      "util::linked_list::tests::push_and_drain",
+      "sync::tests::notify::notify_waiters_handles_panicking_waker",
+      "runtime::time::wheel::test::test_level_for",
+      "fs::file::tests::write_write_err",
+      "signal::registry::tests::record_invalid_event_does_nothing",
+      "runtime::time::tests::reset_future",
+      "runtime::time::tests::instant_to_tick_max",
+      "echo_server",
+      "sync::tests::semaphore_batch::close_semaphore_prevents_acquire",
+      "read_dir_entry_info",
+      "io::util::chain::tests::assert_unpin",
+      "process::imp::reap::test::kill",
+      "sync::tests::atomic_waker::wake_without_register",
+      "test_hard_link",
+      "fs::file::tests::write_read_write_err",
+      "sync::mutex::bounds",
+      "fs::file::tests::incomplete_flush_followed_by_write",
+      "write_into_std",
+      "runtime::time::tests::change_waker",
+      "process::imp::reap::test::reaper",
+      "util::idle_notified_set::tests::join_set_test",
+      "runtime::tests::queue::stress2",
+      "signal::registry::tests::smoke",
+      "io::util::empty::tests::assert_unpin",
+      "sync::tests::semaphore_batch::update_permits_many_times",
+      "runtime::time::tests::poll_process_levels",
+      "sync::tests::notify::notify_simple",
+      "fs::file::tests::sync_data_err_ordered_after_write",
+      "sync::tests::atomic_waker::atomic_waker_panic_safe",
+      "sync::tests::notify::watch_test",
+      "signal::reusable_box::test::test_zero_sized",
+      "write_to_clone",
+      "sync::semaphore::bounds",
+      "compile_fail_full",
+      "fs::file::tests::busy_file_seek_error",
+      "sync::tests::semaphore_batch::poll_acquire_one_unavailable",
+      "process::test::no_kill_on_drop_by_default",
+      "signal::unix::tests::signal_enable_error_on_invalid_input",
+      "io::util::copy_buf::tests::assert_unpin",
+      "copy_permissions",
+      "process::imp::orphan::test::does_not_register_signal_if_queue_empty",
+      "process::imp::orphan::test::no_reap_if_signal_lock_held",
+      "fs::file::tests::write_twice_before_dispatch",
+      "remove_dir_all",
+      "fs::file::tests::read_err",
+      "fs::file::tests::partial_read_set_len_ok",
+      "read_inherent",
+      "build_dir",
+      "read_file_from_std",
+      "runtime::tests::queue::fits_256_all_at_once",
+      "fs::file::tests::write_with_buffer_larger_than_max",
+      "runtime::time::tests::drop_timer",
+      "fs::file::tests::sync_all_err_ordered_after_write",
+      "process::imp::pidfd_reaper::test::test_pidfd_reaper_poll",
+      "sync::tests::semaphore_batch::try_acquire_many_unavailable",
+      "fs::file::tests::read_with_buffer_larger_than_max",
+      "open_options_mode",
+      "util::memchr::tests::memchr_empty",
+      "runtime::tests::task_combinations::test_combinations",
+      "write_vectored",
+      "process::imp::orphan::test::drain_attempts_a_single_reap_of_all_queued_orphans",
+      "write_vectored_and_shutdown",
+      "runtime::tests::queue::fits_256_all_in_chunks",
+      "runtime::tests::inject::pop_n_drains_on_drop",
+      "sync::tests::semaphore_batch::close_semaphore_notifies_permit1",
+      "task::local::tests::wakes_to_local_queue",
+      "rewind_seek_position",
+      "runtime::tests::queue::overflow",
+      "create_all"
+    ],
+    "failed_tests": [
+      "try_exists"
+    ],
+    "skipped_tests": []
+  },
+  "test_patch_result": {
+    "passed_count": 0,
+    "failed_count": 0,
+    "skipped_count": 0,
+    "passed_tests": [],
+    "failed_tests": [],
+    "skipped_tests": []
+  },
+  "fix_patch_result": {
+    "passed_count": 177,
+    "failed_count": 1,
+    "skipped_count": 0,
+    "passed_tests": [
+      "signal::unix::tests::into_c_int",
+      "sync::rwlock::bounds",
+      "process::imp::pidfd_reaper::test::test_pidfd_reaper_drop",
+      "runtime::tests::inject::push_and_pop",
+      "util::memchr::tests::memchr_all",
+      "open_options_write",
+      "signal::reusable_box::test::test_different_futures",
+      "path_read_write",
+      "io::util::lines::tests::assert_unpin",
+      "sync::tests::semaphore_batch::cancel_acquire_releases_permits",
+      "open_options_custom_flags_linux",
+      "basic_write",
+      "sync::tests::semaphore_batch::try_acquire_one_available",
+      "signal::registry::tests::broadcast_returns_if_at_least_one_event_fired",
+      "pin",
+      "sync::tests::semaphore_batch::poll_acquire_many_unavailable",
+      "sync::broadcast::tests::receiver_count_on_channel_constructor",
+      "sync::tests::semaphore_batch::release_permits_at_drop",
+      "basic_read",
+      "runtime::time::wheel::level::test::test_slot_for",
+      "fs::file::tests::read_err_then_read_success",
+      "set_max_buf_size_read",
+      "file_debug_fmt",
+      "fs::file::tests::incomplete_read_followed_by_flush",
+      "task::local::tests::local_current_thread_scheduler",
+      "process::test::no_kill_if_already_killed",
+      "sync::tests::semaphore_batch::forget_permits_basic",
+      "remove",
+      "sync::mpsc::block::assert_no_stack_overflow",
+      "read_file_from_unix_fd",
+      "process::imp::orphan::test::no_reap_if_no_signal_received",
+      "fs::file::tests::open_set_len_ok",
+      "sync::tests::semaphore_batch::close_semaphore_notifies_permit2",
+      "fs::file::tests::incomplete_partial_read_followed_by_write",
+      "util::memchr::tests::memchr_test",
+      "fs::file::tests::open_set_len_err",
+      "fs::file::tests::read_with_smaller_buf",
+      "fs::file::tests::sync_all_ordered_after_write",
+      "fs::file::tests::incomplete_read_followed_by_write",
+      "future::maybe_done::miri_tests::maybe_done_miri",
+      "io::util::buf_reader::tests::assert_unpin",
+      "runtime::time::tests::poll_process_levels_targeted",
+      "open_options_create",
+      "unix_fd_is_valid",
+      "fs::file::tests::sync_data_ordered_after_write",
+      "runtime::time::tests::single_timer",
+      "util::linked_list::tests::push_pop_push_pop",
+      "process::imp::orphan::test::does_nothing_if_signal_could_not_be_registered",
+      "sync::tests::semaphore_batch::max_permits_doesnt_panic",
+      "signal::unix::tests::signal_enable_error_on_forbidden_input",
+      "io::stdio_common::tests::test_pseudo_text",
+      "coop_budget_udp_send_recv",
+      "runtime::scheduler::multi_thread::queue::test_local_queue_capacity",
+      "fs::file::tests::write_seek_flush_err",
+      "runtime::tests::inject::push_batch_and_pop",
+      "io::util::sink::tests::assert_unpin",
+      "sync::tests::notify::notify_clones_waker_before_lock",
+      "sync::tests::semaphore_batch::poll_acquire_many_available",
+      "open_options_create_new",
+      "fs::file::tests::read_with_bigger_buf",
+      "open_options_truncate",
+      "sync::broadcast::tests::receiver_count_on_sender_constructor",
+      "signal::reusable_box::test::test_different_sizes",
+      "util::linked_list::tests::const_new",
+      "sync::tests::semaphore_batch::try_acquire_one_unavailable",
+      "fs::file::tests::flush_while_idle",
+      "runtime::scheduler::multi_thread::idle::test_state",
+      "sync::tests::semaphore_batch::try_acquire_many_available",
+      "runtime::tests::queue::steal_batch",
+      "process::imp::reap::test::drop_reaps_if_possible",
+      "canonicalize_root_dir_unix",
+      "write_into_std_immediate",
+      "open_with_open_options_and_read",
+      "io::util::buf_stream::tests::assert_unpin",
+      "process::test::kills_on_drop_if_specified",
+      "build_dir_mode_read_only",
+      "fs::file::tests::open_write",
+      "sync::tests::semaphore_batch::poll_acquire_one_zero_permits",
+      "runtime::tests::queue::fits_256_one_at_a_time",
+      "io::util::split::tests::assert_unpin",
+      "signal::unix::tests::from_c_int",
+      "rename_file",
+      "fs::file::tests::read_twice_before_dispatch",
+      "runtime::task::core::header_lte_cache_line",
+      "runtime::coop::test::budgeting",
+      "basic_write_and_shutdown",
+      "copy",
+      "create_dir",
+      "io::util::repeat::tests::assert_unpin",
+      "fs::file::tests::write_seek_write_err",
+      "fs::file::tests::open_read",
+      "process::imp::pidfd_reaper::test::test_pidfd_reaper_kill",
+      "io::util::take::tests::assert_unpin",
+      "util::linked_list::tests::remove_by_address",
+      "coop",
+      "process::imp::reap::test::drop_enqueues_orphan_if_wait_fails",
+      "runtime::tests::queue::stress1",
+      "sync::tests::semaphore_batch::poll_acquire_one_available",
+      "sync::tests::atomic_waker::basic_usage",
+      "test_symlink",
+      "io::util::buf_writer::tests::assert_unpin",
+      "set_max_buf_size_write",
+      "remove_file",
+      "open_options_append",
+      "process::test::no_kill_if_reaped",
+      "io::stdio_common::tests::test_splitter",
+      "fs::file::tests::write_read_flush_err",
+      "runtime::task::list::tests::test_id_not_broken",
+      "util::linked_list::tests::push_and_drain",
+      "sync::tests::notify::notify_waiters_handles_panicking_waker",
+      "runtime::time::wheel::test::test_level_for",
+      "fs::file::tests::write_write_err",
+      "signal::registry::tests::record_invalid_event_does_nothing",
+      "runtime::time::tests::reset_future",
+      "runtime::time::tests::instant_to_tick_max",
+      "echo_server",
+      "sync::tests::semaphore_batch::close_semaphore_prevents_acquire",
+      "read_dir_entry_info",
+      "io::util::chain::tests::assert_unpin",
+      "process::imp::reap::test::kill",
+      "sync::tests::atomic_waker::wake_without_register",
+      "test_hard_link",
+      "fs::file::tests::write_read_write_err",
+      "sync::mutex::bounds",
+      "fs::file::tests::incomplete_flush_followed_by_write",
+      "write_into_std",
+      "runtime::time::tests::change_waker",
+      "process::imp::reap::test::reaper",
+      "util::idle_notified_set::tests::join_set_test",
+      "runtime::tests::queue::stress2",
+      "signal::registry::tests::smoke",
+      "io::util::empty::tests::assert_unpin",
+      "sync::tests::semaphore_batch::update_permits_many_times",
+      "runtime::time::tests::poll_process_levels",
+      "sync::tests::notify::notify_simple",
+      "fs::file::tests::sync_data_err_ordered_after_write",
+      "sync::tests::atomic_waker::atomic_waker_panic_safe",
+      "sync::tests::notify::watch_test",
+      "signal::reusable_box::test::test_zero_sized",
+      "write_to_clone",
+      "sync::semaphore::bounds",
+      "compile_fail_full",
+      "fs::file::tests::busy_file_seek_error",
+      "sync::tests::semaphore_batch::poll_acquire_one_unavailable",
+      "process::test::no_kill_on_drop_by_default",
+      "signal::unix::tests::signal_enable_error_on_invalid_input",
+      "io::util::copy_buf::tests::assert_unpin",
+      "copy_permissions",
+      "process::imp::orphan::test::does_not_register_signal_if_queue_empty",
+      "process::imp::orphan::test::no_reap_if_signal_lock_held",
+      "fs::file::tests::write_twice_before_dispatch",
+      "remove_dir_all",
+      "fs::file::tests::read_err",
+      "fs::file::tests::partial_read_set_len_ok",
+      "build_dir",
+      "read_inherent",
+      "read_file_from_std",
+      "runtime::tests::queue::fits_256_all_at_once",
+      "fs::file::tests::write_with_buffer_larger_than_max",
+      "runtime::time::tests::drop_timer",
+      "fs::file::tests::sync_all_err_ordered_after_write",
+      "process::imp::pidfd_reaper::test::test_pidfd_reaper_poll",
+      "sync::tests::semaphore_batch::try_acquire_many_unavailable",
+      "fs::file::tests::read_with_buffer_larger_than_max",
+      "open_options_mode",
+      "util::memchr::tests::memchr_empty",
+      "runtime::tests::task_combinations::test_combinations",
+      "write_vectored",
+      "process::imp::orphan::test::drain_attempts_a_single_reap_of_all_queued_orphans",
+      "write_vectored_and_shutdown",
+      "runtime::tests::queue::fits_256_all_in_chunks",
+      "runtime::tests::inject::pop_n_drains_on_drop",
+      "sync::tests::semaphore_batch::close_semaphore_notifies_permit1",
+      "task::local::tests::wakes_to_local_queue",
+      "rewind_seek_position",
+      "runtime::tests::queue::overflow",
+      "create_all"
+    ],
+    "failed_tests": [
+      "try_exists"
+    ],
+    "skipped_tests": []
+  },
+  "instance_id": "tokio-rs__tokio-7124",
+  "hints": "",
+  "language": "rust"
+}

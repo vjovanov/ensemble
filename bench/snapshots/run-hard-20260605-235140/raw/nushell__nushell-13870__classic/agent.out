@@ -1,0 +1,17 @@
+Implemented the fix in place.
+
+Changed:
+- `crates/nu-protocol/src/process/child.rs`
+- `crates/nu-protocol/src/pipeline/byte_stream.rs`
+- `crates/nu-protocol/src/pipeline/pipeline_data.rs`
+
+Summary:
+- Added byte collection/string collection paths that still collect stdout and wait for the child process, but do not turn the child’s non-zero exit status into a shell error.
+- Updated `PipelineData::collect_string` to use that behavior for byte streams, which fixes `detect columns` consuming empty output from a non-final external command like `grep`.
+
+Validated with:
+- `cargo check -q -p nu-protocol -p nu-command`
+- Manual repro:
+  - `grep` as final pipeline element still errors with exit code 1.
+  - `grep | lines` still returns an empty list.
+  - `grep | detect columns` no longer throws the non-zero exit code error.

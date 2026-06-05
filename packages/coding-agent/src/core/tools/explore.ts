@@ -227,7 +227,7 @@ const exploreSchema = Type.Object({
 	),
 	wholeFiles: Type.Optional(
 		Type.Boolean({
-			description: "Fetch whole graph nodes/files when the task requires complete file content.",
+			description: "Fetch whole nodes/files instead of targeted subsets. Set true when you need — or will soon need — most of a file: fetching it whole once is cheaper than repeated partial fetches.",
 		}),
 	),
 	maxSnippets: Type.Optional(
@@ -715,15 +715,19 @@ async function runSidekick(
 		? [
 				"You are Pi's private exploration sidekick.",
 				"Explore only through the graph tools; do not read raw file contents.",
-				"Return the relevant graph nodes exactly as the tools provide them — do not trim, reformat, summarize, or otherwise post-process their contents.",
+				"Think carefully about what the task genuinely needs before fetching. Select the minimal set of nodes that answers it; do not pull in neighboring or related nodes speculatively.",
+				"Prefer fetching a whole node or file once when the task will need most of it, over many partial fetches of the same file — repeated partial fetches cost the caller more than one whole fetch.",
+				"Return the relevant graph nodes exactly as the tools provide them — do not trim, reformat, summarize, or otherwise post-process their contents (your job is to choose which nodes to fetch, not to edit their bodies).",
 				callerContextLine,
 				"Do not propose edits. Do not answer the user directly.",
 			].join("\n")
 		: [
 				"You are Pi's private exploration sidekick.",
 				"The code graph is unavailable; you are working from raw filesystem results.",
+				"Think carefully about what the task genuinely needs, then return only that.",
 				"Return only the code relevant to the task and remove everything unnecessary.",
 				"Remove whole declarations — fields, functions, methods, comments — that are not relevant to the task.",
+				"If the task needs most of a file, return the whole file once rather than scattered fragments; if only a small part is relevant, return just that part.",
 				"Never remove or alter code inside a function body you keep; reproduce kept bodies verbatim.",
 				"Keep enough enclosing context (such as the class or module header) to locate what you return.",
 				callerContextLine,
@@ -840,11 +844,13 @@ export function createExploreToolDefinition(
 		name: "explore",
 		label: "explore",
 		description:
-			"Explore files through a private graph-based sidekick. Uses Graphify when available and falls back to filesystem graph nodes. Returns only relevant snippets or whole node/file content.",
-		promptSnippet: "Explore code through a graph sidekick and return relevant file snippets",
+			"Delegate code discovery to a smart explore sub-agent. Describe in natural language what you need to find, understand, or read; it navigates the code graph and returns small, targeted subsets — the specific functions, types, or lines relevant to your task, not whole files. One well-described explore call replaces many manual grep/find/sed reads: it batches the search and returns only what matters, which keeps your context small. Set wholeFiles: true only when you genuinely need complete file content (e.g. before a large edit).",
+		promptSnippet: "Delegate discovery to a smart explore sub-agent; it returns the minimal relevant code",
 		promptGuidelines: [
-			"Use explore for file discovery, search, reading, and pre-edit inspection.",
-			"Do not use bash for file-reading commands unless explore fails or the user explicitly asks for shell output.",
+			"Prefer one explore call over several bash grep/find/cat/sed reads — describe the target and let the sub-agent fetch the minimal relevant code in a single round-trip.",
+			"Trust the explore result: do not re-grep or re-read code it already returned.",
+			"Use explore for discovery, search, reading, and pre-edit inspection; reach for bash file-reading only when explore fails or the user explicitly asks for shell output.",
+			"When you know you will need an entire file (e.g. a large or cross-cutting edit), ask for it with wholeFiles: true rather than fetching it in pieces across several calls.",
 		],
 		parameters: exploreSchema,
 		async execute(_toolCallId, input: ExploreToolInput, signal, _onUpdate, context) {

@@ -14,19 +14,21 @@ official Docker eval harness.
 | `sidekick-fs` | `--exploration sidekick`, graphify forced unavailable | same tool, filesystem fallback |
 | `classic` | `--exploration classic` | pre-ensemble pi (read/grep/find/ls) |
 
-> **"Strict mode" is enforced here, not in the CLI.** FS-001 §7.4 (required-graph)
-> isn't implemented as a flag. Instead the `ensemble-strict` arm prebuilds the graph
-> and `lib/parse-session.mjs` asserts every `explore` call was graph-derived — a run
-> that fell back to the filesystem (marker `"Graphify unavailable"`, `explore.ts:617`)
-> or never called `explore` is flagged `strictOk=false`.
+> **Strict mode is genuinely enforced via `PI_REQUIRE_GRAPH=1`** (FS-001 §7.4 required-graph
+> — an env var, not a CLI flag). With it set, pi fail-fasts at startup if graphify isn't
+> enabled and `explore` throws rather than ever falling back (`explore.ts:842`, `main.ts:592`).
+> The `ensemble-strict` arm sets it and prebuilds the graph; `lib/parse-session.mjs`
+> additionally asserts every `explore` call was graph-derived as a belt-and-suspenders check
+> (`strictOk`).
 
 ## Prerequisites
 
 - `graphify` on `PATH` (for `ensemble-strict`) — present at `~/.local/bin/graphify`.
 - Docker running (for grading).
 - `pip install multi-swe-bench` (provides the eval harness).
-- Model creds in the env. Default `MODEL=openai.gpt-5.5` is **Bedrock-only** ($5.5/$33
-  per Mtok) and needs AWS creds. Use `MODEL=gpt-5-mini` for cheap iteration.
+- Model creds in the env. Default is **gpt-5.5 via OpenRouter** (`PROVIDER=openrouter
+  MODEL=openai/gpt-5.5`, needs `OPENROUTER_API_KEY`; ~$5/$30 per Mtok). Override
+  `PROVIDER`/`MODEL` for anything else, e.g. `PROVIDER=openrouter MODEL=openai/gpt-5-mini`.
 
 ## Run it
 

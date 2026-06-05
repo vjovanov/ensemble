@@ -1,0 +1,189 @@
+diff --git c/serde_derive/src/internals/ast.rs i/serde_derive/src/internals/ast.rs
+index 3293823a7e..f928b40c63 100644
+--- c/serde_derive/src/internals/ast.rs
++++ i/serde_derive/src/internals/ast.rs
+@@ -123,6 +123,11 @@ impl<'a> Data<'a> {
+     pub fn has_getter(&self) -> bool {
+         self.all_fields().any(|f| f.attrs.getter().is_some())
+     }
++
++    pub fn has_serialize_getter(&self) -> bool {
++        self.all_fields()
++            .any(|f| f.attrs.serialize_getter().is_some())
++    }
+ }
+ 
+ fn enum_from_ast<'a>(
+diff --git c/serde_derive/src/internals/attr.rs i/serde_derive/src/internals/attr.rs
+index ac5f5d9a52..5cae920ea7 100644
+--- c/serde_derive/src/internals/attr.rs
++++ i/serde_derive/src/internals/attr.rs
+@@ -1029,6 +1029,7 @@ pub struct Field {
+     default: Default,
+     serialize_with: Option<syn::ExprPath>,
+     deserialize_with: Option<syn::ExprPath>,
++    serialize_getter: Option<syn::ExprPath>,
+     ser_bound: Option<Vec<syn::WherePredicate>>,
+     de_bound: Option<Vec<syn::WherePredicate>>,
+     borrowed_lifetimes: BTreeSet<syn::Lifetime>,
+@@ -1074,6 +1075,7 @@ impl Field {
+         let mut default = Attr::none(cx, DEFAULT);
+         let mut serialize_with = Attr::none(cx, SERIALIZE_WITH);
+         let mut deserialize_with = Attr::none(cx, DESERIALIZE_WITH);
++        let mut serialize_getter = Attr::none(cx, SERIALIZE_GETTER);
+         let mut ser_bound = Attr::none(cx, BOUND);
+         let mut de_bound = Attr::none(cx, BOUND);
+         let mut borrowed_lifetimes = Attr::none(cx, BORROW);
+@@ -1163,6 +1165,12 @@ impl Field {
+                     if let Some(path) = parse_lit_into_expr_path(cx, DESERIALIZE_WITH, &meta)? {
+                         deserialize_with.set(&meta.path, path);
+                     }
++                } else if meta.path == SERIALIZE_GETTER {
++                    // #[serde(serialize_getter = "...")]
++                    // #[serde(serialize_getter(...))]
++                    if let Some(path) = parse_serialize_getter(cx, &meta)? {
++                        serialize_getter.set(&meta.path, path);
++                    }
+                 } else if meta.path == WITH {
+                     // #[serde(with = "...")]
+                     if let Some(path) = parse_lit_into_expr_path(cx, WITH, &meta)? {
+@@ -1296,6 +1304,7 @@ impl Field {
+             default: default.get().unwrap_or(Default::None),
+             serialize_with: serialize_with.get(),
+             deserialize_with: deserialize_with.get(),
++            serialize_getter: serialize_getter.get(),
+             ser_bound: ser_bound.get(),
+             de_bound: de_bound.get(),
+             borrowed_lifetimes,
+@@ -1349,6 +1358,10 @@ impl Field {
+         self.deserialize_with.as_ref()
+     }
+ 
++    pub fn serialize_getter(&self) -> Option<&syn::ExprPath> {
++        self.serialize_getter.as_ref()
++    }
++
+     pub fn ser_bound(&self) -> Option<&[syn::WherePredicate]> {
+         self.ser_bound.as_ref().map(|vec| &vec[..])
+     }
+@@ -1538,6 +1551,20 @@ fn parse_lit_into_expr_path(
+     })
+ }
+ 
++fn parse_serialize_getter(cx: &Ctxt, meta: &ParseNestedMeta) -> syn::Result<Option<syn::ExprPath>> {
++    if meta.input.peek(Token![=]) {
++        return parse_lit_into_expr_path(cx, SERIALIZE_GETTER, meta);
++    }
++
++    let content;
++    syn::parenthesized!(content in meta.input);
++    let getter = content.parse::<syn::ExprPath>()?;
++    if !content.is_empty() {
++        return Err(content.error("expected a single getter path"));
++    }
++    Ok(Some(getter))
++}
++
+ fn parse_lit_into_where(
+     cx: &Ctxt,
+     attr_name: Symbol,
+diff --git c/serde_derive/src/internals/check.rs i/serde_derive/src/internals/check.rs
+index 52b0f379fd..0f25be91a8 100644
+--- c/serde_derive/src/internals/check.rs
++++ i/serde_derive/src/internals/check.rs
+@@ -8,7 +8,7 @@ use syn::{Member, Type};
+ pub fn check(cx: &Ctxt, cont: &mut Container, derive: Derive) {
+     check_default_on_tuple(cx, cont);
+     check_remote_generic(cx, cont);
+-    check_getter(cx, cont);
++    check_getter(cx, cont, derive);
+     check_flatten(cx, cont);
+     check_identifier(cx, cont);
+     check_variant_skip_attrs(cx, cont);
+@@ -73,9 +73,10 @@ fn check_remote_generic(cx: &Ctxt, cont: &Container) {
+     }
+ }
+ 
+-// Getters are only allowed inside structs (not enums) with the `remote`
+-// attribute.
+-fn check_getter(cx: &Ctxt, cont: &Container) {
++// Getters are only allowed inside structs (not enums). The `getter` attribute
++// remains deserialize-related outside of Serialize derives and so requires
++// remote derive in those cases.
++fn check_getter(cx: &Ctxt, cont: &Container, derive: Derive) {
+     match cont.data {
+         Data::Enum(_) => {
+             if cont.data.has_getter() {
+@@ -84,9 +85,18 @@ fn check_getter(cx: &Ctxt, cont: &Container) {
+                     "#[serde(getter = \"...\")] is not allowed in an enum",
+                 );
+             }
++            if cont.data.has_serialize_getter() {
++                cx.error_spanned_by(
++                    cont.original,
++                    "#[serde(serialize_getter = \"...\")] is not allowed in an enum",
++                );
++            }
+         }
+         Data::Struct(_, _) => {
+-            if cont.data.has_getter() && cont.attrs.remote().is_none() {
++            if cont.data.has_getter()
++                && cont.attrs.remote().is_none()
++                && !matches!(derive, Derive::Serialize)
++            {
+                 cx.error_spanned_by(
+                     cont.original,
+                     "#[serde(getter = \"...\")] can only be used in structs that have #[serde(remote = \"...\")]",
+diff --git c/serde_derive/src/internals/symbol.rs i/serde_derive/src/internals/symbol.rs
+index 572391a807..b9d897db6b 100644
+--- c/serde_derive/src/internals/symbol.rs
++++ i/serde_derive/src/internals/symbol.rs
+@@ -28,6 +28,7 @@ pub const RENAME_ALL_FIELDS: Symbol = Symbol("rename_all_fields");
+ pub const REPR: Symbol = Symbol("repr");
+ pub const SERDE: Symbol = Symbol("serde");
+ pub const SERIALIZE: Symbol = Symbol("serialize");
++pub const SERIALIZE_GETTER: Symbol = Symbol("serialize_getter");
+ pub const SERIALIZE_WITH: Symbol = Symbol("serialize_with");
+ pub const SKIP: Symbol = Symbol("skip");
+ pub const SKIP_DESERIALIZING: Symbol = Symbol("skip_deserializing");
+diff --git c/serde_derive/src/ser.rs i/serde_derive/src/ser.rs
+index 35f8ca4bd4..d2bebed753 100644
+--- c/serde_derive/src/ser.rs
++++ i/serde_derive/src/ser.rs
+@@ -1259,6 +1259,21 @@ fn mut_if(is_mut: bool) -> Option<TokenStream> {
+ 
+ fn get_member(params: &Parameters, field: &Field, member: &Member) -> TokenStream {
+     let self_var = &params.self_var;
++
++    if let Some(getter) = field.attrs.serialize_getter() {
++        let ty = field.ty;
++        let getter = if getter.qself.is_none()
++            && getter.path.leading_colon.is_none()
++            && getter.path.segments.len() == 1
++            && getter.path.segments[0].arguments.is_none()
++        {
++            quote!(#self_var.#getter())
++        } else {
++            quote!(#getter(#self_var))
++        };
++        return quote!(_serde::__private::ser::constrain::<#ty>(&#getter));
++    }
++
+     match (params.is_remote, field.attrs.getter()) {
+         (false, None) => {
+             if params.is_packed {
+@@ -1276,13 +1291,10 @@ fn get_member(params: &Parameters, field: &Field, member: &Member) -> TokenStrea
+             let ty = field.ty;
+             quote!(_serde::__private::ser::constrain::<#ty>(#inner))
+         }
+-        (true, Some(getter)) => {
++        (_, Some(getter)) => {
+             let ty = field.ty;
+             quote!(_serde::__private::ser::constrain::<#ty>(&#getter(#self_var)))
+         }
+-        (false, Some(_)) => {
+-            unreachable!("getter is only allowed for remote impls");
+-        }
+     }
+ }
+ 

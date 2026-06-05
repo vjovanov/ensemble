@@ -1,0 +1,11 @@
+Implemented the fix in `balancer/rls/internal/keys/builder.go`.
+
+Changes made:
+- Removed the non-test import of `github.com/google/go-cmp/cmp`.
+- Replaced `cmp.Equal(..., cmp.AllowUnexported(...))` with explicit typed equality helpers for:
+  - `BuilderMap`
+  - `builder`
+  - `matcher`
+  - string slices
+
+Note: I attempted to run `gofmt`/`go test`, but Go tooling is not installed in this environment (`gofmt: command not found`). The edited file is manually formatted.

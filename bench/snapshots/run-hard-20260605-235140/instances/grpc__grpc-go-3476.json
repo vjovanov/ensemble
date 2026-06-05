@@ -1,0 +1,857 @@
+{
+  "org": "grpc",
+  "repo": "grpc-go",
+  "number": 3476,
+  "state": "closed",
+  "title": "rls: Manually implement equality of key builder maps.",
+  "body": "cmp.Equal is not supposed to be used in production code because of its\r\npropensity towards panicking.\r\n\r\nThis equality will eventually be checked from the LB policy when it gets\r\na service config update.\r\n\r\nFixes #3472",
+  "base": {
+    "label": "grpc:master",
+    "ref": "master",
+    "sha": "192c8a2a3506bb69336f5c135733a3435a04fb30"
+  },
+  "resolved_issues": [
+    {
+      "number": 3472,
+      "title": "rls: Do not use `cmp` package in non-test code",
+      "body": "Currently, `rls/internal/keys/builder.go` uses `cmp.Equal`.\r\n\r\nThe `cmp` package documentation says the following:\r\nIt is intended to only be used in tests, as performance is not a goal and it may panic if it cannot compare the values. Its propensity towards panicking means that its unsuitable for production environments where a spurious panic may be fatal."
+    }
+  ],
+  "fix_patch": "diff --git a/balancer/rls/internal/keys/builder.go b/balancer/rls/internal/keys/builder.go\nindex a606155f4c9d..abc076ab4da3 100644\n--- a/balancer/rls/internal/keys/builder.go\n+++ b/balancer/rls/internal/keys/builder.go\n@@ -27,7 +27,6 @@ import (\n \t\"sort\"\n \t\"strings\"\n \n-\t\"github.com/google/go-cmp/cmp\"\n \trlspb \"google.golang.org/grpc/balancer/rls/internal/proto/grpc_lookup_v1\"\n \t\"google.golang.org/grpc/metadata\"\n )\n@@ -123,9 +122,25 @@ func (bm BuilderMap) RLSKey(md metadata.MD, path string) KeyMap {\n \treturn b.keys(md)\n }\n \n-// BuilderMapEqual returns true if the provided BuilderMap objects are equal.\n-func BuilderMapEqual(a, b BuilderMap) bool {\n-\treturn cmp.Equal(a, b, cmp.AllowUnexported(builder{}, matcher{}))\n+// Equal reports whether bm and am represent equivalent BuilderMaps.\n+func (bm BuilderMap) Equal(am BuilderMap) bool {\n+\tif (bm == nil) != (am == nil) {\n+\t\treturn false\n+\t}\n+\tif len(bm) != len(am) {\n+\t\treturn false\n+\t}\n+\n+\tfor key, bBuilder := range bm {\n+\t\taBuilder, ok := am[key]\n+\t\tif !ok {\n+\t\t\treturn false\n+\t\t}\n+\t\tif !bBuilder.Equal(aBuilder) {\n+\t\t\treturn false\n+\t\t}\n+\t}\n+\treturn true\n }\n \n // builder provides the actual functionality of building RLS keys. These are\n@@ -142,6 +157,28 @@ type builder struct {\n \tmatchers []matcher\n }\n \n+// Equal reports whether b and a represent equivalent key builders.\n+func (b builder) Equal(a builder) bool {\n+\tif (b.matchers == nil) != (a.matchers == nil) {\n+\t\treturn false\n+\t}\n+\tif len(b.matchers) != len(a.matchers) {\n+\t\treturn false\n+\t}\n+\t// Protobuf serialization maintains the order of repeated fields. Matchers\n+\t// are specified as a repeated field inside the KeyBuilder proto. If the\n+\t// order changes, it means that the order in the protobuf changed. We report\n+\t// this case as not being equal even though the builders could possible be\n+\t// functionally equal.\n+\tfor i, bMatcher := range b.matchers {\n+\t\taMatcher := a.matchers[i]\n+\t\tif !bMatcher.Equal(aMatcher) {\n+\t\t\treturn false\n+\t\t}\n+\t}\n+\treturn true\n+}\n+\n // matcher helps extract a key from request headers based on a given name.\n type matcher struct {\n \t// The key used in the keyMap sent as part of the RLS request.\n@@ -150,6 +187,25 @@ type matcher struct {\n \tnames []string\n }\n \n+// Equal reports if m and are are equivalent matchers.\n+func (m matcher) Equal(a matcher) bool {\n+\tif m.key != a.key {\n+\t\treturn false\n+\t}\n+\tif (m.names == nil) != (a.names == nil) {\n+\t\treturn false\n+\t}\n+\tif len(m.names) != len(a.names) {\n+\t\treturn false\n+\t}\n+\tfor i := 0; i < len(m.names); i++ {\n+\t\tif m.names[i] != a.names[i] {\n+\t\t\treturn false\n+\t\t}\n+\t}\n+\treturn true\n+}\n+\n func (b builder) keys(md metadata.MD) KeyMap {\n \tkvMap := make(map[string]string)\n \tfor _, m := range b.matchers {\n",
+  "test_patch": "diff --git a/balancer/rls/internal/keys/builder_test.go b/balancer/rls/internal/keys/builder_test.go\nindex 09a392ea1810..f5e03ac51dd7 100644\n--- a/balancer/rls/internal/keys/builder_test.go\n+++ b/balancer/rls/internal/keys/builder_test.go\n@@ -85,7 +85,7 @@ func TestMakeBuilderMap(t *testing.T) {\n \tfor _, test := range tests {\n \t\tt.Run(test.desc, func(t *testing.T) {\n \t\t\tbuilderMap, err := MakeBuilderMap(test.cfg)\n-\t\t\tif err != nil || !BuilderMapEqual(builderMap, test.wantBuilderMap) {\n+\t\t\tif err != nil || !builderMap.Equal(test.wantBuilderMap) {\n \t\t\t\tt.Errorf(\"MakeBuilderMap(%+v) returned {%v, %v}, want: {%v, nil}\", test.cfg, builderMap, err, test.wantBuilderMap)\n \t\t\t}\n \t\t})\n@@ -330,3 +330,201 @@ func TestMapToString(t *testing.T) {\n \t\t})\n \t}\n }\n+\n+func TestBuilderMapEqual(t *testing.T) {\n+\ttests := []struct {\n+\t\tdesc      string\n+\t\ta         BuilderMap\n+\t\tb         BuilderMap\n+\t\twantEqual bool\n+\t}{\n+\t\t{\n+\t\t\tdesc:      \"nil builder maps\",\n+\t\t\ta:         nil,\n+\t\t\tb:         nil,\n+\t\t\twantEqual: true,\n+\t\t},\n+\t\t{\n+\t\t\tdesc:      \"empty builder maps\",\n+\t\t\ta:         make(map[string]builder),\n+\t\t\tb:         make(map[string]builder),\n+\t\t\twantEqual: true,\n+\t\t},\n+\t\t{\n+\t\t\tdesc:      \"nil and non-nil builder maps\",\n+\t\t\ta:         nil,\n+\t\t\tb:         map[string]builder{\"/gFoo/\": {matchers: []matcher{{key: \"k1\", names: []string{\"n1\"}}}}},\n+\t\t\twantEqual: false,\n+\t\t},\n+\t\t{\n+\t\t\tdesc:      \"empty and non-empty builder maps\",\n+\t\t\ta:         make(map[string]builder),\n+\t\t\tb:         map[string]builder{\"/gFoo/\": {matchers: []matcher{{key: \"k1\", names: []string{\"n1\"}}}}},\n+\t\t\twantEqual: false,\n+\t\t},\n+\t\t{\n+\t\t\tdesc: \"different number of map keys\",\n+\t\t\ta: map[string]builder{\n+\t\t\t\t\"/gFoo/\": {matchers: []matcher{{key: \"k1\", names: []string{\"n1\"}}}},\n+\t\t\t\t\"/gBar/\": {matchers: []matcher{{key: \"k1\", names: []string{\"n1\"}}}},\n+\t\t\t},\n+\t\t\tb: map[string]builder{\n+\t\t\t\t\"/gFoo/\": {matchers: []matcher{{key: \"k1\", names: []string{\"n1\"}}}},\n+\t\t\t},\n+\t\t\twantEqual: false,\n+\t\t},\n+\t\t{\n+\t\t\tdesc: \"different map keys\",\n+\t\t\ta: map[string]builder{\n+\t\t\t\t\"/gBar/\": {matchers: []matcher{{key: \"k1\", names: []string{\"n1\"}}}},\n+\t\t\t},\n+\t\t\tb: map[string]builder{\n+\t\t\t\t\"/gFoo/\": {matchers: []matcher{{key: \"k1\", names: []string{\"n1\"}}}},\n+\t\t\t},\n+\t\t\twantEqual: false,\n+\t\t},\n+\t\t{\n+\t\t\tdesc: \"equal keys different values\",\n+\t\t\ta: map[string]builder{\n+\t\t\t\t\"/gBar/\": {matchers: []matcher{{key: \"k1\", names: []string{\"n1\"}}}},\n+\t\t\t\t\"/gFoo/\": {matchers: []matcher{{key: \"k1\", names: []string{\"n1\", \"n2\"}}}},\n+\t\t\t},\n+\t\t\tb: map[string]builder{\n+\t\t\t\t\"/gBar/\": {matchers: []matcher{{key: \"k1\", names: []string{\"n1\"}}}},\n+\t\t\t\t\"/gFoo/\": {matchers: []matcher{{key: \"k1\", names: []string{\"n1\"}}}},\n+\t\t\t},\n+\t\t\twantEqual: false,\n+\t\t},\n+\t\t{\n+\t\t\tdesc: \"good match\",\n+\t\t\ta: map[string]builder{\n+\t\t\t\t\"/gBar/\": {matchers: []matcher{{key: \"k1\", names: []string{\"n1\"}}}},\n+\t\t\t\t\"/gFoo/\": {matchers: []matcher{{key: \"k1\", names: []string{\"n1\"}}}},\n+\t\t\t},\n+\t\t\tb: map[string]builder{\n+\t\t\t\t\"/gBar/\": {matchers: []matcher{{key: \"k1\", names: []string{\"n1\"}}}},\n+\t\t\t\t\"/gFoo/\": {matchers: []matcher{{key: \"k1\", names: []string{\"n1\"}}}},\n+\t\t\t},\n+\t\t\twantEqual: true,\n+\t\t},\n+\t}\n+\n+\tfor _, test := range tests {\n+\t\tt.Run(test.desc, func(t *testing.T) {\n+\t\t\tif gotEqual := test.a.Equal(test.b); gotEqual != test.wantEqual {\n+\t\t\t\tt.Errorf(\"BuilderMap.Equal(%v, %v) = %v, want %v\", test.a, test.b, gotEqual, test.wantEqual)\n+\t\t\t}\n+\t\t})\n+\t}\n+}\n+\n+func TestBuilderEqual(t *testing.T) {\n+\ttests := []struct {\n+\t\tdesc      string\n+\t\ta         builder\n+\t\tb         builder\n+\t\twantEqual bool\n+\t}{\n+\t\t{\n+\t\t\tdesc:      \"nil builders\",\n+\t\t\ta:         builder{matchers: nil},\n+\t\t\tb:         builder{matchers: nil},\n+\t\t\twantEqual: true,\n+\t\t},\n+\t\t{\n+\t\t\tdesc:      \"empty builders\",\n+\t\t\ta:         builder{matchers: []matcher{}},\n+\t\t\tb:         builder{matchers: []matcher{}},\n+\t\t\twantEqual: true,\n+\t\t},\n+\t\t{\n+\t\t\tdesc:      \"nil and non-nil builders\",\n+\t\t\ta:         builder{matchers: nil},\n+\t\t\tb:         builder{matchers: []matcher{}},\n+\t\t\twantEqual: false,\n+\t\t},\n+\t\t{\n+\t\t\tdesc:      \"empty and non-empty builders\",\n+\t\t\ta:         builder{matchers: []matcher{}},\n+\t\t\tb:         builder{matchers: []matcher{{key: \"foo\"}}},\n+\t\t\twantEqual: false,\n+\t\t},\n+\t\t{\n+\t\t\tdesc:      \"different number of matchers\",\n+\t\t\ta:         builder{matchers: []matcher{{key: \"foo\"}, {key: \"bar\"}}},\n+\t\t\tb:         builder{matchers: []matcher{{key: \"foo\"}}},\n+\t\t\twantEqual: false,\n+\t\t},\n+\t\t{\n+\t\t\tdesc:      \"equal number but differing matchers\",\n+\t\t\ta:         builder{matchers: []matcher{{key: \"bar\"}}},\n+\t\t\tb:         builder{matchers: []matcher{{key: \"foo\"}}},\n+\t\t\twantEqual: false,\n+\t\t},\n+\t\t{\n+\t\t\tdesc:      \"good match\",\n+\t\t\ta:         builder{matchers: []matcher{{key: \"foo\"}}},\n+\t\t\tb:         builder{matchers: []matcher{{key: \"foo\"}}},\n+\t\t\twantEqual: true,\n+\t\t},\n+\t}\n+\n+\tfor _, test := range tests {\n+\t\tt.Run(test.desc, func(t *testing.T) {\n+\t\t\tt.Run(test.desc, func(t *testing.T) {\n+\t\t\t\tif gotEqual := test.a.Equal(test.b); gotEqual != test.wantEqual {\n+\t\t\t\t\tt.Errorf(\"builder.Equal(%v, %v) = %v, want %v\", test.a, test.b, gotEqual, test.wantEqual)\n+\t\t\t\t}\n+\t\t\t})\n+\t\t})\n+\t}\n+}\n+\n+// matcher helps extract a key from request headers based on a given name.\n+func TestMatcherEqual(t *testing.T) {\n+\ttests := []struct {\n+\t\tdesc      string\n+\t\ta         matcher\n+\t\tb         matcher\n+\t\twantEqual bool\n+\t}{\n+\t\t{\n+\t\t\tdesc:      \"different keys\",\n+\t\t\ta:         matcher{key: \"foo\"},\n+\t\t\tb:         matcher{key: \"bar\"},\n+\t\t\twantEqual: false,\n+\t\t},\n+\t\t{\n+\t\t\tdesc:      \"different number of names\",\n+\t\t\ta:         matcher{key: \"foo\", names: []string{\"v1\", \"v2\"}},\n+\t\t\tb:         matcher{key: \"foo\", names: []string{\"v1\"}},\n+\t\t\twantEqual: false,\n+\t\t},\n+\t\t{\n+\t\t\tdesc:      \"equal number but differing names\",\n+\t\t\ta:         matcher{key: \"foo\", names: []string{\"v1\", \"v2\"}},\n+\t\t\tb:         matcher{key: \"foo\", names: []string{\"v1\", \"v22\"}},\n+\t\t\twantEqual: false,\n+\t\t},\n+\t\t{\n+\t\t\tdesc:      \"same names in different order\",\n+\t\t\ta:         matcher{key: \"foo\", names: []string{\"v2\", \"v1\"}},\n+\t\t\tb:         matcher{key: \"foo\", names: []string{\"v1\", \"v3\"}},\n+\t\t\twantEqual: false,\n+\t\t},\n+\t\t{\n+\t\t\tdesc:      \"good match\",\n+\t\t\ta:         matcher{key: \"foo\", names: []string{\"v1\", \"v2\"}},\n+\t\t\tb:         matcher{key: \"foo\", names: []string{\"v1\", \"v2\"}},\n+\t\t\twantEqual: true,\n+\t\t},\n+\t}\n+\n+\tfor _, test := range tests {\n+\t\tt.Run(test.desc, func(t *testing.T) {\n+\t\t\tif gotEqual := test.a.Equal(test.b); gotEqual != test.wantEqual {\n+\t\t\t\tt.Errorf(\"matcher.Equal(%v, %v) = %v, want %v\", test.a, test.b, gotEqual, test.wantEqual)\n+\t\t\t}\n+\t\t})\n+\t}\n+}\n",
+  "fixed_tests": {
+    "TestMakeBuilderMapErrors": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "TestBuilderEqual/nil_builders": {
+      "run": "NONE",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "TestBuilderEqual": {
+      "run": "NONE",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "TestBuilderEqual/equal_number_but_differing_matchers": {
+      "run": "NONE",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "TestBuilderEqual/different_number_of_matchers": {
+      "run": "NONE",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "TestBuilderEqual/good_match": {
+      "run": "NONE",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "TestMatcherEqual": {
+      "run": "NONE",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "TestBuilderEqual/empty_builders": {
+      "run": "NONE",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "TestBuilderEqual/empty_and_non-empty_builders": {
+      "run": "NONE",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "TestMakeBuilderMap": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "TestMapToString": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "TestRLSKey": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "TestBuilderMapEqual": {
+      "run": "NONE",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "TestBuilderEqual/nil_and_non-nil_builders": {
+      "run": "NONE",
+      "test": "NONE",
+      "fix": "PASS"
+    }
+  },
+  "p2p_tests": {
+    "TestMatchTypeForDomain": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestXDSResolverBadServiceUpdate": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "ExampleAttributes_WithValues": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "ExampleAttributes": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "Test/ClientHandshakeReturnsAuthInfo": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestXDSResolverGoodServiceUpdate": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestParseConfigErrors": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestLRUResize": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "Test/IsRoundRobin": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "Test_lrsStore_buildStats_drops": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "Test/EDSHandleResponse": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "Test/AppendH2ToNextProtos": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "Test/EDSParseRespProto": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "Test/New": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestCheckRegisterIgnore": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "Test/RDSHandleResponse": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "Test/ToMetadata": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "Test/FromMetadata": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "Test/Dropper": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "Test/LDSGetRouteConfig": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestTXTError": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestRateLimitedResolve": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "Test/ParseConfig": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "Test/NewConfig": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestLookupFailure": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "Test/EdfWrrNext": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "Test/CDSHandleResponse": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestPick": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestDial": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestDNSResolverRetry": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestCheck": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestAddCausesMultipleEvictions": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestXDSResolverGoodUpdateAfterError": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "Test/ChildIsPickFirst": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestParseTarget": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestPickKeyBuilder": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "Test/LDSHandleResponse": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestRegisterBackendResponse": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestResolverBuilder": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "Test/LoadbalancingConfigParsing": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "Test/ClientWrapperWatchEDS": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "Test_lrsStore_ReportTo": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "Test/RDSGetClusterFromRouteConfiguration": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestResolve": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestParseTargetString": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestXDSResolverWatchCallbackAfterClose": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestResolveFunc": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "Test/HandleClusterUpdate": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "Test": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestRemove": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestValidateChildPolicyConfig": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestNoSetupOrTeardown": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "Test/DropPicker": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "Test/Parse": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestMatch": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestCustomAuthority": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "Test/RandomWRRNext": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestFindBestMatchingVirtualHost": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestLookupSuccess": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestGet": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestParseConfig": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "Test/EqualStringPointers": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "Test/XDSBalancerConfigParsing": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "Test_lrsStore_buildStats_rpcCounts": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestLookupDeadlineExceeded": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestLookback": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "Test/MethodFamily": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestParallel": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestDisableServiceConfig": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestModifyCausesMultipleEvictions": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestExceedingSizeCausesEviction": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestShouldThrottleOptions": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestExample": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "Test/ValidateCluster": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestValidateChildPolicyConfigErrors": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestRunSubTests": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestLoggerV2Severity": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestReportError": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "Test/UpdateClientConnState": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    }
+  },
+  "f2p_tests": {},
+  "s2p_tests": {},
+  "n2p_tests": {
+    "TestMakeBuilderMapErrors": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "TestBuilderEqual/nil_builders": {
+      "run": "NONE",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "TestBuilderEqual": {
+      "run": "NONE",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "TestBuilderEqual/equal_number_but_differing_matchers": {
+      "run": "NONE",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "TestBuilderEqual/different_number_of_matchers": {
+      "run": "NONE",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "TestBuilderEqual/good_match": {
+      "run": "NONE",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "TestMatcherEqual": {
+      "run": "NONE",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "TestBuilderEqual/empty_builders": {
+      "run": "NONE",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "TestBuilderEqual/empty_and_non-empty_builders": {
+      "run": "NONE",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "TestMakeBuilderMap": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "TestMapToString": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "TestRLSKey": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "TestBuilderMapEqual": {
+      "run": "NONE",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "TestBuilderEqual/nil_and_non-nil_builders": {
+      "run": "NONE",
+      "test": "NONE",
+      "fix": "PASS"
+    }
+  },
+  "run_result": {
+    "passed_count": 83,
+    "failed_count": 1,
+    "skipped_count": 0,
+    "passed_tests": [
+      "TestMakeBuilderMapErrors",
+      "TestXDSResolverGoodServiceUpdate",
+      "TestParseConfigErrors",
+      "TestLRUResize",
+      "Test/IsRoundRobin",
+      "Test/EDSHandleResponse",
+      "Test/FromMetadata",
+      "Test/LDSGetRouteConfig",
+      "TestRateLimitedResolve",
+      "Test/ParseConfig",
+      "TestLookupFailure",
+      "TestDial",
+      "TestDNSResolverRetry",
+      "TestXDSResolverGoodUpdateAfterError",
+      "TestParseTarget",
+      "TestPickKeyBuilder",
+      "Test/LDSHandleResponse",
+      "TestResolverBuilder",
+      "Test_lrsStore_ReportTo",
+      "TestResolve",
+      "TestParseTargetString",
+      "TestXDSResolverWatchCallbackAfterClose",
+      "TestResolveFunc",
+      "TestRemove",
+      "TestNoSetupOrTeardown",
+      "TestMatch",
+      "TestMapToString",
+      "Test/RandomWRRNext",
+      "TestGet",
+      "TestParseConfig",
+      "Test/EqualStringPointers",
+      "Test_lrsStore_buildStats_rpcCounts",
+      "TestLookupDeadlineExceeded",
+      "TestLookback",
+      "TestDisableServiceConfig",
+      "TestExceedingSizeCausesEviction",
+      "TestShouldThrottleOptions",
+      "TestExample",
+      "TestValidateChildPolicyConfigErrors",
+      "TestLoggerV2Severity",
+      "TestReportError",
+      "Test/UpdateClientConnState",
+      "TestXDSResolverBadServiceUpdate",
+      "ExampleAttributes_WithValues",
+      "ExampleAttributes",
+      "Test/ClientHandshakeReturnsAuthInfo",
+      "Test_lrsStore_buildStats_drops",
+      "Test/AppendH2ToNextProtos",
+      "Test/EDSParseRespProto",
+      "Test/New",
+      "TestCheckRegisterIgnore",
+      "Test/RDSHandleResponse",
+      "Test/ToMetadata",
+      "Test/Dropper",
+      "TestTXTError",
+      "Test/NewConfig",
+      "Test/EdfWrrNext",
+      "Test/CDSHandleResponse",
+      "TestPick",
+      "TestCheck",
+      "TestAddCausesMultipleEvictions",
+      "Test/ChildIsPickFirst",
+      "TestRegisterBackendResponse",
+      "Test/LoadbalancingConfigParsing",
+      "Test/ClientWrapperWatchEDS",
+      "Test/RDSGetClusterFromRouteConfiguration",
+      "Test/HandleClusterUpdate",
+      "Test",
+      "TestValidateChildPolicyConfig",
+      "Test/DropPicker",
+      "Test/Parse",
+      "TestMakeBuilderMap",
+      "TestRLSKey",
+      "TestCustomAuthority",
+      "TestFindBestMatchingVirtualHost",
+      "TestLookupSuccess",
+      "Test/XDSBalancerConfigParsing",
+      "Test/MethodFamily",
+      "TestParallel",
+      "TestModifyCausesMultipleEvictions",
+      "Test/ValidateCluster",
+      "TestRunSubTests",
+      "TestMatchTypeForDomain"
+    ],
+    "failed_tests": [
+      "google.golang.org/grpc/internal"
+    ],
+    "skipped_tests": []
+  },
+  "test_patch_result": {
+    "passed_count": 79,
+    "failed_count": 2,
+    "skipped_count": 0,
+    "passed_tests": [
+      "TestXDSResolverGoodServiceUpdate",
+      "TestParseConfigErrors",
+      "TestLRUResize",
+      "Test/IsRoundRobin",
+      "Test/EDSHandleResponse",
+      "Test/FromMetadata",
+      "Test/LDSGetRouteConfig",
+      "TestRateLimitedResolve",
+      "Test/ParseConfig",
+      "TestLookupFailure",
+      "TestDial",
+      "TestDNSResolverRetry",
+      "TestXDSResolverGoodUpdateAfterError",
+      "TestParseTarget",
+      "TestPickKeyBuilder",
+      "Test/LDSHandleResponse",
+      "TestResolverBuilder",
+      "Test_lrsStore_ReportTo",
+      "TestResolve",
+      "TestParseTargetString",
+      "TestXDSResolverWatchCallbackAfterClose",
+      "TestResolveFunc",
+      "TestRemove",
+      "TestNoSetupOrTeardown",
+      "TestMatch",
+      "Test/RandomWRRNext",
+      "TestGet",
+      "TestParseConfig",
+      "Test/EqualStringPointers",
+      "Test_lrsStore_buildStats_rpcCounts",
+      "TestLookupDeadlineExceeded",
+      "TestLookback",
+      "TestDisableServiceConfig",
+      "TestExceedingSizeCausesEviction",
+      "TestShouldThrottleOptions",
+      "TestExample",
+      "TestValidateChildPolicyConfigErrors",
+      "TestLoggerV2Severity",
+      "TestReportError",
+      "Test/UpdateClientConnState",
+      "TestXDSResolverBadServiceUpdate",
+      "ExampleAttributes_WithValues",
+      "ExampleAttributes",
+      "Test/ClientHandshakeReturnsAuthInfo",
+      "Test_lrsStore_buildStats_drops",
+      "Test/AppendH2ToNextProtos",
+      "Test/EDSParseRespProto",
+      "Test/New",
+      "TestCheckRegisterIgnore",
+      "Test/RDSHandleResponse",
+      "Test/ToMetadata",
+      "Test/Dropper",
+      "TestTXTError",
+      "Test/NewConfig",
+      "Test/EdfWrrNext",
+      "Test/CDSHandleResponse",
+      "TestPick",
+      "TestCheck",
+      "TestAddCausesMultipleEvictions",
+      "Test/ChildIsPickFirst",
+      "TestRegisterBackendResponse",
+      "Test/LoadbalancingConfigParsing",
+      "Test/ClientWrapperWatchEDS",
+      "Test/RDSGetClusterFromRouteConfiguration",
+      "Test/HandleClusterUpdate",
+      "Test",
+      "TestValidateChildPolicyConfig",
+      "Test/DropPicker",
+      "Test/Parse",
+      "TestCustomAuthority",
+      "TestFindBestMatchingVirtualHost",
+      "TestLookupSuccess",
+      "Test/XDSBalancerConfigParsing",
+      "Test/MethodFamily",
+      "TestParallel",
+      "TestModifyCausesMultipleEvictions",
+      "Test/ValidateCluster",
+      "TestRunSubTests",
+      "TestMatchTypeForDomain"
+    ],
+    "failed_tests": [
+      "google.golang.org/grpc/balancer/rls/internal",
+      "google.golang.org/grpc/internal"
+    ],
+    "skipped_tests": []
+  },
+  "fix_patch_result": {
+    "passed_count": 93,
+    "failed_count": 1,
+    "skipped_count": 0,
+    "passed_tests": [
+      "TestMakeBuilderMapErrors",
+      "TestXDSResolverGoodServiceUpdate",
+      "TestParseConfigErrors",
+      "TestLRUResize",
+      "Test/IsRoundRobin",
+      "Test/EDSHandleResponse",
+      "Test/FromMetadata",
+      "Test/LDSGetRouteConfig",
+      "TestMatcherEqual",
+      "TestRateLimitedResolve",
+      "Test/ParseConfig",
+      "TestLookupFailure",
+      "TestBuilderEqual/empty_builders",
+      "TestDial",
+      "TestDNSResolverRetry",
+      "TestXDSResolverGoodUpdateAfterError",
+      "TestParseTarget",
+      "TestPickKeyBuilder",
+      "Test/LDSHandleResponse",
+      "TestResolverBuilder",
+      "Test_lrsStore_ReportTo",
+      "TestResolve",
+      "TestParseTargetString",
+      "TestXDSResolverWatchCallbackAfterClose",
+      "TestResolveFunc",
+      "TestRemove",
+      "TestNoSetupOrTeardown",
+      "TestMatch",
+      "TestMapToString",
+      "Test/RandomWRRNext",
+      "TestBuilderMapEqual",
+      "TestGet",
+      "TestParseConfig",
+      "Test/EqualStringPointers",
+      "Test_lrsStore_buildStats_rpcCounts",
+      "TestLookupDeadlineExceeded",
+      "TestLookback",
+      "TestDisableServiceConfig",
+      "TestExceedingSizeCausesEviction",
+      "TestShouldThrottleOptions",
+      "TestBuilderEqual/nil_and_non-nil_builders",
+      "TestExample",
+      "TestValidateChildPolicyConfigErrors",
+      "TestLoggerV2Severity",
+      "TestReportError",
+      "Test/UpdateClientConnState",
+      "TestXDSResolverBadServiceUpdate",
+      "ExampleAttributes_WithValues",
+      "ExampleAttributes",
+      "Test/ClientHandshakeReturnsAuthInfo",
+      "TestBuilderEqual/nil_builders",
+      "TestBuilderEqual",
+      "Test_lrsStore_buildStats_drops",
+      "TestBuilderEqual/equal_number_but_differing_matchers",
+      "Test/AppendH2ToNextProtos",
+      "Test/EDSParseRespProto",
+      "Test/New",
+      "TestBuilderEqual/different_number_of_matchers",
+      "TestCheckRegisterIgnore",
+      "Test/RDSHandleResponse",
+      "Test/ToMetadata",
+      "TestBuilderEqual/good_match",
+      "Test/Dropper",
+      "TestTXTError",
+      "Test/NewConfig",
+      "Test/EdfWrrNext",
+      "Test/CDSHandleResponse",
+      "TestPick",
+      "TestCheck",
+      "TestAddCausesMultipleEvictions",
+      "Test/ChildIsPickFirst",
+      "TestRegisterBackendResponse",
+      "Test/LoadbalancingConfigParsing",
+      "Test/ClientWrapperWatchEDS",
+      "Test/RDSGetClusterFromRouteConfiguration",
+      "TestBuilderEqual/empty_and_non-empty_builders",
+      "Test/HandleClusterUpdate",
+      "Test",
+      "TestValidateChildPolicyConfig",
+      "Test/DropPicker",
+      "Test/Parse",
+      "TestMakeBuilderMap",
+      "TestRLSKey",
+      "TestCustomAuthority",
+      "TestFindBestMatchingVirtualHost",
+      "TestLookupSuccess",
+      "Test/XDSBalancerConfigParsing",
+      "Test/MethodFamily",
+      "TestParallel",
+      "TestModifyCausesMultipleEvictions",
+      "Test/ValidateCluster",
+      "TestRunSubTests",
+      "TestMatchTypeForDomain"
+    ],
+    "failed_tests": [
+      "google.golang.org/grpc/internal"
+    ],
+    "skipped_tests": []
+  },
+  "instance_id": "grpc__grpc-go-3476",
+  "hints": "",
+  "language": "go"
+}

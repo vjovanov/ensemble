@@ -47,6 +47,11 @@ echo "graphify-out/" >> "$ARM_SRC/.git/info/exclude"
 # --- 3. Arm-specific exploration setup --------------------------------------
 EXPLORATION="sidekick"
 declare -a ENVV=()
+# Trace the explore sidekick's own tool calls (graph_query/explain/fetch,
+# caller_context, …) to a per-run JSONL. "full" includes payload previews.
+# Lets us see whether/how the sidekick reads the parent via caller_context.
+DEBUG_ENV=("PI_EXPLORE_DEBUG=full" "PI_EXPLORE_DEBUG_LOG=$OUT/explore-debug.jsonl")
+rm -f "$OUT/explore-debug.jsonl"
 case "$ARM" in
   ensemble-strict)
     command -v "$GRAPHIFY" >/dev/null || die "graphify not on PATH (required for ensemble-strict)"
@@ -54,12 +59,14 @@ case "$ARM" in
     ( cd "$ARM_SRC" && "$GRAPHIFY" update "$ARM_SRC" >/dev/null 2>"$OUT/graphify.log" ) \
       || log "graphify update returned nonzero (continuing; strict assert will catch fallback)"
     [ -f "$ARM_SRC/graphify-out/graph.json" ] || log "WARN: no graph.json produced for $LANG"
-    ENVV=("GRAPHIFY_COMMAND=$GRAPHIFY")
+    # PI_REQUIRE_GRAPH=1 makes graphify a hard precondition (FS-001 §7.4): pi
+    # fail-fasts at startup and explore throws rather than ever falling back.
+    ENVV=("GRAPHIFY_COMMAND=$GRAPHIFY" "PI_REQUIRE_GRAPH=1" "${DEBUG_ENV[@]}")
     ;;
   sidekick-fs)
     # Force graphify unavailable so the sidekick uses the filesystem fallback.
     rm -rf "$ARM_SRC/graphify-out"
-    ENVV=("GRAPHIFY_COMMAND=$BENCH_DIR/no-graphify")  # nonexistent -> commandAvailable=false
+    ENVV=("GRAPHIFY_COMMAND=$BENCH_DIR/no-graphify" "${DEBUG_ENV[@]}")  # nonexistent -> commandAvailable=false
     ;;
   classic)
     EXPLORATION="classic"
@@ -79,10 +86,12 @@ if [ "$DRY_RUN" = "1" ]; then
   log "DRY_RUN=1 -> skipping paid agent call"
 else
   log "running agent (timeout ${AGENT_TIMEOUT}s)…"
+  MODEL_ARGS=(--model "$MODEL")
+  [ -n "${PROVIDER:-}" ] && MODEL_ARGS=(--provider "$PROVIDER" --model "$MODEL")
   ( cd "$ARM_SRC" && env "${ENVV[@]}" timeout "${AGENT_TIMEOUT}s" \
       "$TSX" --tsconfig "$REPO_ROOT/tsconfig.json" "$REPO_ROOT/packages/coding-agent/src/cli.ts" \
       -p "$PROMPT" \
-      --model "$MODEL" \
+      "${MODEL_ARGS[@]}" \
       --exploration "$EXPLORATION" \
       --no-context-files \
       `# all arms ignore repo AGENTS.md/CLAUDE.md so the only difference is exploration` \

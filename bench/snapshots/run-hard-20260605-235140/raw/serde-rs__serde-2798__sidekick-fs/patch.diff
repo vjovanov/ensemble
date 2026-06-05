@@ -1,0 +1,64 @@
+diff --git c/serde_derive/src/internals/check.rs i/serde_derive/src/internals/check.rs
+index 52b0f379fd..5b52420b4b 100644
+--- c/serde_derive/src/internals/check.rs
++++ i/serde_derive/src/internals/check.rs
+@@ -73,25 +73,14 @@ fn check_remote_generic(cx: &Ctxt, cont: &Container) {
+     }
+ }
+ 
+-// Getters are only allowed inside structs (not enums) with the `remote`
+-// attribute.
++// Getters are only allowed inside structs (not enums).
+ fn check_getter(cx: &Ctxt, cont: &Container) {
+-    match cont.data {
+-        Data::Enum(_) => {
+-            if cont.data.has_getter() {
+-                cx.error_spanned_by(
+-                    cont.original,
+-                    "#[serde(getter = \"...\")] is not allowed in an enum",
+-                );
+-            }
+-        }
+-        Data::Struct(_, _) => {
+-            if cont.data.has_getter() && cont.attrs.remote().is_none() {
+-                cx.error_spanned_by(
+-                    cont.original,
+-                    "#[serde(getter = \"...\")] can only be used in structs that have #[serde(remote = \"...\")]",
+-                );
+-            }
++    if let Data::Enum(_) = cont.data {
++        if cont.data.has_getter() {
++            cx.error_spanned_by(
++                cont.original,
++                "#[serde(getter = \"...\")] is not allowed in an enum",
++            );
+         }
+     }
+ }
+diff --git c/serde_derive/src/ser.rs i/serde_derive/src/ser.rs
+index 35f8ca4bd4..7bf4c2daed 100644
+--- c/serde_derive/src/ser.rs
++++ i/serde_derive/src/ser.rs
+@@ -1276,12 +1276,18 @@ fn get_member(params: &Parameters, field: &Field, member: &Member) -> TokenStrea
+             let ty = field.ty;
+             quote!(_serde::__private::ser::constrain::<#ty>(#inner))
+         }
+-        (true, Some(getter)) => {
++        (false, Some(getter))
++            if getter.qself.is_none()
++                && getter.path.leading_colon.is_none()
++                && getter.path.segments.len() == 1 =>
++        {
+             let ty = field.ty;
+-            quote!(_serde::__private::ser::constrain::<#ty>(&#getter(#self_var)))
++            let getter = getter.path.segments.first().unwrap();
++            quote!(_serde::__private::ser::constrain::<#ty>(&#self_var.#getter()))
+         }
+-        (false, Some(_)) => {
+-            unreachable!("getter is only allowed for remote impls");
++        (_, Some(getter)) => {
++            let ty = field.ty;
++            quote!(_serde::__private::ser::constrain::<#ty>(&#getter(#self_var)))
+         }
+     }
+ }

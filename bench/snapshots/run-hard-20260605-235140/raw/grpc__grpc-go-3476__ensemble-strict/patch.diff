@@ -1,0 +1,67 @@
+diff --git c/balancer/rls/internal/keys/builder.go i/balancer/rls/internal/keys/builder.go
+index a606155f4c..a65ca84be0 100644
+--- c/balancer/rls/internal/keys/builder.go
++++ i/balancer/rls/internal/keys/builder.go
+@@ -27,7 +27,6 @@ import (
+ 	"sort"
+ 	"strings"
+ 
+-	"github.com/google/go-cmp/cmp"
+ 	rlspb "google.golang.org/grpc/balancer/rls/internal/proto/grpc_lookup_v1"
+ 	"google.golang.org/grpc/metadata"
+ )
+@@ -125,7 +124,53 @@ func (bm BuilderMap) RLSKey(md metadata.MD, path string) KeyMap {
+ 
+ // BuilderMapEqual returns true if the provided BuilderMap objects are equal.
+ func BuilderMapEqual(a, b BuilderMap) bool {
+-	return cmp.Equal(a, b, cmp.AllowUnexported(builder{}, matcher{}))
++	if (a == nil) != (b == nil) {
++		return false
++	}
++	if len(a) != len(b) {
++		return false
++	}
++	for k, av := range a {
++		bv, ok := b[k]
++		if !ok || !builderEqual(av, bv) {
++			return false
++		}
++	}
++	return true
++}
++
++func builderEqual(a, b builder) bool {
++	if (a.matchers == nil) != (b.matchers == nil) {
++		return false
++	}
++	if len(a.matchers) != len(b.matchers) {
++		return false
++	}
++	for i, am := range a.matchers {
++		if !matcherEqual(am, b.matchers[i]) {
++			return false
++		}
++	}
++	return true
++}
++
++func matcherEqual(a, b matcher) bool {
++	return a.key == b.key && stringSliceEqual(a.names, b.names)
++}
++
++func stringSliceEqual(a, b []string) bool {
++	if (a == nil) != (b == nil) {
++		return false
++	}
++	if len(a) != len(b) {
++		return false
++	}
++	for i, av := range a {
++		if av != b[i] {
++			return false
++		}
++	}
++	return true
+ }
+ 
+ // builder provides the actual functionality of building RLS keys. These are

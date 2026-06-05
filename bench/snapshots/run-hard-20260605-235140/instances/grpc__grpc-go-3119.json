@@ -1,0 +1,2073 @@
+{
+  "org": "grpc",
+  "repo": "grpc-go",
+  "number": 3119,
+  "state": "closed",
+  "title": "grpclb: enter fallback if no balancer addresses are available",
+  "body": "This is necessary because there's another way to select grpclb (by specifying grpclb in service config's balancing policy field). So it's possible that grpclb is picked, but resolver doesn't have any balancer addresses.\r\n\r\nWhen an update without balancer address is received, grpclb closes the underlying ClientConn to remote balancer, and enters fallback mode.\r\n\r\nNote that grpclb waits until the ClientConn and the RPC goroutines are actually closed to do the fallback work. This can avoid race caused by async close.\r\n\r\nfixes #3064",
+  "base": {
+    "label": "grpc:master",
+    "ref": "master",
+    "sha": "ff5f0e93f53629c7f9b27f8bfe99e60fcfbeefcb"
+  },
+  "resolved_issues": [
+    {
+      "number": 3064,
+      "title": "grpclb: fallback gracefully if no balancer addresses are provided",
+      "body": "grpclb can be selected by `loadBalancingConfig` (in addition to the traditional \"are there balancer addresses in the resolved address list\" case), and if no balancer addresses are present when selected this way, the current grpclb implementation will be unhappy.  This needs to be handled more gracefully in case the scenario occurs, to prevent the client from being wedged.\r\n"
+    }
+  ],
+  "fix_patch": "diff --git a/balancer/grpclb/grpclb.go b/balancer/grpclb/grpclb.go\nindex b581978f8512..e79b1a7bfdc5 100644\n--- a/balancer/grpclb/grpclb.go\n+++ b/balancer/grpclb/grpclb.go\n@@ -187,7 +187,7 @@ type lbBalancer struct {\n \t// send to remote LB ClientConn through this resolver.\n \tmanualResolver *lbManualResolver\n \t// The ClientConn to talk to the remote balancer.\n-\tccRemoteLB *grpc.ClientConn\n+\tccRemoteLB *remoteBalancerCCWrapper\n \t// backoff for calling remote balancer.\n \tbackoff backoff.Strategy\n \n@@ -426,6 +426,8 @@ func (lb *lbBalancer) UpdateClientConnState(ccs balancer.ClientConnState) error\n \n \taddrs := ccs.ResolverState.Addresses\n \tif len(addrs) == 0 {\n+\t\t// There should be at least one address, either grpclb server or\n+\t\t// fallback. Empty address is not valid.\n \t\treturn balancer.ErrBadResolverState\n \t}\n \n@@ -439,28 +441,33 @@ func (lb *lbBalancer) UpdateClientConnState(ccs balancer.ClientConnState) error\n \t\t}\n \t}\n \n-\tif lb.ccRemoteLB == nil {\n-\t\tif len(remoteBalancerAddrs) == 0 {\n-\t\t\tgrpclog.Errorf(\"grpclb: no remote balancer address is available, should never happen\")\n-\t\t\treturn balancer.ErrBadResolverState\n+\tif len(remoteBalancerAddrs) == 0 {\n+\t\tif lb.ccRemoteLB != nil {\n+\t\t\tlb.ccRemoteLB.close()\n+\t\t\tlb.ccRemoteLB = nil\n \t\t}\n+\t} else if lb.ccRemoteLB == nil {\n \t\t// First time receiving resolved addresses, create a cc to remote\n \t\t// balancers.\n-\t\tlb.dialRemoteLB(remoteBalancerAddrs[0].ServerName)\n+\t\tlb.newRemoteBalancerCCWrapper()\n \t\t// Start the fallback goroutine.\n \t\tgo lb.fallbackToBackendsAfter(lb.fallbackTimeout)\n \t}\n \n-\t// cc to remote balancers uses lb.manualResolver. Send the updated remote\n-\t// balancer addresses to it through manualResolver.\n-\tlb.manualResolver.UpdateState(resolver.State{Addresses: remoteBalancerAddrs})\n+\tif lb.ccRemoteLB != nil {\n+\t\t// cc to remote balancers uses lb.manualResolver. Send the updated remote\n+\t\t// balancer addresses to it through manualResolver.\n+\t\tlb.manualResolver.UpdateState(resolver.State{Addresses: remoteBalancerAddrs})\n+\t}\n \n \tlb.mu.Lock()\n \tlb.resolvedBackendAddrs = backendAddrs\n-\tif lb.inFallback {\n-\t\t// This means we received a new list of resolved backends, and we are\n-\t\t// still in fallback mode. Need to update the list of backends we are\n-\t\t// using to the new list of backends.\n+\tif len(remoteBalancerAddrs) == 0 || lb.inFallback {\n+\t\t// If there's no remote balancer address in ClientConn update, grpclb\n+\t\t// enters fallback mode immediately.\n+\t\t//\n+\t\t// If a new update is received while grpclb is in fallback, update the\n+\t\t// list of backends being used to the new fallback backends.\n \t\tlb.refreshSubConns(lb.resolvedBackendAddrs, true, lb.usePickFirst)\n \t}\n \tlb.mu.Unlock()\n@@ -475,7 +482,7 @@ func (lb *lbBalancer) Close() {\n \t}\n \tclose(lb.doneCh)\n \tif lb.ccRemoteLB != nil {\n-\t\tlb.ccRemoteLB.Close()\n+\t\tlb.ccRemoteLB.close()\n \t}\n \tlb.cc.close()\n }\ndiff --git a/balancer/grpclb/grpclb_remote_balancer.go b/balancer/grpclb/grpclb_remote_balancer.go\nindex bf9e523cd4bc..897ca8ff4729 100644\n--- a/balancer/grpclb/grpclb_remote_balancer.go\n+++ b/balancer/grpclb/grpclb_remote_balancer.go\n@@ -23,6 +23,7 @@ import (\n \t\"fmt\"\n \t\"io\"\n \t\"net\"\n+\t\"sync\"\n \t\"time\"\n \n \t\"github.com/golang/protobuf/proto\"\n@@ -34,6 +35,7 @@ import (\n \t\"google.golang.org/grpc/connectivity\"\n \t\"google.golang.org/grpc/grpclog\"\n \t\"google.golang.org/grpc/internal\"\n+\t\"google.golang.org/grpc/internal/backoff\"\n \t\"google.golang.org/grpc/internal/channelz\"\n \t\"google.golang.org/grpc/keepalive\"\n \t\"google.golang.org/grpc/metadata\"\n@@ -107,6 +109,12 @@ func (lb *lbBalancer) refreshSubConns(backendAddrs []resolver.Address, fallback\n \n \tfallbackModeChanged := lb.inFallback != fallback\n \tlb.inFallback = fallback\n+\tif fallbackModeChanged && lb.inFallback {\n+\t\t// Clear previous received list when entering fallback, so if the server\n+\t\t// comes back and sends the same list again, the new addresses will be\n+\t\t// used.\n+\t\tlb.fullServerList = nil\n+\t}\n \n \tbalancingPolicyChanged := lb.usePickFirst != pickFirst\n \toldUsePickFirst := lb.usePickFirst\n@@ -196,7 +204,71 @@ func (lb *lbBalancer) refreshSubConns(backendAddrs []resolver.Address, fallback\n \tlb.updateStateAndPicker(true, true)\n }\n \n-func (lb *lbBalancer) readServerList(s *balanceLoadClientStream) error {\n+type remoteBalancerCCWrapper struct {\n+\tcc      *grpc.ClientConn\n+\tlb      *lbBalancer\n+\tbackoff backoff.Strategy\n+\tdone    chan struct{}\n+\n+\t// waitgroup to wait for all goroutines to exit.\n+\twg sync.WaitGroup\n+}\n+\n+func (lb *lbBalancer) newRemoteBalancerCCWrapper() {\n+\tvar dopts []grpc.DialOption\n+\tif creds := lb.opt.DialCreds; creds != nil {\n+\t\tdopts = append(dopts, grpc.WithTransportCredentials(creds))\n+\t} else if bundle := lb.grpclbClientConnCreds; bundle != nil {\n+\t\tdopts = append(dopts, grpc.WithCredentialsBundle(bundle))\n+\t} else {\n+\t\tdopts = append(dopts, grpc.WithInsecure())\n+\t}\n+\tif lb.opt.Dialer != nil {\n+\t\tdopts = append(dopts, grpc.WithContextDialer(lb.opt.Dialer))\n+\t}\n+\t// Explicitly set pickfirst as the balancer.\n+\tdopts = append(dopts, grpc.WithDefaultServiceConfig(`{\"loadBalancingPolicy\":\"pick_first\"}`))\n+\twrb := internal.WithResolverBuilder.(func(resolver.Builder) grpc.DialOption)\n+\tdopts = append(dopts, wrb(lb.manualResolver))\n+\tif channelz.IsOn() {\n+\t\tdopts = append(dopts, grpc.WithChannelzParentID(lb.opt.ChannelzParentID))\n+\t}\n+\n+\t// Enable Keepalive for grpclb client.\n+\tdopts = append(dopts, grpc.WithKeepaliveParams(keepalive.ClientParameters{\n+\t\tTime:                20 * time.Second,\n+\t\tTimeout:             10 * time.Second,\n+\t\tPermitWithoutStream: true,\n+\t}))\n+\n+\t// The dial target is not important.\n+\t//\n+\t// The grpclb server addresses will set field ServerName, and creds will\n+\t// receive ServerName as authority.\n+\tcc, err := grpc.DialContext(context.Background(), \"grpclb.subClientConn\", dopts...)\n+\tif err != nil {\n+\t\tgrpclog.Fatalf(\"failed to dial: %v\", err)\n+\t}\n+\tccw := &remoteBalancerCCWrapper{\n+\t\tcc:      cc,\n+\t\tlb:      lb,\n+\t\tbackoff: lb.backoff,\n+\t\tdone:    make(chan struct{}),\n+\t}\n+\tlb.ccRemoteLB = ccw\n+\tccw.wg.Add(1)\n+\tgo ccw.watchRemoteBalancer()\n+}\n+\n+// close closed the ClientConn to remote balancer, and waits until all\n+// goroutines to finish.\n+func (ccw *remoteBalancerCCWrapper) close() {\n+\tclose(ccw.done)\n+\tccw.cc.Close()\n+\tccw.wg.Wait()\n+}\n+\n+func (ccw *remoteBalancerCCWrapper) readServerList(s *balanceLoadClientStream) error {\n \tfor {\n \t\treply, err := s.Recv()\n \t\tif err != nil {\n@@ -206,12 +278,12 @@ func (lb *lbBalancer) readServerList(s *balanceLoadClientStream) error {\n \t\t\treturn fmt.Errorf(\"grpclb: failed to recv server list: %v\", err)\n \t\t}\n \t\tif serverList := reply.GetServerList(); serverList != nil {\n-\t\t\tlb.processServerList(serverList)\n+\t\t\tccw.lb.processServerList(serverList)\n \t\t}\n \t}\n }\n \n-func (lb *lbBalancer) sendLoadReport(s *balanceLoadClientStream, interval time.Duration) {\n+func (ccw *remoteBalancerCCWrapper) sendLoadReport(s *balanceLoadClientStream, interval time.Duration) {\n \tticker := time.NewTicker(interval)\n \tdefer ticker.Stop()\n \tfor {\n@@ -220,7 +292,7 @@ func (lb *lbBalancer) sendLoadReport(s *balanceLoadClientStream, interval time.D\n \t\tcase <-s.Context().Done():\n \t\t\treturn\n \t\t}\n-\t\tstats := lb.clientStats.toClientStats()\n+\t\tstats := ccw.lb.clientStats.toClientStats()\n \t\tt := time.Now()\n \t\tstats.Timestamp = &timestamppb.Timestamp{\n \t\t\tSeconds: t.Unix(),\n@@ -236,23 +308,23 @@ func (lb *lbBalancer) sendLoadReport(s *balanceLoadClientStream, interval time.D\n \t}\n }\n \n-func (lb *lbBalancer) callRemoteBalancer() (backoff bool, _ error) {\n-\tlbClient := &loadBalancerClient{cc: lb.ccRemoteLB}\n+func (ccw *remoteBalancerCCWrapper) callRemoteBalancer() (backoff bool, _ error) {\n+\tlbClient := &loadBalancerClient{cc: ccw.cc}\n \tctx, cancel := context.WithCancel(context.Background())\n \tdefer cancel()\n \tstream, err := lbClient.BalanceLoad(ctx, grpc.WaitForReady(true))\n \tif err != nil {\n \t\treturn true, fmt.Errorf(\"grpclb: failed to perform RPC to the remote balancer %v\", err)\n \t}\n-\tlb.mu.Lock()\n-\tlb.remoteBalancerConnected = true\n-\tlb.mu.Unlock()\n+\tccw.lb.mu.Lock()\n+\tccw.lb.remoteBalancerConnected = true\n+\tccw.lb.mu.Unlock()\n \n \t// grpclb handshake on the stream.\n \tinitReq := &lbpb.LoadBalanceRequest{\n \t\tLoadBalanceRequestType: &lbpb.LoadBalanceRequest_InitialRequest{\n \t\t\tInitialRequest: &lbpb.InitialLoadBalanceRequest{\n-\t\t\t\tName: lb.target,\n+\t\t\t\tName: ccw.lb.target,\n \t\t\t},\n \t\t},\n \t}\n@@ -271,21 +343,24 @@ func (lb *lbBalancer) callRemoteBalancer() (backoff bool, _ error) {\n \t\treturn true, fmt.Errorf(\"grpclb: Delegation is not supported\")\n \t}\n \n+\tccw.wg.Add(1)\n \tgo func() {\n+\t\tdefer ccw.wg.Done()\n \t\tif d := convertDuration(initResp.ClientStatsReportInterval); d > 0 {\n-\t\t\tlb.sendLoadReport(stream, d)\n+\t\t\tccw.sendLoadReport(stream, d)\n \t\t}\n \t}()\n \t// No backoff if init req/resp handshake was successful.\n-\treturn false, lb.readServerList(stream)\n+\treturn false, ccw.readServerList(stream)\n }\n \n-func (lb *lbBalancer) watchRemoteBalancer() {\n+func (ccw *remoteBalancerCCWrapper) watchRemoteBalancer() {\n+\tdefer ccw.wg.Done()\n \tvar retryCount int\n \tfor {\n-\t\tdoBackoff, err := lb.callRemoteBalancer()\n+\t\tdoBackoff, err := ccw.callRemoteBalancer()\n \t\tselect {\n-\t\tcase <-lb.doneCh:\n+\t\tcase <-ccw.done:\n \t\t\treturn\n \t\tdefault:\n \t\t\tif err != nil {\n@@ -297,76 +372,31 @@ func (lb *lbBalancer) watchRemoteBalancer() {\n \t\t\t}\n \t\t}\n \t\t// Trigger a re-resolve when the stream errors.\n-\t\tlb.cc.cc.ResolveNow(resolver.ResolveNowOption{})\n+\t\tccw.lb.cc.cc.ResolveNow(resolver.ResolveNowOption{})\n \n-\t\tlb.mu.Lock()\n-\t\tlb.remoteBalancerConnected = false\n-\t\tlb.fullServerList = nil\n+\t\tccw.lb.mu.Lock()\n+\t\tccw.lb.remoteBalancerConnected = false\n+\t\tccw.lb.fullServerList = nil\n \t\t// Enter fallback when connection to remote balancer is lost, and the\n \t\t// aggregated state is not Ready.\n-\t\tif !lb.inFallback && lb.state != connectivity.Ready {\n+\t\tif !ccw.lb.inFallback && ccw.lb.state != connectivity.Ready {\n \t\t\t// Entering fallback.\n-\t\t\tlb.refreshSubConns(lb.resolvedBackendAddrs, true, lb.usePickFirst)\n+\t\t\tccw.lb.refreshSubConns(ccw.lb.resolvedBackendAddrs, true, ccw.lb.usePickFirst)\n \t\t}\n-\t\tlb.mu.Unlock()\n+\t\tccw.lb.mu.Unlock()\n \n \t\tif !doBackoff {\n \t\t\tretryCount = 0\n \t\t\tcontinue\n \t\t}\n \n-\t\ttimer := time.NewTimer(lb.backoff.Backoff(retryCount))\n+\t\ttimer := time.NewTimer(ccw.backoff.Backoff(retryCount)) // Copy backoff\n \t\tselect {\n \t\tcase <-timer.C:\n-\t\tcase <-lb.doneCh:\n+\t\tcase <-ccw.done:\n \t\t\ttimer.Stop()\n \t\t\treturn\n \t\t}\n \t\tretryCount++\n \t}\n }\n-\n-func (lb *lbBalancer) dialRemoteLB(remoteLBName string) {\n-\tvar dopts []grpc.DialOption\n-\tif creds := lb.opt.DialCreds; creds != nil {\n-\t\tif err := creds.OverrideServerName(remoteLBName); err == nil {\n-\t\t\tdopts = append(dopts, grpc.WithTransportCredentials(creds))\n-\t\t} else {\n-\t\t\tgrpclog.Warningf(\"grpclb: failed to override the server name in the credentials: %v, using Insecure\", err)\n-\t\t\tdopts = append(dopts, grpc.WithInsecure())\n-\t\t}\n-\t} else if bundle := lb.grpclbClientConnCreds; bundle != nil {\n-\t\tdopts = append(dopts, grpc.WithCredentialsBundle(bundle))\n-\t} else {\n-\t\tdopts = append(dopts, grpc.WithInsecure())\n-\t}\n-\tif lb.opt.Dialer != nil {\n-\t\tdopts = append(dopts, grpc.WithContextDialer(lb.opt.Dialer))\n-\t}\n-\t// Explicitly set pickfirst as the balancer.\n-\tdopts = append(dopts, grpc.WithBalancerName(grpc.PickFirstBalancerName))\n-\twrb := internal.WithResolverBuilder.(func(resolver.Builder) grpc.DialOption)\n-\tdopts = append(dopts, wrb(lb.manualResolver))\n-\tif channelz.IsOn() {\n-\t\tdopts = append(dopts, grpc.WithChannelzParentID(lb.opt.ChannelzParentID))\n-\t}\n-\n-\t// Enable Keepalive for grpclb client.\n-\tdopts = append(dopts, grpc.WithKeepaliveParams(keepalive.ClientParameters{\n-\t\tTime:                20 * time.Second,\n-\t\tTimeout:             10 * time.Second,\n-\t\tPermitWithoutStream: true,\n-\t}))\n-\n-\t// DialContext using manualResolver.Scheme, which is a random scheme\n-\t// generated when init grpclb. The target scheme here is not important.\n-\t//\n-\t// The grpc dial target will be used by the creds (ALTS) as the authority,\n-\t// so it has to be set to remoteLBName that comes from resolver.\n-\tcc, err := grpc.DialContext(context.Background(), remoteLBName, dopts...)\n-\tif err != nil {\n-\t\tgrpclog.Fatalf(\"failed to dial: %v\", err)\n-\t}\n-\tlb.ccRemoteLB = cc\n-\tgo lb.watchRemoteBalancer()\n-}\ndiff --git a/vet.sh b/vet.sh\nindex 7bbcea97fafd..f324be509a47 100755\n--- a/vet.sh\n+++ b/vet.sh\n@@ -115,6 +115,7 @@ fi\n staticcheck -go 1.9 -checks 'inherit,-ST1015' -ignore '\n google.golang.org/grpc/balancer.go:SA1019\n google.golang.org/grpc/balancer/grpclb/grpclb_remote_balancer.go:SA1019\n+google.golang.org/grpc/balancer/grpclb/grpclb_test.go:SA1019\n google.golang.org/grpc/balancer/roundrobin/roundrobin_test.go:SA1019\n google.golang.org/grpc/xds/internal/balancer/edsbalancer/balancergroup.go:SA1019\n google.golang.org/grpc/xds/internal/resolver/xds_resolver.go:SA1019\n",
+  "test_patch": "diff --git a/balancer/grpclb/grpclb_test.go b/balancer/grpclb/grpclb_test.go\nindex 55f00706985f..82eb153fce1c 100644\n--- a/balancer/grpclb/grpclb_test.go\n+++ b/balancer/grpclb/grpclb_test.go\n@@ -49,8 +49,8 @@ import (\n )\n \n var (\n-\tlbServerName = \"bar.com\"\n-\tbeServerName = \"foo.com\"\n+\tlbServerName = \"lb.server.com\"\n+\tbeServerName = \"backends.com\"\n \tlbToken      = \"iamatoken\"\n \n \t// Resolver replaces localhost with fakeName in Next().\n@@ -60,9 +60,8 @@ var (\n )\n \n type serverNameCheckCreds struct {\n-\tmu       sync.Mutex\n-\tsn       string\n-\texpected string\n+\tmu sync.Mutex\n+\tsn string\n }\n \n func (c *serverNameCheckCreds) ServerHandshake(rawConn net.Conn) (net.Conn, credentials.AuthInfo, error) {\n@@ -72,10 +71,10 @@ func (c *serverNameCheckCreds) ServerHandshake(rawConn net.Conn) (net.Conn, cred\n \t}\n \treturn rawConn, nil, nil\n }\n-func (c *serverNameCheckCreds) ClientHandshake(ctx context.Context, addr string, rawConn net.Conn) (net.Conn, credentials.AuthInfo, error) {\n+func (c *serverNameCheckCreds) ClientHandshake(ctx context.Context, authority string, rawConn net.Conn) (net.Conn, credentials.AuthInfo, error) {\n \tc.mu.Lock()\n \tdefer c.mu.Unlock()\n-\tb := make([]byte, len(c.expected))\n+\tb := make([]byte, len(authority))\n \terrCh := make(chan error, 1)\n \tgo func() {\n \t\t_, err := rawConn.Read(b)\n@@ -84,34 +83,25 @@ func (c *serverNameCheckCreds) ClientHandshake(ctx context.Context, addr string,\n \tselect {\n \tcase err := <-errCh:\n \t\tif err != nil {\n-\t\t\tfmt.Printf(\"Failed to read the server name from the server %v\", err)\n+\t\t\tfmt.Printf(\"test-creds: failed to read expected authority name from the server: %v\\n\", err)\n \t\t\treturn nil, nil, err\n \t\t}\n \tcase <-ctx.Done():\n \t\treturn nil, nil, ctx.Err()\n \t}\n-\tif c.expected != string(b) {\n-\t\tfmt.Printf(\"Read the server name %s want %s\", string(b), c.expected)\n+\tif authority != string(b) {\n+\t\tfmt.Printf(\"test-creds: got authority from ClientConn %q, expected by server %q\\n\", authority, string(b))\n \t\treturn nil, nil, errors.New(\"received unexpected server name\")\n \t}\n \treturn rawConn, nil, nil\n }\n func (c *serverNameCheckCreds) Info() credentials.ProtocolInfo {\n-\tc.mu.Lock()\n-\tdefer c.mu.Unlock()\n \treturn credentials.ProtocolInfo{}\n }\n func (c *serverNameCheckCreds) Clone() credentials.TransportCredentials {\n-\tc.mu.Lock()\n-\tdefer c.mu.Unlock()\n-\treturn &serverNameCheckCreds{\n-\t\texpected: c.expected,\n-\t}\n+\treturn &serverNameCheckCreds{}\n }\n func (c *serverNameCheckCreds) OverrideServerName(s string) error {\n-\tc.mu.Lock()\n-\tdefer c.mu.Unlock()\n-\tc.expected = s\n \treturn nil\n }\n \n@@ -388,9 +378,7 @@ func TestGRPCLB(t *testing.T) {\n \t\tServers: bes,\n \t}\n \ttss.ls.sls <- sl\n-\tcreds := serverNameCheckCreds{\n-\t\texpected: beServerName,\n-\t}\n+\tcreds := serverNameCheckCreds{}\n \tctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)\n \tdefer cancel()\n \tcc, err := grpc.DialContext(ctx, r.Scheme()+\":///\"+beServerName,\n@@ -439,9 +427,7 @@ func TestGRPCLBWeighted(t *testing.T) {\n \t\tportsToIndex[tss.bePorts[i]] = i\n \t}\n \n-\tcreds := serverNameCheckCreds{\n-\t\texpected: beServerName,\n-\t}\n+\tcreds := serverNameCheckCreds{}\n \tctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)\n \tdefer cancel()\n \tcc, err := grpc.DialContext(ctx, r.Scheme()+\":///\"+beServerName,\n@@ -509,9 +495,7 @@ func TestDropRequest(t *testing.T) {\n \t\t\tDrop: true,\n \t\t}},\n \t}\n-\tcreds := serverNameCheckCreds{\n-\t\texpected: beServerName,\n-\t}\n+\tcreds := serverNameCheckCreds{}\n \tctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)\n \tdefer cancel()\n \tcc, err := grpc.DialContext(ctx, r.Scheme()+\":///\"+beServerName,\n@@ -671,9 +655,7 @@ func TestBalancerDisconnects(t *testing.T) {\n \t\tlbs = append(lbs, tss.lb)\n \t}\n \n-\tcreds := serverNameCheckCreds{\n-\t\texpected: beServerName,\n-\t}\n+\tcreds := serverNameCheckCreds{}\n \tctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)\n \tdefer cancel()\n \tcc, err := grpc.DialContext(ctx, r.Scheme()+\":///\"+beServerName,\n@@ -752,9 +734,7 @@ func TestFallback(t *testing.T) {\n \t\tServers: bes,\n \t}\n \ttss.ls.sls <- sl\n-\tcreds := serverNameCheckCreds{\n-\t\texpected: beServerName,\n-\t}\n+\tcreds := serverNameCheckCreds{}\n \tctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)\n \tdefer cancel()\n \tcc, err := grpc.DialContext(ctx, r.Scheme()+\":///\"+beServerName,\n@@ -770,9 +750,8 @@ func TestFallback(t *testing.T) {\n \t\tType:       resolver.GRPCLB,\n \t\tServerName: lbServerName,\n \t}, {\n-\t\tAddr:       beLis.Addr().String(),\n-\t\tType:       resolver.Backend,\n-\t\tServerName: beServerName,\n+\t\tAddr: beLis.Addr().String(),\n+\t\tType: resolver.Backend,\n \t}}})\n \n \tvar p peer.Peer\n@@ -788,9 +767,8 @@ func TestFallback(t *testing.T) {\n \t\tType:       resolver.GRPCLB,\n \t\tServerName: lbServerName,\n \t}, {\n-\t\tAddr:       beLis.Addr().String(),\n-\t\tType:       resolver.Backend,\n-\t\tServerName: beServerName,\n+\t\tAddr: beLis.Addr().String(),\n+\t\tType: resolver.Backend,\n \t}}})\n \n \tvar backendUsed bool\n@@ -851,6 +829,165 @@ func TestFallback(t *testing.T) {\n \t}\n }\n \n+type pickfirstFailOnEmptyAddrsListBuilder struct {\n+\tbalancer.Builder // pick_first builder.\n+}\n+\n+func (b *pickfirstFailOnEmptyAddrsListBuilder) Build(cc balancer.ClientConn, opts balancer.BuildOptions) balancer.Balancer {\n+\tpf := b.Builder.Build(cc, opts)\n+\treturn &pickfirstFailOnEmptyAddrsList{pf}\n+}\n+\n+type pickfirstFailOnEmptyAddrsList struct {\n+\tbalancer.Balancer // pick_first balancer.\n+}\n+\n+func (b *pickfirstFailOnEmptyAddrsList) UpdateClientConnState(s balancer.ClientConnState) error {\n+\taddrs := s.ResolverState.Addresses\n+\tif len(addrs) == 0 {\n+\t\treturn balancer.ErrBadResolverState\n+\t}\n+\tb.Balancer.HandleResolvedAddrs(addrs, nil)\n+\treturn nil\n+}\n+\n+func (b *pickfirstFailOnEmptyAddrsList) UpdateSubConnState(sc balancer.SubConn, state balancer.SubConnState) {\n+\tb.Balancer.HandleSubConnStateChange(sc, state.ConnectivityState)\n+}\n+\n+func (b *pickfirstFailOnEmptyAddrsList) ResolverError(error) {}\n+\n+func TestFallBackWithNoServerAddress(t *testing.T) {\n+\tdefer leakcheck.Check(t)\n+\n+\tdefer func() func() {\n+\t\t// Override pick_first with a balancer that returns error to trigger\n+\t\t// re-resolve, to test that when grpclb accepts no server address,\n+\t\t// re-resolve is never triggered.\n+\t\tpfb := balancer.Get(\"pick_first\")\n+\t\tbalancer.Register(&pickfirstFailOnEmptyAddrsListBuilder{pfb})\n+\t\treturn func() { balancer.Register(pfb) }\n+\t}()()\n+\n+\tresolveNowCh := make(chan struct{}, 1)\n+\tr, cleanup := manual.GenerateAndRegisterManualResolver()\n+\tr.ResolveNowCallback = func(resolver.ResolveNowOption) {\n+\t\tselect {\n+\t\tcase <-resolveNowCh:\n+\t\tdefault:\n+\t\t}\n+\t\tresolveNowCh <- struct{}{}\n+\t}\n+\tdefer cleanup()\n+\n+\ttss, cleanup, err := newLoadBalancer(1)\n+\tif err != nil {\n+\t\tt.Fatalf(\"failed to create new load balancer: %v\", err)\n+\t}\n+\tdefer cleanup()\n+\n+\t// Start a standalone backend.\n+\tbeLis, err := net.Listen(\"tcp\", \"localhost:0\")\n+\tif err != nil {\n+\t\tt.Fatalf(\"Failed to listen %v\", err)\n+\t}\n+\tdefer beLis.Close()\n+\tstandaloneBEs := startBackends(beServerName, true, beLis)\n+\tdefer stopBackends(standaloneBEs)\n+\n+\tbe := &lbpb.Server{\n+\t\tIpAddress:        tss.beIPs[0],\n+\t\tPort:             int32(tss.bePorts[0]),\n+\t\tLoadBalanceToken: lbToken,\n+\t}\n+\tvar bes []*lbpb.Server\n+\tbes = append(bes, be)\n+\tsl := &lbpb.ServerList{\n+\t\tServers: bes,\n+\t}\n+\tcreds := serverNameCheckCreds{}\n+\tctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)\n+\tdefer cancel()\n+\tcc, err := grpc.DialContext(ctx, r.Scheme()+\":///\"+beServerName,\n+\t\tgrpc.WithTransportCredentials(&creds), grpc.WithContextDialer(fakeNameDialer))\n+\tif err != nil {\n+\t\tt.Fatalf(\"Failed to dial to the backend %v\", err)\n+\t}\n+\tdefer cc.Close()\n+\ttestC := testpb.NewTestServiceClient(cc)\n+\n+\t// Select grpclb with service config.\n+\tconst pfc = `{\"loadBalancingConfig\":[{\"grpclb\":{\"childPolicy\":[{\"round_robin\":{}}]}}]}`\n+\tscpr := r.CC.ParseServiceConfig(pfc)\n+\tif scpr.Err != nil {\n+\t\tt.Fatalf(\"Error parsing config %q: %v\", pfc, scpr.Err)\n+\t}\n+\n+\tfor i := 0; i < 2; i++ {\n+\t\t// Send an update with only backend address. grpclb should enter fallback\n+\t\t// and use the fallback backend.\n+\t\tr.UpdateState(resolver.State{\n+\t\t\tAddresses: []resolver.Address{{\n+\t\t\t\tAddr: beLis.Addr().String(),\n+\t\t\t\tType: resolver.Backend,\n+\t\t\t}},\n+\t\t\tServiceConfig: scpr,\n+\t\t})\n+\n+\t\tselect {\n+\t\tcase <-resolveNowCh:\n+\t\t\tt.Errorf(\"unexpected resolveNow when grpclb gets no balancer address 1111, %d\", i)\n+\t\tcase <-time.After(time.Second):\n+\t\t}\n+\n+\t\tvar p peer.Peer\n+\t\trpcCtx, rpcCancel := context.WithTimeout(context.Background(), time.Second)\n+\t\tdefer rpcCancel()\n+\t\tif _, err := testC.EmptyCall(rpcCtx, &testpb.Empty{}, grpc.WaitForReady(true), grpc.Peer(&p)); err != nil {\n+\t\t\tt.Fatalf(\"_.EmptyCall(_, _) = _, %v, want _, <nil>\", err)\n+\t\t}\n+\t\tif p.Addr.String() != beLis.Addr().String() {\n+\t\t\tt.Fatalf(\"got peer: %v, want peer: %v\", p.Addr, beLis.Addr())\n+\t\t}\n+\n+\t\tselect {\n+\t\tcase <-resolveNowCh:\n+\t\t\tt.Errorf(\"unexpected resolveNow when grpclb gets no balancer address 2222, %d\", i)\n+\t\tcase <-time.After(time.Second):\n+\t\t}\n+\n+\t\ttss.ls.sls <- sl\n+\t\t// Send an update with balancer address. The backends behind grpclb should\n+\t\t// be used.\n+\t\tr.UpdateState(resolver.State{\n+\t\t\tAddresses: []resolver.Address{{\n+\t\t\t\tAddr:       tss.lbAddr,\n+\t\t\t\tType:       resolver.GRPCLB,\n+\t\t\t\tServerName: lbServerName,\n+\t\t\t}, {\n+\t\t\t\tAddr: beLis.Addr().String(),\n+\t\t\t\tType: resolver.Backend,\n+\t\t\t}},\n+\t\t\tServiceConfig: scpr,\n+\t\t})\n+\n+\t\tvar backendUsed bool\n+\t\tfor i := 0; i < 1000; i++ {\n+\t\t\tif _, err := testC.EmptyCall(context.Background(), &testpb.Empty{}, grpc.WaitForReady(true), grpc.Peer(&p)); err != nil {\n+\t\t\t\tt.Fatalf(\"%v.EmptyCall(_, _) = _, %v, want _, <nil>\", testC, err)\n+\t\t\t}\n+\t\t\tif p.Addr.(*net.TCPAddr).Port == tss.bePorts[0] {\n+\t\t\t\tbackendUsed = true\n+\t\t\t\tbreak\n+\t\t\t}\n+\t\t\ttime.Sleep(time.Millisecond)\n+\t\t}\n+\t\tif !backendUsed {\n+\t\t\tt.Fatalf(\"No RPC sent to backend behind remote balancer after 1 second\")\n+\t\t}\n+\t}\n+}\n+\n func TestGRPCLBPickFirst(t *testing.T) {\n \tdefer leakcheck.Check(t)\n \n@@ -881,9 +1018,7 @@ func TestGRPCLBPickFirst(t *testing.T) {\n \t\tportsToIndex[tss.bePorts[i]] = i\n \t}\n \n-\tcreds := serverNameCheckCreds{\n-\t\texpected: beServerName,\n-\t}\n+\tcreds := serverNameCheckCreds{}\n \tctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)\n \tdefer cancel()\n \tcc, err := grpc.DialContext(ctx, r.Scheme()+\":///\"+beServerName,\n@@ -1034,7 +1169,7 @@ func runAndGetStats(t *testing.T, drop bool, runRPCs func(*grpc.ClientConn)) *rp\n \t}\n \ttss.ls.sls <- &lbpb.ServerList{Servers: servers}\n \ttss.ls.statsDura = 100 * time.Millisecond\n-\tcreds := serverNameCheckCreds{expected: beServerName}\n+\tcreds := serverNameCheckCreds{}\n \n \tctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)\n \tdefer cancel()\n",
+  "fixed_tests": {
+    "TestFallBackWithNoServerAddress": {
+      "run": "NONE",
+      "test": "FAIL",
+      "fix": "PASS"
+    }
+  },
+  "p2p_tests": {
+    "TestOneBackend": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestBalancerGroup_locality_caching_close_group": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestAppendH2ToNextProtos": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestServerStatsUnaryRPC": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestPipeClose": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestAppendToOutgoingContext_FromKVSlice": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestBalancerGroup_TwoRR_ChangeWeight_MoreBackends": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestServerBinaryLogServerStreamRPCError": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestEventHasFired": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "Test_childIsPickFirst": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestIsRoundRobin": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestDropper": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestNewConfigEnvNotSet": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestFillMethodLoggerWithConfigStringInvalid": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestServerHandshake": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestGetServers": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestServerStatsFullDuplexRPC": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestSayHello": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestBalancerGroup_TwoRR_OneBackend": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestBalancerGroup_locality_caching": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestGRPCLBStatsUnaryDrop": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestRateLimitedResolve": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestHeaderConfigRegexp": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestErrorsWithSameParameters": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestAuthInfoFromContext": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestFromErrorUnknownError": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestBalancerGroup_start_close": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestPingPong": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestGRPCLBStatsStreamingSuccess": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestCacheExpire": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestIsRunningOnGCP": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestDial": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestTruncateMessageNotTruncated": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestServerBinaryLogFullDuplexError": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestConvertUnknownError": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestDNSResolverRetry": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestClientHandshake": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestLBCacheClientConnExpire": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestGetSocketOptions": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestClientHealthCheckBackoff": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestPairsMD": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestErrorProtoOK": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestServerHandshakeReturnsAuthInfo": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestGetSubChannel": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestFromErrorImplementsInterface": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestFileDescForType": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestBalancerGroup_start_close_deadlock": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestClose": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestAES128GCMEncrypt": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestNewLoggerFromConfigStringInvalid": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestFromNilProto": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestBalancerGroup_TwoRR_MoreBackends": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "Test_lrsStore_ReportTo": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestListener": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestResolve": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestCloneServer": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestAllExtensionNumbersForType": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestBalancerGroup_locality_caching_not_readd_within_timeout": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestClientBinaryLogCancel": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestErrorIs": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestRegister": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestParseMethodNameInvalid": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestLBCache_RemoveTimer_New_Race": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestResolveFunc": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestRandomWRRNext": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestWrapSyscallConn": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestServerStatsServerStreamRPCError": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "Test_Parse": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestRouteChat": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestNoSetupOrTeardown": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestServerStatsFullDuplexRPCError": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestListenerAndDialer": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestIncorrectMsgType": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestEDS_LoadReport": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestGetSocketOpt": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestSet": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestSmallReadBuffer": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestEDS_UpdateSubBalancerName": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestConnCloseWithData": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestPipeListener": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestEdfWrrNext": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestAllServersDown": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestClientBinaryLogClientStreamRPCError": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestClientStatsServerStreamRPC": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestClientStatsServerStreamRPCError": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestCloseWhileAccepting": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestClientStatsUnaryRPCError": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestDurationSlice": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestCompareRPCVersions": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestGetMethodLoggerOff": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestErrorOK": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestSync": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestIsRunningOnGCPNoProductNameFile": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestNewLoggerFromConfigString": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestSyncTooSlow": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestCloseWithPendingRPC": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestServerBinaryLogServerStreamRPC": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestGet": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestServerBinaryLogClientStreamRPC": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestBalancerGroup_locality_caching_readd_with_different_builder": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestJSONUnmarshal": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestClientStatsClientStreamRPC": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestOneServerDown": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestBackendsRoundRobin": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "Test_lrsStore_buildStats_rpcCounts": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestFillMethodLoggerWithConfigStringPerService": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestGRPCLBStatsStreamingFailedToSend": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestGetServerSockets": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestDisableServiceConfig": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestFillMethodLoggerWithConfigStringGlobal": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestAppendToOutgoingContext_Repeated": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestConvertKnownError": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestServerAndClientHandshake": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestExample": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestCopy": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestFromContextError": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestCacheRetrieveTimeoutRace": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestConcurrentUsage": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestTLSOverrideServerName": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestPeerNotResponding": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestLoggerV2Severity": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestAuthInfoFromPeer": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestCloneClient": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestParseMethodName": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestTruncateMessageTruncated": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestInfo": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestEDS_OneLocality": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestServerBinaryLogUnaryRPCError": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestAES128GCMRekeyEncryptRoundtrip": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestInfoServerName": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestAppend": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestGetMethodLogger": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestTruncateMetadataTruncated": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestTrace": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestOverrideServerName": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestLongMethodConfigRegexp": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestClientBinaryLogUnaryRPC": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestClientStatsFullDuplexRPCError": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestTags": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestClientHandshakeReturnsAuthInfo": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestAES128GCMEncryptRoundtrip": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestMessageConfigRegexp": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestCacheRemove": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestClientStatsFullDuplexRPC": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "Test_lrsStore_buildStats_drops": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestCheckRegisterIgnore": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestPipe": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestJoin": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestFrameTooLarge": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestUnblocking": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestBalancerGroup_OneRR_AddRemoveBackend": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestGRPCLBWeighted": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestALTSAuthInfo": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestFillMethodLoggerWithConfigStringPerMethod": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestEventMultipleFires": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestBasicProtoCodecMarshalAndUnmarshal": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestCacheClearWithoutCallback": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestWriteLargeData": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestServerStatsUnaryRPCError": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestCounterSides": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestFallback": {
+      "run": "NONE",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestParseMethodConfigAndSuffix": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestAES128GCMRekeyEncrypt": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestFromError": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestAppendToOutgoingContext": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestUnmarshalJSON": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestClientStatsUnaryRPC": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestBalancerGroup_ThreeRR_RemoveBalancer": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestEDS_TwoLocalities": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestIPWatcher": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestCheck": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestStatus_WithDetails_Fail": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestStatusErrEqual": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestNewAddressWhileBlocking": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestAddressesRemoved": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestServerBinaryLogFullDuplex": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestFileDescContainingExtension": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestBalancerGroup_TwoRR_DifferentWeight_MoreBackends": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestUnmarshalJSON_UnknownInput": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestDeadline": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestDropPicker": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestGRPCLBStatsStreamingDrop": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestStatus_ErrorDetails": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestStringWithAllowedValues": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestServerBinaryLogUnaryRPC": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestGRPCLBPickFirst": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestFromMetadata": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestCheckRPCVersions": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestReflectionEnd2end": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestXDSRsolverServiceConfig": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestDropRequest": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestFromToProto": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestServerStatsClientStreamRPCError": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "Test": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestBufferBloat": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestServerBinaryLogClientStreamRPCError": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestGRPCLB": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestServerStatsClientStreamRPC": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestClientBinaryLogServerStreamRPCError": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestBalancerDisconnects": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestConn": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestGRPCLBStatsUnaryFailedToSend": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestLog": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestStaggeredMarshalAndUnmarshalUsingSamePool": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestCacheClearWithCallback": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestGetChannel": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestCounterInc": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestClientBinaryLogClientStreamRPC": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestTypeForName": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestParseHeaderMessageLengthConfig": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestCustomAuthority": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestServerStatsServerStreamRPC": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestLBCacheClientConnReuse": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestFromErrorOK": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestXDSRsolverSchemeAndAddresses": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestTLSClone": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestIntSlice": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestTruncateMetadataNotTruncated": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestShutdown": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestParseHeaderMessageLengthConfigInvalid": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestUnmarshalJSON_MarshalUnmarshal": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestWrapSyscallConnNoWrap": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestBalancerGroup_LoadReport": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestParseMethodConfigAndSuffixInvalid": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestError": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestGetTopChannels": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestFillMethodLoggerWithConfigStringBlacklist": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestCloseWhileDialing": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestRolloverCounter": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestLocalityMatchProtoMessage": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestCompileUpdate": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestClientStatsClientStreamRPCError": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestClientBinaryLogUnaryRPCError": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestLargeMsg": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestEventDoneChannel": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestGRPCLBStatsUnarySuccess": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestClientBinaryLogFullDuplexRPC": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestTypeForNameNotFound": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestGetSocket": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestRunSubTests": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestClientBinaryLogFullDuplexRPCError": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestHeaderMessageConfigRegexp": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "Test/XdsLoadbalancingConfigParsing": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestClientBinaryLogServerStreamRPC": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestGetServerSocketsNonZeroStartID": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestUnmarshalJSON_NilReceiver": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestStatus_ErrorDetails_Fail": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestNewConfig": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    },
+    "TestToMetadata": {
+      "run": "PASS",
+      "test": "PASS",
+      "fix": "PASS"
+    }
+  },
+  "f2p_tests": {
+    "TestFallBackWithNoServerAddress": {
+      "run": "NONE",
+      "test": "FAIL",
+      "fix": "PASS"
+    }
+  },
+  "s2p_tests": {},
+  "n2p_tests": {},
+  "run_result": {
+    "passed_count": 248,
+    "failed_count": 2,
+    "skipped_count": 0,
+    "passed_tests": [
+      "TestOneBackend",
+      "TestBalancerGroup_locality_caching_close_group",
+      "TestAppendH2ToNextProtos",
+      "TestServerStatsUnaryRPC",
+      "TestPipeClose",
+      "TestAppendToOutgoingContext_FromKVSlice",
+      "TestBalancerGroup_TwoRR_ChangeWeight_MoreBackends",
+      "TestServerBinaryLogServerStreamRPCError",
+      "TestEventHasFired",
+      "Test_childIsPickFirst",
+      "TestIsRoundRobin",
+      "TestDropper",
+      "TestNewConfigEnvNotSet",
+      "TestFillMethodLoggerWithConfigStringInvalid",
+      "TestGetServers",
+      "TestServerStatsFullDuplexRPC",
+      "TestSayHello",
+      "TestBalancerGroup_TwoRR_OneBackend",
+      "TestBalancerGroup_locality_caching",
+      "TestGRPCLBStatsUnaryDrop",
+      "TestRateLimitedResolve",
+      "TestHeaderConfigRegexp",
+      "TestErrorsWithSameParameters",
+      "TestAuthInfoFromContext",
+      "TestFromErrorUnknownError",
+      "TestBalancerGroup_start_close",
+      "TestPingPong",
+      "TestGRPCLBStatsStreamingSuccess",
+      "TestCacheExpire",
+      "TestIsRunningOnGCP",
+      "TestDial",
+      "TestTruncateMessageNotTruncated",
+      "TestServerBinaryLogFullDuplexError",
+      "TestConvertUnknownError",
+      "TestDNSResolverRetry",
+      "TestClientHandshake",
+      "TestLBCacheClientConnExpire",
+      "TestGetSocketOptions",
+      "TestClientHealthCheckBackoff",
+      "TestPairsMD",
+      "TestErrorProtoOK",
+      "TestServerHandshakeReturnsAuthInfo",
+      "TestFromErrorImplementsInterface",
+      "TestFileDescForType",
+      "TestBalancerGroup_start_close_deadlock",
+      "TestClose",
+      "TestAES128GCMEncrypt",
+      "TestNewLoggerFromConfigStringInvalid",
+      "TestFromNilProto",
+      "TestStatus_ErrorDetails_Fail",
+      "TestBalancerGroup_TwoRR_MoreBackends",
+      "TestListener",
+      "Test_lrsStore_ReportTo",
+      "TestResolve",
+      "TestCloneServer",
+      "TestAllExtensionNumbersForType",
+      "TestBalancerGroup_locality_caching_not_readd_within_timeout",
+      "TestClientBinaryLogCancel",
+      "TestErrorIs",
+      "TestRegister",
+      "TestParseMethodNameInvalid",
+      "TestLBCache_RemoveTimer_New_Race",
+      "TestResolveFunc",
+      "TestRandomWRRNext",
+      "TestServerStatsServerStreamRPCError",
+      "Test_Parse",
+      "TestRouteChat",
+      "TestNoSetupOrTeardown",
+      "TestServerStatsFullDuplexRPCError",
+      "TestListenerAndDialer",
+      "TestIncorrectMsgType",
+      "TestEDS_LoadReport",
+      "TestGetSocketOpt",
+      "TestSet",
+      "TestSmallReadBuffer",
+      "TestEDS_UpdateSubBalancerName",
+      "TestConnCloseWithData",
+      "TestPipeListener",
+      "TestEdfWrrNext",
+      "TestAllServersDown",
+      "TestClientBinaryLogClientStreamRPCError",
+      "TestClientStatsServerStreamRPC",
+      "TestClientStatsServerStreamRPCError",
+      "TestCloseWhileAccepting",
+      "TestClientStatsUnaryRPCError",
+      "TestDurationSlice",
+      "TestCompareRPCVersions",
+      "TestGetMethodLoggerOff",
+      "TestErrorOK",
+      "TestSync",
+      "TestIsRunningOnGCPNoProductNameFile",
+      "TestNewLoggerFromConfigString",
+      "TestSyncTooSlow",
+      "TestCloseWithPendingRPC",
+      "TestServerBinaryLogServerStreamRPC",
+      "TestGet",
+      "TestServerBinaryLogClientStreamRPC",
+      "TestBalancerGroup_locality_caching_readd_with_different_builder",
+      "TestJSONUnmarshal",
+      "TestClientStatsClientStreamRPC",
+      "TestOneServerDown",
+      "TestBackendsRoundRobin",
+      "Test_lrsStore_buildStats_rpcCounts",
+      "TestFillMethodLoggerWithConfigStringPerService",
+      "TestGRPCLBStatsStreamingFailedToSend",
+      "TestGetServerSockets",
+      "TestDisableServiceConfig",
+      "TestFillMethodLoggerWithConfigStringGlobal",
+      "TestAppendToOutgoingContext_Repeated",
+      "TestConvertKnownError",
+      "TestServerAndClientHandshake",
+      "TestExample",
+      "TestCopy",
+      "TestFromContextError",
+      "TestCacheRetrieveTimeoutRace",
+      "TestConcurrentUsage",
+      "TestTLSOverrideServerName",
+      "TestPeerNotResponding",
+      "TestLoggerV2Severity",
+      "TestAuthInfoFromPeer",
+      "TestCloneClient",
+      "TestParseMethodName",
+      "TestTruncateMessageTruncated",
+      "TestInfo",
+      "TestEDS_OneLocality",
+      "TestServerBinaryLogUnaryRPCError",
+      "TestAES128GCMRekeyEncryptRoundtrip",
+      "TestInfoServerName",
+      "TestAppend",
+      "TestGetMethodLogger",
+      "TestTruncateMetadataTruncated",
+      "TestTrace",
+      "TestOverrideServerName",
+      "TestLongMethodConfigRegexp",
+      "TestClientBinaryLogUnaryRPC",
+      "TestClientStatsFullDuplexRPCError",
+      "TestTags",
+      "TestClientHandshakeReturnsAuthInfo",
+      "TestAES128GCMEncryptRoundtrip",
+      "TestMessageConfigRegexp",
+      "TestCacheRemove",
+      "TestClientStatsFullDuplexRPC",
+      "Test_lrsStore_buildStats_drops",
+      "TestCheckRegisterIgnore",
+      "TestPipe",
+      "TestJoin",
+      "TestFrameTooLarge",
+      "TestUnblocking",
+      "TestBalancerGroup_OneRR_AddRemoveBackend",
+      "TestGRPCLBWeighted",
+      "TestALTSAuthInfo",
+      "TestFillMethodLoggerWithConfigStringPerMethod",
+      "TestEventMultipleFires",
+      "TestBasicProtoCodecMarshalAndUnmarshal",
+      "TestCacheClearWithoutCallback",
+      "TestWriteLargeData",
+      "TestServerStatsUnaryRPCError",
+      "TestCounterSides",
+      "TestParseMethodConfigAndSuffix",
+      "TestAES128GCMRekeyEncrypt",
+      "TestFromError",
+      "TestAppendToOutgoingContext",
+      "TestUnmarshalJSON",
+      "TestClientStatsUnaryRPC",
+      "TestBalancerGroup_ThreeRR_RemoveBalancer",
+      "TestEDS_TwoLocalities",
+      "TestIPWatcher",
+      "TestCheck",
+      "TestStatus_WithDetails_Fail",
+      "TestStatusErrEqual",
+      "TestNewAddressWhileBlocking",
+      "TestAddressesRemoved",
+      "TestServerBinaryLogFullDuplex",
+      "TestFileDescContainingExtension",
+      "TestBalancerGroup_TwoRR_DifferentWeight_MoreBackends",
+      "TestUnmarshalJSON_UnknownInput",
+      "TestDeadline",
+      "TestDropPicker",
+      "TestGRPCLBStatsStreamingDrop",
+      "TestStatus_ErrorDetails",
+      "TestStringWithAllowedValues",
+      "TestServerBinaryLogUnaryRPC",
+      "TestGRPCLBPickFirst",
+      "TestFromMetadata",
+      "TestCheckRPCVersions",
+      "TestReflectionEnd2end",
+      "TestXDSRsolverServiceConfig",
+      "TestDropRequest",
+      "TestFromToProto",
+      "TestServerStatsClientStreamRPCError",
+      "Test",
+      "TestBufferBloat",
+      "TestServerBinaryLogClientStreamRPCError",
+      "TestGRPCLB",
+      "TestServerStatsClientStreamRPC",
+      "TestClientBinaryLogServerStreamRPCError",
+      "TestBalancerDisconnects",
+      "TestConn",
+      "TestGRPCLBStatsUnaryFailedToSend",
+      "TestLog",
+      "TestStaggeredMarshalAndUnmarshalUsingSamePool",
+      "TestCacheClearWithCallback",
+      "TestGetChannel",
+      "TestCounterInc",
+      "TestClientBinaryLogClientStreamRPC",
+      "TestTypeForName",
+      "TestClientBinaryLogServerStreamRPC",
+      "TestParseHeaderMessageLengthConfig",
+      "TestCustomAuthority",
+      "TestServerStatsServerStreamRPC",
+      "TestLBCacheClientConnReuse",
+      "TestFromErrorOK",
+      "TestXDSRsolverSchemeAndAddresses",
+      "TestTLSClone",
+      "TestIntSlice",
+      "TestTruncateMetadataNotTruncated",
+      "TestShutdown",
+      "TestParseHeaderMessageLengthConfigInvalid",
+      "TestUnmarshalJSON_MarshalUnmarshal",
+      "TestWrapSyscallConnNoWrap",
+      "TestBalancerGroup_LoadReport",
+      "TestParseMethodConfigAndSuffixInvalid",
+      "TestError",
+      "TestGetTopChannels",
+      "TestFillMethodLoggerWithConfigStringBlacklist",
+      "TestCloseWhileDialing",
+      "TestRolloverCounter",
+      "TestLocalityMatchProtoMessage",
+      "TestCompileUpdate",
+      "TestClientStatsClientStreamRPCError",
+      "TestClientBinaryLogUnaryRPCError",
+      "TestLargeMsg",
+      "TestEventDoneChannel",
+      "TestGRPCLBStatsUnarySuccess",
+      "TestGetServerSocketsNonZeroStartID",
+      "TestClientBinaryLogFullDuplexRPC",
+      "TestTypeForNameNotFound",
+      "TestGetSocket",
+      "TestRunSubTests",
+      "TestClientBinaryLogFullDuplexRPCError",
+      "TestHeaderMessageConfigRegexp",
+      "Test/XdsLoadbalancingConfigParsing",
+      "TestWrapSyscallConn",
+      "TestGetSubChannel",
+      "TestUnmarshalJSON_NilReceiver",
+      "TestServerHandshake",
+      "TestNewConfig",
+      "TestToMetadata"
+    ],
+    "failed_tests": [
+      "google.golang.org/grpc/internal",
+      "google.golang.org/grpc"
+    ],
+    "skipped_tests": []
+  },
+  "test_patch_result": {
+    "passed_count": 249,
+    "failed_count": 4,
+    "skipped_count": 0,
+    "passed_tests": [
+      "TestOneBackend",
+      "TestBalancerGroup_locality_caching_close_group",
+      "TestAppendH2ToNextProtos",
+      "TestServerStatsUnaryRPC",
+      "TestPipeClose",
+      "TestAppendToOutgoingContext_FromKVSlice",
+      "TestBalancerGroup_TwoRR_ChangeWeight_MoreBackends",
+      "TestServerBinaryLogServerStreamRPCError",
+      "TestEventHasFired",
+      "Test_childIsPickFirst",
+      "TestIsRoundRobin",
+      "TestDropper",
+      "TestNewConfigEnvNotSet",
+      "TestFillMethodLoggerWithConfigStringInvalid",
+      "TestGetServers",
+      "TestServerStatsFullDuplexRPC",
+      "TestSayHello",
+      "TestBalancerGroup_TwoRR_OneBackend",
+      "TestBalancerGroup_locality_caching",
+      "TestGRPCLBStatsUnaryDrop",
+      "TestRateLimitedResolve",
+      "TestHeaderConfigRegexp",
+      "TestErrorsWithSameParameters",
+      "TestAuthInfoFromContext",
+      "TestFromErrorUnknownError",
+      "TestBalancerGroup_start_close",
+      "TestPingPong",
+      "TestGRPCLBStatsStreamingSuccess",
+      "TestCacheExpire",
+      "TestIsRunningOnGCP",
+      "TestDial",
+      "TestTruncateMessageNotTruncated",
+      "TestServerBinaryLogFullDuplexError",
+      "TestConvertUnknownError",
+      "TestDNSResolverRetry",
+      "TestClientHandshake",
+      "TestLBCacheClientConnExpire",
+      "TestGetSocketOptions",
+      "TestClientHealthCheckBackoff",
+      "TestPairsMD",
+      "TestErrorProtoOK",
+      "TestServerHandshakeReturnsAuthInfo",
+      "TestFromErrorImplementsInterface",
+      "TestFileDescForType",
+      "TestBalancerGroup_start_close_deadlock",
+      "TestClose",
+      "TestAES128GCMEncrypt",
+      "TestNewLoggerFromConfigStringInvalid",
+      "TestFromNilProto",
+      "TestStatus_ErrorDetails_Fail",
+      "TestBalancerGroup_TwoRR_MoreBackends",
+      "TestListener",
+      "Test_lrsStore_ReportTo",
+      "TestResolve",
+      "TestCloneServer",
+      "TestAllExtensionNumbersForType",
+      "TestBalancerGroup_locality_caching_not_readd_within_timeout",
+      "TestClientBinaryLogCancel",
+      "TestErrorIs",
+      "TestRegister",
+      "TestParseMethodNameInvalid",
+      "TestLBCache_RemoveTimer_New_Race",
+      "TestResolveFunc",
+      "TestRandomWRRNext",
+      "TestServerStatsServerStreamRPCError",
+      "Test_Parse",
+      "TestRouteChat",
+      "TestNoSetupOrTeardown",
+      "TestServerStatsFullDuplexRPCError",
+      "TestListenerAndDialer",
+      "TestIncorrectMsgType",
+      "TestEDS_LoadReport",
+      "TestGetSocketOpt",
+      "TestSet",
+      "TestSmallReadBuffer",
+      "TestEDS_UpdateSubBalancerName",
+      "TestConnCloseWithData",
+      "TestPipeListener",
+      "TestEdfWrrNext",
+      "TestAllServersDown",
+      "TestClientBinaryLogClientStreamRPCError",
+      "TestClientStatsServerStreamRPC",
+      "TestClientStatsServerStreamRPCError",
+      "TestCloseWhileAccepting",
+      "TestClientStatsUnaryRPCError",
+      "TestDurationSlice",
+      "TestCompareRPCVersions",
+      "TestGetMethodLoggerOff",
+      "TestErrorOK",
+      "TestSync",
+      "TestIsRunningOnGCPNoProductNameFile",
+      "TestNewLoggerFromConfigString",
+      "TestSyncTooSlow",
+      "TestCloseWithPendingRPC",
+      "TestServerBinaryLogServerStreamRPC",
+      "TestGet",
+      "TestServerBinaryLogClientStreamRPC",
+      "TestBalancerGroup_locality_caching_readd_with_different_builder",
+      "TestJSONUnmarshal",
+      "TestClientStatsClientStreamRPC",
+      "TestOneServerDown",
+      "TestBackendsRoundRobin",
+      "Test_lrsStore_buildStats_rpcCounts",
+      "TestFillMethodLoggerWithConfigStringPerService",
+      "TestGRPCLBStatsStreamingFailedToSend",
+      "TestGetServerSockets",
+      "TestDisableServiceConfig",
+      "TestFillMethodLoggerWithConfigStringGlobal",
+      "TestAppendToOutgoingContext_Repeated",
+      "TestConvertKnownError",
+      "TestServerAndClientHandshake",
+      "TestExample",
+      "TestCopy",
+      "TestFromContextError",
+      "TestCacheRetrieveTimeoutRace",
+      "TestConcurrentUsage",
+      "TestTLSOverrideServerName",
+      "TestPeerNotResponding",
+      "TestLoggerV2Severity",
+      "TestAuthInfoFromPeer",
+      "TestCloneClient",
+      "TestParseMethodName",
+      "TestTruncateMessageTruncated",
+      "TestInfo",
+      "TestEDS_OneLocality",
+      "TestServerBinaryLogUnaryRPCError",
+      "TestAES128GCMRekeyEncryptRoundtrip",
+      "TestInfoServerName",
+      "TestAppend",
+      "TestGetMethodLogger",
+      "TestTruncateMetadataTruncated",
+      "TestTrace",
+      "TestOverrideServerName",
+      "TestLongMethodConfigRegexp",
+      "TestClientBinaryLogUnaryRPC",
+      "TestClientStatsFullDuplexRPCError",
+      "TestTags",
+      "TestClientHandshakeReturnsAuthInfo",
+      "TestAES128GCMEncryptRoundtrip",
+      "TestMessageConfigRegexp",
+      "TestCacheRemove",
+      "TestClientStatsFullDuplexRPC",
+      "Test_lrsStore_buildStats_drops",
+      "TestCheckRegisterIgnore",
+      "TestPipe",
+      "TestJoin",
+      "TestFrameTooLarge",
+      "TestUnblocking",
+      "TestBalancerGroup_OneRR_AddRemoveBackend",
+      "TestGRPCLBWeighted",
+      "TestALTSAuthInfo",
+      "TestFillMethodLoggerWithConfigStringPerMethod",
+      "TestEventMultipleFires",
+      "TestBasicProtoCodecMarshalAndUnmarshal",
+      "TestCacheClearWithoutCallback",
+      "TestWriteLargeData",
+      "TestServerStatsUnaryRPCError",
+      "TestCounterSides",
+      "TestFallback",
+      "TestParseMethodConfigAndSuffix",
+      "TestAES128GCMRekeyEncrypt",
+      "TestFromError",
+      "TestAppendToOutgoingContext",
+      "TestUnmarshalJSON",
+      "TestClientStatsUnaryRPC",
+      "TestBalancerGroup_ThreeRR_RemoveBalancer",
+      "TestEDS_TwoLocalities",
+      "TestIPWatcher",
+      "TestCheck",
+      "TestStatus_WithDetails_Fail",
+      "TestStatusErrEqual",
+      "TestNewAddressWhileBlocking",
+      "TestAddressesRemoved",
+      "TestServerBinaryLogFullDuplex",
+      "TestFileDescContainingExtension",
+      "TestBalancerGroup_TwoRR_DifferentWeight_MoreBackends",
+      "TestUnmarshalJSON_UnknownInput",
+      "TestDeadline",
+      "TestDropPicker",
+      "TestGRPCLBStatsStreamingDrop",
+      "TestStatus_ErrorDetails",
+      "TestStringWithAllowedValues",
+      "TestServerBinaryLogUnaryRPC",
+      "TestGRPCLBPickFirst",
+      "TestFromMetadata",
+      "TestCheckRPCVersions",
+      "TestReflectionEnd2end",
+      "TestXDSRsolverServiceConfig",
+      "TestDropRequest",
+      "TestFromToProto",
+      "TestServerStatsClientStreamRPCError",
+      "Test",
+      "TestBufferBloat",
+      "TestServerBinaryLogClientStreamRPCError",
+      "TestGRPCLB",
+      "TestServerStatsClientStreamRPC",
+      "TestClientBinaryLogServerStreamRPCError",
+      "TestBalancerDisconnects",
+      "TestConn",
+      "TestGRPCLBStatsUnaryFailedToSend",
+      "TestLog",
+      "TestStaggeredMarshalAndUnmarshalUsingSamePool",
+      "TestCacheClearWithCallback",
+      "TestGetChannel",
+      "TestCounterInc",
+      "TestClientBinaryLogClientStreamRPC",
+      "TestTypeForName",
+      "TestClientBinaryLogServerStreamRPC",
+      "TestParseHeaderMessageLengthConfig",
+      "TestCustomAuthority",
+      "TestServerStatsServerStreamRPC",
+      "TestLBCacheClientConnReuse",
+      "TestFromErrorOK",
+      "TestXDSRsolverSchemeAndAddresses",
+      "TestTLSClone",
+      "TestIntSlice",
+      "TestTruncateMetadataNotTruncated",
+      "TestShutdown",
+      "TestParseHeaderMessageLengthConfigInvalid",
+      "TestUnmarshalJSON_MarshalUnmarshal",
+      "TestWrapSyscallConnNoWrap",
+      "TestBalancerGroup_LoadReport",
+      "TestParseMethodConfigAndSuffixInvalid",
+      "TestError",
+      "TestGetTopChannels",
+      "TestFillMethodLoggerWithConfigStringBlacklist",
+      "TestCloseWhileDialing",
+      "TestRolloverCounter",
+      "TestLocalityMatchProtoMessage",
+      "TestCompileUpdate",
+      "TestClientStatsClientStreamRPCError",
+      "TestClientBinaryLogUnaryRPCError",
+      "TestLargeMsg",
+      "TestEventDoneChannel",
+      "TestGRPCLBStatsUnarySuccess",
+      "TestGetServerSocketsNonZeroStartID",
+      "TestClientBinaryLogFullDuplexRPC",
+      "TestTypeForNameNotFound",
+      "TestGetSocket",
+      "TestRunSubTests",
+      "TestClientBinaryLogFullDuplexRPCError",
+      "TestHeaderMessageConfigRegexp",
+      "Test/XdsLoadbalancingConfigParsing",
+      "TestWrapSyscallConn",
+      "TestGetSubChannel",
+      "TestUnmarshalJSON_NilReceiver",
+      "TestServerHandshake",
+      "TestNewConfig",
+      "TestToMetadata"
+    ],
+    "failed_tests": [
+      "google.golang.org/grpc/internal",
+      "TestFallBackWithNoServerAddress",
+      "google.golang.org/grpc/balancer",
+      "google.golang.org/grpc"
+    ],
+    "skipped_tests": []
+  },
+  "fix_patch_result": {
+    "passed_count": 250,
+    "failed_count": 2,
+    "skipped_count": 0,
+    "passed_tests": [
+      "TestOneBackend",
+      "TestBalancerGroup_locality_caching_close_group",
+      "TestAppendH2ToNextProtos",
+      "TestServerStatsUnaryRPC",
+      "TestPipeClose",
+      "TestAppendToOutgoingContext_FromKVSlice",
+      "TestBalancerGroup_TwoRR_ChangeWeight_MoreBackends",
+      "TestServerBinaryLogServerStreamRPCError",
+      "TestEventHasFired",
+      "Test_childIsPickFirst",
+      "TestIsRoundRobin",
+      "TestDropper",
+      "TestNewConfigEnvNotSet",
+      "TestFillMethodLoggerWithConfigStringInvalid",
+      "TestGetServers",
+      "TestServerStatsFullDuplexRPC",
+      "TestSayHello",
+      "TestBalancerGroup_TwoRR_OneBackend",
+      "TestBalancerGroup_locality_caching",
+      "TestGRPCLBStatsUnaryDrop",
+      "TestRateLimitedResolve",
+      "TestHeaderConfigRegexp",
+      "TestErrorsWithSameParameters",
+      "TestAuthInfoFromContext",
+      "TestFromErrorUnknownError",
+      "TestBalancerGroup_start_close",
+      "TestPingPong",
+      "TestGRPCLBStatsStreamingSuccess",
+      "TestCacheExpire",
+      "TestIsRunningOnGCP",
+      "TestDial",
+      "TestTruncateMessageNotTruncated",
+      "TestServerBinaryLogFullDuplexError",
+      "TestConvertUnknownError",
+      "TestDNSResolverRetry",
+      "TestClientHandshake",
+      "TestLBCacheClientConnExpire",
+      "TestGetSocketOptions",
+      "TestClientHealthCheckBackoff",
+      "TestPairsMD",
+      "TestErrorProtoOK",
+      "TestServerHandshakeReturnsAuthInfo",
+      "TestFromErrorImplementsInterface",
+      "TestFileDescForType",
+      "TestBalancerGroup_start_close_deadlock",
+      "TestClose",
+      "TestAES128GCMEncrypt",
+      "TestNewLoggerFromConfigStringInvalid",
+      "TestFromNilProto",
+      "TestStatus_ErrorDetails_Fail",
+      "TestBalancerGroup_TwoRR_MoreBackends",
+      "TestListener",
+      "Test_lrsStore_ReportTo",
+      "TestResolve",
+      "TestCloneServer",
+      "TestAllExtensionNumbersForType",
+      "TestBalancerGroup_locality_caching_not_readd_within_timeout",
+      "TestClientBinaryLogCancel",
+      "TestFallBackWithNoServerAddress",
+      "TestRegister",
+      "TestParseMethodNameInvalid",
+      "TestLBCache_RemoveTimer_New_Race",
+      "TestResolveFunc",
+      "TestErrorIs",
+      "TestRandomWRRNext",
+      "TestServerStatsServerStreamRPCError",
+      "Test_Parse",
+      "TestRouteChat",
+      "TestNoSetupOrTeardown",
+      "TestServerStatsFullDuplexRPCError",
+      "TestListenerAndDialer",
+      "TestIncorrectMsgType",
+      "TestEDS_LoadReport",
+      "TestGetSocketOpt",
+      "TestSet",
+      "TestSmallReadBuffer",
+      "TestEDS_UpdateSubBalancerName",
+      "TestConnCloseWithData",
+      "TestPipeListener",
+      "TestEdfWrrNext",
+      "TestAllServersDown",
+      "TestClientBinaryLogClientStreamRPCError",
+      "TestClientStatsServerStreamRPC",
+      "TestClientStatsServerStreamRPCError",
+      "TestCloseWhileAccepting",
+      "TestClientStatsUnaryRPCError",
+      "TestDurationSlice",
+      "TestCompareRPCVersions",
+      "TestGetMethodLoggerOff",
+      "TestErrorOK",
+      "TestSync",
+      "TestIsRunningOnGCPNoProductNameFile",
+      "TestNewLoggerFromConfigString",
+      "TestSyncTooSlow",
+      "TestCloseWithPendingRPC",
+      "TestServerBinaryLogServerStreamRPC",
+      "TestGet",
+      "TestServerBinaryLogClientStreamRPC",
+      "TestBalancerGroup_locality_caching_readd_with_different_builder",
+      "TestJSONUnmarshal",
+      "TestClientStatsClientStreamRPC",
+      "TestOneServerDown",
+      "TestBackendsRoundRobin",
+      "Test_lrsStore_buildStats_rpcCounts",
+      "TestFillMethodLoggerWithConfigStringPerService",
+      "TestGRPCLBStatsStreamingFailedToSend",
+      "TestGetServerSockets",
+      "TestDisableServiceConfig",
+      "TestFillMethodLoggerWithConfigStringGlobal",
+      "TestAppendToOutgoingContext_Repeated",
+      "TestConvertKnownError",
+      "TestServerAndClientHandshake",
+      "TestExample",
+      "TestCopy",
+      "TestFromContextError",
+      "TestCacheRetrieveTimeoutRace",
+      "TestConcurrentUsage",
+      "TestTLSOverrideServerName",
+      "TestPeerNotResponding",
+      "TestLoggerV2Severity",
+      "TestAuthInfoFromPeer",
+      "TestCloneClient",
+      "TestParseMethodName",
+      "TestTruncateMessageTruncated",
+      "TestInfo",
+      "TestEDS_OneLocality",
+      "TestServerBinaryLogUnaryRPCError",
+      "TestAES128GCMRekeyEncryptRoundtrip",
+      "TestInfoServerName",
+      "TestAppend",
+      "TestGetMethodLogger",
+      "TestTruncateMetadataTruncated",
+      "TestTrace",
+      "TestOverrideServerName",
+      "TestLongMethodConfigRegexp",
+      "TestClientBinaryLogUnaryRPC",
+      "TestClientStatsFullDuplexRPCError",
+      "TestTags",
+      "TestClientHandshakeReturnsAuthInfo",
+      "TestAES128GCMEncryptRoundtrip",
+      "TestMessageConfigRegexp",
+      "TestCacheRemove",
+      "TestClientStatsFullDuplexRPC",
+      "Test_lrsStore_buildStats_drops",
+      "TestCheckRegisterIgnore",
+      "TestPipe",
+      "TestJoin",
+      "TestFrameTooLarge",
+      "TestUnblocking",
+      "TestBalancerGroup_OneRR_AddRemoveBackend",
+      "TestGRPCLBWeighted",
+      "TestALTSAuthInfo",
+      "TestFillMethodLoggerWithConfigStringPerMethod",
+      "TestEventMultipleFires",
+      "TestBasicProtoCodecMarshalAndUnmarshal",
+      "TestCacheClearWithoutCallback",
+      "TestWriteLargeData",
+      "TestServerStatsUnaryRPCError",
+      "TestCounterSides",
+      "TestFallback",
+      "TestParseMethodConfigAndSuffix",
+      "TestAES128GCMRekeyEncrypt",
+      "TestFromError",
+      "TestAppendToOutgoingContext",
+      "TestUnmarshalJSON",
+      "TestClientStatsUnaryRPC",
+      "TestBalancerGroup_ThreeRR_RemoveBalancer",
+      "TestEDS_TwoLocalities",
+      "TestIPWatcher",
+      "TestCheck",
+      "TestStatus_WithDetails_Fail",
+      "TestStatusErrEqual",
+      "TestNewAddressWhileBlocking",
+      "TestAddressesRemoved",
+      "TestServerBinaryLogFullDuplex",
+      "TestFileDescContainingExtension",
+      "TestBalancerGroup_TwoRR_DifferentWeight_MoreBackends",
+      "TestUnmarshalJSON_UnknownInput",
+      "TestDeadline",
+      "TestDropPicker",
+      "TestGRPCLBStatsStreamingDrop",
+      "TestStatus_ErrorDetails",
+      "TestStringWithAllowedValues",
+      "TestServerBinaryLogUnaryRPC",
+      "TestGRPCLBPickFirst",
+      "TestFromMetadata",
+      "TestCheckRPCVersions",
+      "TestReflectionEnd2end",
+      "TestXDSRsolverServiceConfig",
+      "TestDropRequest",
+      "TestFromToProto",
+      "TestServerStatsClientStreamRPCError",
+      "Test",
+      "TestBufferBloat",
+      "TestServerBinaryLogClientStreamRPCError",
+      "TestGRPCLB",
+      "TestServerStatsClientStreamRPC",
+      "TestClientBinaryLogServerStreamRPCError",
+      "TestBalancerDisconnects",
+      "TestConn",
+      "TestGRPCLBStatsUnaryFailedToSend",
+      "TestLog",
+      "TestStaggeredMarshalAndUnmarshalUsingSamePool",
+      "TestCacheClearWithCallback",
+      "TestGetChannel",
+      "TestCounterInc",
+      "TestClientBinaryLogClientStreamRPC",
+      "TestTypeForName",
+      "TestClientBinaryLogServerStreamRPC",
+      "TestParseHeaderMessageLengthConfig",
+      "TestCustomAuthority",
+      "TestServerStatsServerStreamRPC",
+      "TestLBCacheClientConnReuse",
+      "TestFromErrorOK",
+      "TestXDSRsolverSchemeAndAddresses",
+      "TestTLSClone",
+      "TestIntSlice",
+      "TestTruncateMetadataNotTruncated",
+      "TestShutdown",
+      "TestParseHeaderMessageLengthConfigInvalid",
+      "TestUnmarshalJSON_MarshalUnmarshal",
+      "TestWrapSyscallConnNoWrap",
+      "TestBalancerGroup_LoadReport",
+      "TestParseMethodConfigAndSuffixInvalid",
+      "TestError",
+      "TestGetTopChannels",
+      "TestFillMethodLoggerWithConfigStringBlacklist",
+      "TestCloseWhileDialing",
+      "TestRolloverCounter",
+      "TestLocalityMatchProtoMessage",
+      "TestCompileUpdate",
+      "TestClientStatsClientStreamRPCError",
+      "TestClientBinaryLogUnaryRPCError",
+      "TestLargeMsg",
+      "TestEventDoneChannel",
+      "TestGRPCLBStatsUnarySuccess",
+      "TestGetServerSocketsNonZeroStartID",
+      "TestClientBinaryLogFullDuplexRPC",
+      "TestTypeForNameNotFound",
+      "TestGetSocket",
+      "TestRunSubTests",
+      "TestClientBinaryLogFullDuplexRPCError",
+      "TestHeaderMessageConfigRegexp",
+      "Test/XdsLoadbalancingConfigParsing",
+      "TestWrapSyscallConn",
+      "TestGetSubChannel",
+      "TestUnmarshalJSON_NilReceiver",
+      "TestServerHandshake",
+      "TestNewConfig",
+      "TestToMetadata"
+    ],
+    "failed_tests": [
+      "google.golang.org/grpc/internal",
+      "google.golang.org/grpc"
+    ],
+    "skipped_tests": []
+  },
+  "instance_id": "grpc__grpc-go-3119",
+  "hints": "",
+  "language": "go"
+}

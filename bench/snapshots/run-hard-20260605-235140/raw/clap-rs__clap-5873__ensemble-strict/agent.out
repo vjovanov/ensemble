@@ -1,0 +1,12 @@
+Implemented the minimal fix in:
+
+- `clap_builder/src/parser/parser.rs`
+
+Change made:
+- `did_you_mean_error` no longer temporarily marks the suggested argument as used when `ignore_errors(true)` is enabled.
+- This prevents ignored “did you mean” errors like `--ig` from blocking default values from being applied.
+
+Validation run:
+- `cargo test --test builder ignore_errors --quiet` ✅
+- Reproduced the reported case against the local checkout with `clap` + `derive`; both `--i` and `--ig` now resolve to `ValueSource::DefaultValue` ✅
+- `cargo fmt --check` ✅

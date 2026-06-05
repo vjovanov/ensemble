@@ -9,17 +9,19 @@ BENCH_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$BENCH_DIR/.." && pwd)"
 
 # --- Model ------------------------------------------------------------------
-# gpt-5.5 is Bedrock-only ($5.5/$33 per Mtok). Needs AWS creds in the env.
-# Swap to gpt-5-mini for cheap iteration.
-: "${MODEL:=openai.gpt-5.5}"
+# We use gpt-5.5 via the pi agent's OCA provider (Oracle OCI litellm endpoint,
+# configured in ~/.pi/agent/models.json; key in ~/.pi/agent/.oca-key). This is the
+# pi default. PROVIDER + MODEL map to `--provider <PROVIDER> --model <MODEL>`.
+: "${PROVIDER:=OCA}"
+: "${MODEL:=oca/gpt-5.5}"
 
 # Per-Mtok pricing used to compute cost from token counts (the session file
 # often stores cost=0). Keep in sync with packages/ai/src/models.generated.ts.
 # Format: input output cacheRead cacheWrite  (USD per 1M tokens).
 declare -A PRICING=(
-  ["openai.gpt-5.5"]="5.5 33 0.55 0"
-  ["openai.gpt-5.4"]="0 0 0 0"        # fill in if you switch
-  ["gpt-5-mini"]="0.25 2 0.025 0"     # OpenAI-native, no Bedrock
+  ["oca/gpt-5.5"]="5 30 0.5 0"        # nominal gpt-5.5 list price (OCA internal endpoint; cost is an estimate)
+  ["openai/gpt-5.5"]="5 30 0.5 0"     # OpenRouter live pricing (per Mtok)
+  ["openai/gpt-5-mini"]="0.25 2 0.025 0"
 )
 if [ -z "${PRICE:-}" ]; then
   if [ -n "${PRICING[$MODEL]:-}" ]; then
@@ -31,7 +33,7 @@ if [ -z "${PRICE:-}" ]; then
 fi
 
 # --- Arms -------------------------------------------------------------------
-# ensemble-strict : --exploration sidekick + graphify graph prebuilt (asserted graph-derived)
+# ensemble-strict : --exploration sidekick + graph prebuilt + PI_REQUIRE_GRAPH=1 (enforced)
 # sidekick-fs     : --exploration sidekick, graphify forced unavailable (filesystem fallback)
 # classic         : --exploration classic (pre-ensemble pi: read/grep/find/ls)
 : "${ARMS:=ensemble-strict sidekick-fs classic}"

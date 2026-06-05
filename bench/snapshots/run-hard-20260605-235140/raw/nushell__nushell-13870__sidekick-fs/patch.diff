@@ -1,0 +1,128 @@
+diff --git c/crates/nu-cmd-lang/src/core_commands/do_.rs i/crates/nu-cmd-lang/src/core_commands/do_.rs
+index b05de81d57..d744e27007 100644
+--- c/crates/nu-cmd-lang/src/core_commands/do_.rs
++++ i/crates/nu-cmd-lang/src/core_commands/do_.rs
+@@ -149,7 +149,7 @@ impl Command for Do {
+ 
+                         child.wait()?;
+ 
+-                        let mut child = ChildProcess::from_raw(None, None, None, span);
++                        let mut child = ChildProcess::from_raw(None, None, None, span, true);
+                         if let Some(stdout) = stdout {
+                             child.stdout = Some(ChildPipe::Tee(Box::new(Cursor::new(stdout))));
+                         }
+diff --git c/crates/nu-command/src/env/config/config_env.rs i/crates/nu-command/src/env/config/config_env.rs
+index cb4a217d9b..3b0d31dee2 100644
+--- c/crates/nu-command/src/env/config/config_env.rs
++++ i/crates/nu-command/src/env/config/config_env.rs
+@@ -106,7 +106,7 @@ impl Command for ConfigEnv {
+         )?;
+ 
+         // Wrap the output into a `PipelineData::ByteStream`.
+-        let child = ChildProcess::new(child, None, false, call.head)?;
++        let child = ChildProcess::new(child, None, false, call.head, true)?;
+         Ok(PipelineData::ByteStream(
+             ByteStream::child(child, call.head),
+             None,
+diff --git c/crates/nu-command/src/env/config/config_nu.rs i/crates/nu-command/src/env/config/config_nu.rs
+index 9969968ed2..43c36a8525 100644
+--- c/crates/nu-command/src/env/config/config_nu.rs
++++ i/crates/nu-command/src/env/config/config_nu.rs
+@@ -110,7 +110,7 @@ impl Command for ConfigNu {
+         )?;
+ 
+         // Wrap the output into a `PipelineData::ByteStream`.
+-        let child = ChildProcess::new(child, None, false, call.head)?;
++        let child = ChildProcess::new(child, None, false, call.head, true)?;
+         Ok(PipelineData::ByteStream(
+             ByteStream::child(child, call.head),
+             None,
+diff --git c/crates/nu-command/src/system/run_external.rs i/crates/nu-command/src/system/run_external.rs
+index 70a00bc815..5f03f58f89 100644
+--- c/crates/nu-command/src/system/run_external.rs
++++ i/crates/nu-command/src/system/run_external.rs
+@@ -185,6 +185,7 @@ impl Command for External {
+             merged_stream,
+             matches!(stderr, OutDest::Pipe),
+             call.head,
++            !matches!(stdout, OutDest::Pipe) && !matches!(stderr, OutDest::Pipe),
+         )?;
+         Ok(PipelineData::ByteStream(
+             ByteStream::child(child, call.head),
+diff --git c/crates/nu-protocol/src/process/child.rs i/crates/nu-protocol/src/process/child.rs
+index 320427a819..f99d3e4c5e 100644
+--- c/crates/nu-protocol/src/process/child.rs
++++ i/crates/nu-protocol/src/process/child.rs
+@@ -110,6 +110,7 @@ pub struct ChildProcess {
+     pub stderr: Option<ChildPipe>,
+     exit_status: ExitStatusFuture,
+     span: Span,
++    check_exit_code: bool,
+ }
+ 
+ impl ChildProcess {
+@@ -118,6 +119,7 @@ impl ChildProcess {
+         reader: Option<PipeReader>,
+         swap: bool,
+         span: Span,
++        check_exit_code: bool,
+     ) -> Result<Self, ShellError> {
+         let (stdout, stderr) = if let Some(combined) = reader {
+             (Some(combined), None)
+@@ -140,7 +142,13 @@ impl ChildProcess {
+             .spawn(move || exit_status_sender.send(child.wait().map(Into::into)))
+             .err_span(span)?;
+ 
+-        Ok(Self::from_raw(stdout, stderr, Some(exit_status), span))
++        Ok(Self::from_raw(
++            stdout,
++            stderr,
++            Some(exit_status),
++            span,
++            check_exit_code,
++        ))
+     }
+ 
+     pub fn from_raw(
+@@ -148,6 +156,7 @@ impl ChildProcess {
+         stderr: Option<PipeReader>,
+         exit_status: Option<Receiver<io::Result<ExitStatus>>>,
+         span: Span,
++        check_exit_code: bool,
+     ) -> Self {
+         Self {
+             stdout: stdout.map(Into::into),
+@@ -156,6 +165,7 @@ impl ChildProcess {
+                 .map(ExitStatusFuture::Running)
+                 .unwrap_or(ExitStatusFuture::Finished(Ok(ExitStatus::Exited(0)))),
+             span,
++            check_exit_code,
+         }
+     }
+ 
+@@ -182,7 +192,10 @@ impl ChildProcess {
+             Vec::new()
+         };
+ 
+-        self.exit_status.wait(self.span)?.check_ok(self.span)?;
++        let exit_status = self.exit_status.wait(self.span)?;
++        if self.check_exit_code {
++            exit_status.check_ok(self.span)?;
++        }
+ 
+         Ok(bytes)
+     }
+@@ -223,7 +236,12 @@ impl ChildProcess {
+             consume_pipe(stderr).err_span(self.span)?;
+         }
+ 
+-        self.exit_status.wait(self.span)?.check_ok(self.span)
++        let exit_status = self.exit_status.wait(self.span)?;
++        if self.check_exit_code {
++            exit_status.check_ok(self.span)?;
++        }
++
++        Ok(())
+     }
+ 
+     pub fn try_wait(&mut self) -> Result<Option<ExitStatus>, ShellError> {

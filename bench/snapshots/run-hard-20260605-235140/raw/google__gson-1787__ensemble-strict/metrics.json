@@ -1,0 +1,15 @@
+{
+  "model": "oca/gpt-5.5",
+  "arm": "ensemble-strict",
+  "input": 66477,
+  "output": 10469,
+  "cacheRead": 1392128,
+  "cacheWrite": 0,
+  "totalTokens": 1469074,
+  "costUsd": 1.3425,
+  "assistantTurns": 37,
+  "exploreCalls": 6,
+  "exploreFallbacks": 0,
+  "strictOk": true,
+  "strictNote": "6 graph-derived explore calls"
+}

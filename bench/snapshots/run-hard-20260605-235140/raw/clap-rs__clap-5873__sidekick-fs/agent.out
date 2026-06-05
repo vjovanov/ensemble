@@ -1,0 +1,13 @@
+Implemented the minimal fix in:
+
+- `clap_builder/src/parser/parser.rs`
+
+Change summary:
+- `did_you_mean_error` previously marked the suggested argument as present in `ArgMatcher` to improve usage rendering.
+- With `.ignore_errors(true)`, that mutation persisted even though the error was ignored, so defaults were skipped because clap believed the arg came from the command line.
+- The fix skips that matcher mutation when `ignore_errors` is enabled, preserving matches as if the unknown argument was ignored.
+
+Validation run:
+- `cargo fmt --all`
+- `cargo test -p clap_builder --lib ignore_errors -- --nocapture`
+- Verified the provided repro against the local checkout; both `--i` and `--ig` now report `ValueSource::DefaultValue`.

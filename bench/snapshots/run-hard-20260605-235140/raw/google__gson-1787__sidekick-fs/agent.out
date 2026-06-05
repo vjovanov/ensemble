@@ -1,0 +1,15 @@
+Implemented the minimal source fix.
+
+Changed:
+- `gson/src/main/java/com/google/gson/Gson.java`
+  - `FutureTypeAdapter` now exposes its resolved serialization delegate through an internal interface.
+- `gson/src/main/java/com/google/gson/internal/bind/TypeAdapterRuntimeTypeWrapper.java`
+  - Runtime adapter selection now unwraps delegating adapters before deciding whether an adapter is reflective.
+- Added:
+  - `gson/src/main/java/com/google/gson/internal/bind/SerializationDelegatingTypeAdapter.java`
+
+Validation:
+- Manually compiled sources with `javac --release 8` and verified the provided cyclic `Base` / `Sub` example now outputs:
+  - `{"f":{"i":2}}`
+
+No test files were modified.

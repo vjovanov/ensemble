@@ -1,0 +1,13 @@
+Implemented the minimal source change in `balancer/rls/internal/keys/builder.go`.
+
+Changes:
+- Removed the non-test import of `github.com/google/go-cmp/cmp`.
+- Replaced `cmp.Equal(...)` in `BuilderMapEqual` with explicit equality helpers for:
+  - `BuilderMap`
+  - `builder`
+  - `matcher`
+- Preserved `cmp.Equal`-like behavior for nil vs empty maps/slices by treating them as unequal.
+
+Validation:
+- Confirmed there are no remaining `cmp` usages under `balancer/rls` non-test files.
+- Attempted to run `gofmt` and package tests, but the environment does not have `gofmt`/Go installed: `gofmt: command not found`.

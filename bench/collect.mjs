@@ -21,12 +21,16 @@ function resolvedByArm() {
     const fr = join(RESULTS, arm, "final_report.json");
     if (!existsSync(fr)) continue;
     const r = readJSON(fr);
-    const list = r.resolved_instances || r.resolved || [];
-    // entries may be ids or {instance_id}
-    map[arm] = new Set(list.map((x) => (typeof x === "string" ? x : x.instance_id || x.id)));
+    // resolved_ids is the array; resolved_instances is a count. Harness ids look
+    // like "org/repo:pr-N"; our raw dirs use instance_id "org__repo-N" — normalize both.
+    const list = r.resolved_ids || r.resolved || [];
+    map[arm] = new Set(list.map((x) => normId(typeof x === "string" ? x : x.instance_id || x.id)));
   }
   return map;
 }
+
+// Canonicalize an instance identifier across the harness and our naming.
+const normId = (s) => String(s).toLowerCase().replace(/pr-/g, "").replace(/[^a-z0-9]/g, "");
 
 const COLUMNS = ["instance", "arm", "resolved", "input", "output", "cacheRead", "cacheWrite",
   "totalTokens", "costUsd", "turns", "exploreCalls", "exploreFallbacks", "strictOk", "strictNote"];
@@ -40,7 +44,7 @@ function main() {
     const mp = join(RAW, dir, "metrics.json");
     if (!existsSync(mp)) continue;
     const m = readJSON(mp);
-    const isResolved = resolved[arm] ? (resolved[arm].has(instance) ? 1 : 0) : "";
+    const isResolved = resolved[arm] ? (resolved[arm].has(normId(instance)) ? 1 : 0) : "";
     rows.push({
       instance, arm, resolved: isResolved,
       input: m.input ?? "", output: m.output ?? "", cacheRead: m.cacheRead ?? "", cacheWrite: m.cacheWrite ?? "",

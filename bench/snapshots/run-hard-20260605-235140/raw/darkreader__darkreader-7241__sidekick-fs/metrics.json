@@ -1,0 +1,15 @@
+{
+  "model": "oca/gpt-5.5",
+  "arm": "sidekick-fs",
+  "input": 17654,
+  "output": 3734,
+  "cacheRead": 101376,
+  "cacheWrite": 0,
+  "totalTokens": 122764,
+  "costUsd": 0.251,
+  "assistantTurns": 12,
+  "exploreCalls": 4,
+  "exploreFallbacks": 0,
+  "strictOk": null,
+  "strictNote": ""
+}

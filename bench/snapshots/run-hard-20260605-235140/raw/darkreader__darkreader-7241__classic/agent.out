@@ -1,0 +1,11 @@
+Implemented the minimal fix in:
+
+- `src/generators/utils/parse.ts`
+
+Changed the site-fix block delimiter regex from matching any `==` sequence anywhere to only matching delimiter lines:
+
+```ts
+const delimiterRegex = /^\s*={2,}\s*$/gm;
+```
+
+This prevents base64 padding like `==` inside CSS data URLs from being treated as a theme/config block separator.

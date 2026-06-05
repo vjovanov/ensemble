@@ -1,0 +1,14 @@
+Implemented the check-cfg migration.
+
+Changes made:
+- Added workspace-level `unexpected_cfgs` lint config in `Cargo.toml` using `check-cfg`.
+- Enabled workspace lint inheritance for workspace crates.
+- Removed the old `#![allow(unknown_lints, unexpected_cfgs)]` workaround from non-test source/example files.
+- Removed the CI workaround that injected `--check-cfg` through `RUSTFLAGS`.
+- Updated CI nightly from `nightly-2024-05-05` to `nightly-2024-05-19`, where Cargo supports the lint-table `check-cfg`.
+
+Validation:
+- Passed: `RUSTFLAGS='-Dwarnings' cargo check --workspace --all-features --all-targets`
+- Also tried `RUSTFLAGS='-Dwarnings' cargo test -p tokio-macros --doc --all-features`; it fails on existing `start_paused` doctest issues unrelated to this change.
+
+No test files were modified.

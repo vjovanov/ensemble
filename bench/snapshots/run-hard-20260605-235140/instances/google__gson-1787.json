@@ -1,0 +1,154 @@
+{
+  "org": "google",
+  "repo": "gson",
+  "number": 1787,
+  "state": "closed",
+  "title": "Fix TypeAdapterRuntimeTypeWrapper not detecting reflective TreeTypeAdapter and FutureTypeAdapter",
+  "body": "Fixes #543\r\nFixes #2032\r\nFixes #1833\r\n\r\nPreviously on serialization TypeAdapterRuntimeTypeWrapper preferred a TreeTypeAdapter without `serializer` which falls back to the reflective adapter.\r\nThis behavior was incorrect because it caused the reflective adapter for a Base class to be used for serialization (indirectly as TreeTypeAdapter delegate) instead of using the reflective adapter for a Subclass extending Base.",
+  "base": {
+    "label": "google:master",
+    "ref": "master",
+    "sha": "e614e71ee43ca7bc1cb466bd1eaf4d85499900d9"
+  },
+  "resolved_issues": [
+    {
+      "number": 1833,
+      "title": "TypeAdapterRuntimeTypeWrapper prefers cyclic adapter for base type over reflective adapter for sub type",
+      "body": "The internal class `TypeAdapterRuntimeTypeWrapper` is supposed to prefer custom adapters for the compile type over the reflective adapter for the runtime type. However, when the compile type and the runtime type only have a reflective adapter, then it should prefer the runtime type adapter.\r\n\r\nThe problem is that this logic is not working for classes with cyclic dependencies which therefore have a `Gson$FutureTypeAdapter` wrapping a reflective adapter because the following line does not consider this:\r\nhttps://github.com/google/gson/blob/ceae88bd6667f4263bbe02e6b3710b8a683906a2/gson/src/main/java/com/google/gson/internal/bind/TypeAdapterRuntimeTypeWrapper.java#L60\r\n\r\nFor example:\r\n```java\r\nclass Base {\r\n  public Base f;\r\n}\r\n\r\nclass Sub extends Base {\r\n  public int i;\r\n\r\n  public Sub(int i) {\r\n    this.i = i;\r\n  }\r\n}\r\n```\r\n```java\r\nBase b = new Base();\r\nb.f = new Sub(2);\r\nString json = new Gson().toJson(b);\r\n// Fails because reflective adapter for base class is used, therefore json is: {\"f\":{}}\r\nassertEquals(\"{\\\"f\\\":{\\\"i\\\":2}}\", json);\r\n```\r\n\r\nNote: This is similar to the problem #1787 tries to fix for `TreeTypeAdapter`."
+    }
+  ],
+  "fix_patch": "diff --git a/gson/src/main/java/com/google/gson/Gson.java b/gson/src/main/java/com/google/gson/Gson.java\nindex bb3e2c7704..22071a17d8 100644\n--- a/gson/src/main/java/com/google/gson/Gson.java\n+++ b/gson/src/main/java/com/google/gson/Gson.java\n@@ -32,6 +32,7 @@\n import com.google.gson.internal.bind.NumberTypeAdapter;\n import com.google.gson.internal.bind.ObjectTypeAdapter;\n import com.google.gson.internal.bind.ReflectiveTypeAdapterFactory;\n+import com.google.gson.internal.bind.SerializationDelegatingTypeAdapter;\n import com.google.gson.internal.bind.TypeAdapters;\n import com.google.gson.internal.sql.SqlTypesSupport;\n import com.google.gson.reflect.TypeToken;\n@@ -1315,7 +1316,7 @@ public <T> T fromJson(JsonElement json, TypeToken<T> typeOfT) throws JsonSyntaxE\n     return fromJson(new JsonTreeReader(json), typeOfT);\n   }\n \n-  static class FutureTypeAdapter<T> extends TypeAdapter<T> {\n+  static class FutureTypeAdapter<T> extends SerializationDelegatingTypeAdapter<T> {\n     private TypeAdapter<T> delegate;\n \n     public void setDelegate(TypeAdapter<T> typeAdapter) {\n@@ -1325,18 +1326,23 @@ public void setDelegate(TypeAdapter<T> typeAdapter) {\n       delegate = typeAdapter;\n     }\n \n-    @Override public T read(JsonReader in) throws IOException {\n+    private TypeAdapter<T> delegate() {\n       if (delegate == null) {\n-        throw new IllegalStateException();\n+        throw new IllegalStateException(\"Delegate has not been set yet\");\n       }\n-      return delegate.read(in);\n+      return delegate;\n+    }\n+\n+    @Override public TypeAdapter<T> getSerializationDelegate() {\n+      return delegate();\n+    }\n+\n+    @Override public T read(JsonReader in) throws IOException {\n+      return delegate().read(in);\n     }\n \n     @Override public void write(JsonWriter out, T value) throws IOException {\n-      if (delegate == null) {\n-        throw new IllegalStateException();\n-      }\n-      delegate.write(out, value);\n+      delegate().write(out, value);\n     }\n   }\n \ndiff --git a/gson/src/main/java/com/google/gson/internal/bind/SerializationDelegatingTypeAdapter.java b/gson/src/main/java/com/google/gson/internal/bind/SerializationDelegatingTypeAdapter.java\nnew file mode 100644\nindex 0000000000..dad4ff1120\n--- /dev/null\n+++ b/gson/src/main/java/com/google/gson/internal/bind/SerializationDelegatingTypeAdapter.java\n@@ -0,0 +1,14 @@\n+package com.google.gson.internal.bind;\n+\n+import com.google.gson.TypeAdapter;\n+\n+/**\n+ * Type adapter which might delegate serialization to another adapter.\n+ */\n+public abstract class SerializationDelegatingTypeAdapter<T> extends TypeAdapter<T> {\n+  /**\n+   * Returns the adapter used for serialization, might be {@code this} or another adapter.\n+   * That other adapter might itself also be a {@code SerializationDelegatingTypeAdapter}.\n+   */\n+  public abstract TypeAdapter<T> getSerializationDelegate();\n+}\ndiff --git a/gson/src/main/java/com/google/gson/internal/bind/TreeTypeAdapter.java b/gson/src/main/java/com/google/gson/internal/bind/TreeTypeAdapter.java\nindex b7e924959f..560234c07c 100644\n--- a/gson/src/main/java/com/google/gson/internal/bind/TreeTypeAdapter.java\n+++ b/gson/src/main/java/com/google/gson/internal/bind/TreeTypeAdapter.java\n@@ -38,7 +38,7 @@\n  * tree adapter may be serialization-only or deserialization-only, this class\n  * has a facility to lookup a delegate type adapter on demand.\n  */\n-public final class TreeTypeAdapter<T> extends TypeAdapter<T> {\n+public final class TreeTypeAdapter<T> extends SerializationDelegatingTypeAdapter<T> {\n   private final JsonSerializer<T> serializer;\n   private final JsonDeserializer<T> deserializer;\n   final Gson gson;\n@@ -97,6 +97,15 @@ private TypeAdapter<T> delegate() {\n         : (delegate = gson.getDelegateAdapter(skipPast, typeToken));\n   }\n \n+  /**\n+   * Returns the type adapter which is used for serialization. Returns {@code this}\n+   * if this {@code TreeTypeAdapter} has a {@link #serializer}; otherwise returns\n+   * the delegate.\n+   */\n+  @Override public TypeAdapter<T> getSerializationDelegate() {\n+    return serializer != null ? this : delegate();\n+  }\n+\n   /**\n    * Returns a new factory that will match each type against {@code exactType}.\n    */\n@@ -169,5 +178,5 @@ private final class GsonContextImpl implements JsonSerializationContext, JsonDes\n     @Override public <R> R deserialize(JsonElement json, Type typeOfT) throws JsonParseException {\n       return (R) gson.fromJson(json, typeOfT);\n     }\n-  };\n+  }\n }\ndiff --git a/gson/src/main/java/com/google/gson/internal/bind/TypeAdapterRuntimeTypeWrapper.java b/gson/src/main/java/com/google/gson/internal/bind/TypeAdapterRuntimeTypeWrapper.java\nindex 6a6909191d..75a991ead7 100644\n--- a/gson/src/main/java/com/google/gson/internal/bind/TypeAdapterRuntimeTypeWrapper.java\n+++ b/gson/src/main/java/com/google/gson/internal/bind/TypeAdapterRuntimeTypeWrapper.java\n@@ -53,10 +53,12 @@ public void write(JsonWriter out, T value) throws IOException {\n     if (runtimeType != type) {\r\n       @SuppressWarnings(\"unchecked\")\r\n       TypeAdapter<T> runtimeTypeAdapter = (TypeAdapter<T>) context.getAdapter(TypeToken.get(runtimeType));\r\n+      // For backward compatibility only check ReflectiveTypeAdapterFactory.Adapter here but not any other\r\n+      // wrapping adapters, see https://github.com/google/gson/pull/1787#issuecomment-1222175189\r\n       if (!(runtimeTypeAdapter instanceof ReflectiveTypeAdapterFactory.Adapter)) {\r\n         // The user registered a type adapter for the runtime type, so we will use that\r\n         chosen = runtimeTypeAdapter;\r\n-      } else if (!(delegate instanceof ReflectiveTypeAdapterFactory.Adapter)) {\r\n+      } else if (!isReflective(delegate)) {\r\n         // The user registered a type adapter for Base class, so we prefer it over the\r\n         // reflective type adapter for the runtime type\r\n         chosen = delegate;\r\n@@ -68,12 +70,30 @@ public void write(JsonWriter out, T value) throws IOException {\n     chosen.write(out, value);\r\n   }\r\n \r\n+  /**\r\n+   * Returns whether the type adapter uses reflection.\r\n+   *\r\n+   * @param typeAdapter the type adapter to check.\r\n+   */\r\n+  private static boolean isReflective(TypeAdapter<?> typeAdapter) {\r\n+    // Run this in loop in case multiple delegating adapters are nested\r\n+    while (typeAdapter instanceof SerializationDelegatingTypeAdapter) {\r\n+      TypeAdapter<?> delegate = ((SerializationDelegatingTypeAdapter<?>) typeAdapter).getSerializationDelegate();\r\n+      // Break if adapter does not delegate serialization\r\n+      if (delegate == typeAdapter) {\r\n+        break;\r\n+      }\r\n+      typeAdapter = delegate;\r\n+    }\r\n+\r\n+    return typeAdapter instanceof ReflectiveTypeAdapterFactory.Adapter;\r\n+  }\r\n+\r\n   /**\r\n    * Finds a compatible runtime type if it is more specific\r\n    */\r\n-  private Type getRuntimeTypeIfMoreSpecific(Type type, Object value) {\r\n-    if (value != null\r\n-        && (type == Object.class || type instanceof TypeVariable<?> || type instanceof Class<?>)) {\r\n+  private static Type getRuntimeTypeIfMoreSpecific(Type type, Object value) {\r\n+    if (value != null && (type instanceof Class<?> || type instanceof TypeVariable<?>)) {\r\n       type = value.getClass();\r\n     }\r\n     return type;\r\n",
+  "test_patch": "diff --git a/gson/src/test/java/com/google/gson/functional/TypeAdapterRuntimeTypeWrapperTest.java b/gson/src/test/java/com/google/gson/functional/TypeAdapterRuntimeTypeWrapperTest.java\nnew file mode 100644\nindex 0000000000..73a0101243\n--- /dev/null\n+++ b/gson/src/test/java/com/google/gson/functional/TypeAdapterRuntimeTypeWrapperTest.java\n@@ -0,0 +1,193 @@\n+package com.google.gson.functional;\n+\n+import static org.junit.Assert.assertEquals;\n+\n+import com.google.gson.Gson;\n+import com.google.gson.GsonBuilder;\n+import com.google.gson.JsonDeserializationContext;\n+import com.google.gson.JsonDeserializer;\n+import com.google.gson.JsonElement;\n+import com.google.gson.JsonPrimitive;\n+import com.google.gson.JsonSerializationContext;\n+import com.google.gson.JsonSerializer;\n+import com.google.gson.TypeAdapter;\n+import com.google.gson.stream.JsonReader;\n+import com.google.gson.stream.JsonWriter;\n+import java.io.IOException;\n+import java.lang.reflect.Type;\n+import org.junit.Test;\n+\n+public class TypeAdapterRuntimeTypeWrapperTest {\n+  private static class Base {\n+  }\n+  private static class Subclass extends Base {\n+    @SuppressWarnings(\"unused\")\n+    String f = \"test\";\n+  }\n+  private static class Container {\n+    @SuppressWarnings(\"unused\")\n+    Base b = new Subclass();\n+  }\n+  private static class Deserializer implements JsonDeserializer<Base> {\n+    @Override\n+    public Base deserialize(JsonElement json, Type typeOfT, JsonDeserializationContext context) {\n+      throw new AssertionError(\"not needed for this test\");\n+    }\n+  }\n+\n+  /**\n+   * When custom {@link JsonSerializer} is registered for Base should\n+   * prefer that over reflective adapter for Subclass for serialization.\n+   */\n+  @Test\n+  public void testJsonSerializer() {\n+    Gson gson = new GsonBuilder()\n+      .registerTypeAdapter(Base.class, new JsonSerializer<Base>() {\n+        @Override\n+        public JsonElement serialize(Base src, Type typeOfSrc, JsonSerializationContext context) {\n+          return new JsonPrimitive(\"serializer\");\n+        }\n+      })\n+      .create();\n+\n+    String json = gson.toJson(new Container());\n+    assertEquals(\"{\\\"b\\\":\\\"serializer\\\"}\", json);\n+  }\n+\n+  /**\n+   * When only {@link JsonDeserializer} is registered for Base, then on\n+   * serialization should prefer reflective adapter for Subclass since\n+   * Base would use reflective adapter as delegate.\n+   */\n+  @Test\n+  public void testJsonDeserializer_ReflectiveSerializerDelegate() {\n+    Gson gson = new GsonBuilder()\n+      .registerTypeAdapter(Base.class, new Deserializer())\n+      .create();\n+\n+    String json = gson.toJson(new Container());\n+    assertEquals(\"{\\\"b\\\":{\\\"f\\\":\\\"test\\\"}}\", json);\n+  }\n+\n+  /**\n+   * When {@link JsonDeserializer} with custom adapter as delegate is\n+   * registered for Base, then on serialization should prefer custom adapter\n+   * delegate for Base over reflective adapter for Subclass.\n+   */\n+  @Test\n+  public void testJsonDeserializer_CustomSerializerDelegate() {\n+    Gson gson = new GsonBuilder()\n+      // Register custom delegate\n+      .registerTypeAdapter(Base.class, new TypeAdapter<Base>() {\n+        @Override\n+        public Base read(JsonReader in) throws IOException {\n+          throw new UnsupportedOperationException();\n+        }\n+        @Override\n+        public void write(JsonWriter out, Base value) throws IOException {\n+          out.value(\"custom delegate\");\n+        }\n+      })\n+      .registerTypeAdapter(Base.class, new Deserializer())\n+      .create();\n+\n+    String json = gson.toJson(new Container());\n+    assertEquals(\"{\\\"b\\\":\\\"custom delegate\\\"}\", json);\n+  }\n+\n+  /**\n+   * When two (or more) {@link JsonDeserializer}s are registered for Base\n+   * which eventually fall back to reflective adapter as delegate, then on\n+   * serialization should prefer reflective adapter for Subclass.\n+   */\n+  @Test\n+  public void testJsonDeserializer_ReflectiveTreeSerializerDelegate() {\n+    Gson gson = new GsonBuilder()\n+      // Register delegate which itself falls back to reflective serialization\n+      .registerTypeAdapter(Base.class, new Deserializer())\n+      .registerTypeAdapter(Base.class, new Deserializer())\n+      .create();\n+\n+    String json = gson.toJson(new Container());\n+    assertEquals(\"{\\\"b\\\":{\\\"f\\\":\\\"test\\\"}}\", json);\n+  }\n+\n+  /**\n+   * When {@link JsonDeserializer} with {@link JsonSerializer} as delegate\n+   * is registered for Base, then on serialization should prefer\n+   * {@code JsonSerializer} over reflective adapter for Subclass.\n+   */\n+  @Test\n+  public void testJsonDeserializer_JsonSerializerDelegate() {\n+    Gson gson = new GsonBuilder()\n+      // Register JsonSerializer as delegate\n+      .registerTypeAdapter(Base.class, new JsonSerializer<Base>() {\n+        @Override\n+        public JsonElement serialize(Base src, Type typeOfSrc, JsonSerializationContext context) {\n+          return new JsonPrimitive(\"custom delegate\");\n+        }\n+      })\n+      .registerTypeAdapter(Base.class, new Deserializer())\n+      .create();\n+\n+    String json = gson.toJson(new Container());\n+    assertEquals(\"{\\\"b\\\":\\\"custom delegate\\\"}\", json);\n+  }\n+\n+  /**\n+   * When a {@link JsonDeserializer} is registered for Subclass, and a custom\n+   * {@link JsonSerializer} is registered for Base, then Gson should prefer\n+   * the reflective adapter for Subclass for backward compatibility (see\n+   * https://github.com/google/gson/pull/1787#issuecomment-1222175189) even\n+   * though normally TypeAdapterRuntimeTypeWrapper should prefer the custom\n+   * serializer for Base.\n+   */\n+  @Test\n+  public void testJsonDeserializer_SubclassBackwardCompatibility() {\n+    Gson gson = new GsonBuilder()\n+      .registerTypeAdapter(Subclass.class, new JsonDeserializer<Subclass>() {\n+        @Override\n+        public Subclass deserialize(JsonElement json, Type typeOfT, JsonDeserializationContext context) {\n+          throw new AssertionError(\"not needed for this test\");\n+        }\n+      })\n+      .registerTypeAdapter(Base.class, new JsonSerializer<Base>() {\n+        @Override\n+        public JsonElement serialize(Base src, Type typeOfSrc, JsonSerializationContext context) {\n+          return new JsonPrimitive(\"base\");\n+        }\n+      })\n+      .create();\n+\n+    String json = gson.toJson(new Container());\n+    assertEquals(\"{\\\"b\\\":{\\\"f\\\":\\\"test\\\"}}\", json);\n+  }\n+\n+  private static class CyclicBase {\n+    @SuppressWarnings(\"unused\")\n+    CyclicBase f;\n+  }\n+\n+  private static class CyclicSub extends CyclicBase {\n+    @SuppressWarnings(\"unused\")\n+    int i;\n+\n+    public CyclicSub(int i) {\n+      this.i = i;\n+    }\n+  }\n+\n+  /**\n+   * Tests behavior when the type of a field refers to a type whose adapter is\n+   * currently in the process of being created. For these cases {@link Gson}\n+   * uses a future adapter for the type. That adapter later uses the actual\n+   * adapter as delegate.\n+   */\n+  @Test\n+  public void testGsonFutureAdapter() {\n+    CyclicBase b = new CyclicBase();\n+    b.f = new CyclicSub(2);\n+    String json = new Gson().toJson(b);\n+    assertEquals(\"{\\\"f\\\":{\\\"i\\\":2}}\", json);\n+  }\n+}\n",
+  "fixed_tests": {
+    "com.google.gson.protobuf.functional.ProtosWithPrimitiveTypesTest": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "com.google.gson.typeadapters.PostConstructAdapterFactoryTest": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "com.google.gson.interceptors.InterceptorTest": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "com.google.gson.typeadapters.RuntimeTypeAdapterFactoryTest": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "com.google.gson.graph.GraphAdapterBuilderTest": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "com.google.gson.typeadapters.UtcDateTypeAdapterTest": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "com.google.gson.protobuf.functional.ProtosWithComplexAndRepeatedFieldsTest": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "com.google.gson.protobuf.functional.ProtosWithAnnotationsTest": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    }
+  },
+  "p2p_tests": {},
+  "f2p_tests": {},
+  "s2p_tests": {},
+  "n2p_tests": {
+    "com.google.gson.protobuf.functional.ProtosWithPrimitiveTypesTest": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "com.google.gson.typeadapters.PostConstructAdapterFactoryTest": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "com.google.gson.interceptors.InterceptorTest": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "com.google.gson.typeadapters.RuntimeTypeAdapterFactoryTest": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "com.google.gson.graph.GraphAdapterBuilderTest": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "com.google.gson.typeadapters.UtcDateTypeAdapterTest": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "com.google.gson.protobuf.functional.ProtosWithComplexAndRepeatedFieldsTest": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    },
+    "com.google.gson.protobuf.functional.ProtosWithAnnotationsTest": {
+      "run": "PASS",
+      "test": "NONE",
+      "fix": "PASS"
+    }
+  },
+  "run_result": {
+    "passed_count": 8,
+    "failed_count": 0,
+    "skipped_count": 0,
+    "passed_tests": [
+      "com.google.gson.protobuf.functional.ProtosWithPrimitiveTypesTest",
+      "com.google.gson.typeadapters.PostConstructAdapterFactoryTest",
+      "com.google.gson.interceptors.InterceptorTest",
+      "com.google.gson.typeadapters.RuntimeTypeAdapterFactoryTest",
+      "com.google.gson.graph.GraphAdapterBuilderTest",
+      "com.google.gson.typeadapters.UtcDateTypeAdapterTest",
+      "com.google.gson.protobuf.functional.ProtosWithComplexAndRepeatedFieldsTest",
+      "com.google.gson.protobuf.functional.ProtosWithAnnotationsTest"
+    ],
+    "failed_tests": [],
+    "skipped_tests": []
+  },
+  "test_patch_result": {
+    "passed_count": 0,
+    "failed_count": 0,
+    "skipped_count": 0,
+    "passed_tests": [],
+    "failed_tests": [],
+    "skipped_tests": []
+  },
+  "fix_patch_result": {
+    "passed_count": 8,
+    "failed_count": 0,
+    "skipped_count": 0,
+    "passed_tests": [
+      "com.google.gson.protobuf.functional.ProtosWithPrimitiveTypesTest",
+      "com.google.gson.typeadapters.PostConstructAdapterFactoryTest",
+      "com.google.gson.interceptors.InterceptorTest",
+      "com.google.gson.typeadapters.RuntimeTypeAdapterFactoryTest",
+      "com.google.gson.graph.GraphAdapterBuilderTest",
+      "com.google.gson.typeadapters.UtcDateTypeAdapterTest",
+      "com.google.gson.protobuf.functional.ProtosWithComplexAndRepeatedFieldsTest",
+      "com.google.gson.protobuf.functional.ProtosWithAnnotationsTest"
+    ],
+    "failed_tests": [],
+    "skipped_tests": []
+  },
+  "instance_id": "google__gson-1787",
+  "hints": "Consider using the following names for the new files:\n1. gson/src/main/java/com/google/gson/internal/bind/SerializationDelegatingTypeAdapter.java\nConsider using the following identifiers for the new entities:\n1. com: The identifier 'com' denotes the base package path for custom type adapters and functional tests in Gson, consistently serving as the namespace for implementation and verification of serialization logic.\n2. google: The identifier 'google' represents the root package namespace for all custom Gson framework classes and test cases, and should be used to organize source and test code for the Gson library.\n3. TypeAdapter: TypeAdapter is a core abstraction for converting between Java objects and their JSON representation, allowing custom serialization and deserialization logic to be implemented and registered for specific types.\n",
+  "language": "java"
+}
