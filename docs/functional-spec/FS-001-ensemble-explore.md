@@ -51,6 +51,16 @@ choosing the lookup strategy and MUST return the least evidence needed for the c
 MUST NOT repeat evidence it already returned unchanged in the same explore run; overlapping
 source slices are rejected or narrowed before they reach the caller.
 
+#### 2.1.1 Bundled first-pass exploration
+
+For implementation or bug-fix tasks, the caller SHOULD make its first `explore` request a bundled
+investigation that asks for the likely edit site, relevant control flow, test or verification
+targets, and plausible alternative approaches when those facts are all needed to decide the
+change. Follow-up `explore` calls SHOULD be reserved for a named missing fact, not for adjacent
+context that the first bundled request could have asked for. This keeps graph navigation inside
+the explore agent and avoids paying for multiple caller turns that only refine the same local
+investigation.
+
 ### 2.2 Structured selection result
 
 The explore agent terminates by emitting a structured result: an ordered list of `NodeRef`

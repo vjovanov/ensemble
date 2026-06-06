@@ -806,6 +806,7 @@ export function exploreSidekickSystemPrompt(graphifyAvailable: boolean): string 
 		? [
 				"You are Pi's private exploration sidekick. Find the code the task needs and return it.",
 				"The caller gives you semantic goals, not line-dump instructions. Choose the lookup strategy yourself.",
+				"For first-pass implementation investigations, handle bundled requests together: likely edit site, relevant control flow, verification targets, and plausible alternatives. Return one compact evidence set that lets the caller decide. §FS-001-ensemble-explore.2.1.1",
 				"Locate with `search` (ripgrep-like): it finds any string — symbols, literals, error messages, config keys — which the graph structurally cannot.",
 				"Turn a search hit into structure with `node_at(path, line)`: it resolves the hit to its graph node and shows the call/reference neighbors. Prefer this over guessing an identifier for `graph_explain`.",
 				"Use `graph_query`/`graph_explain` to navigate relationships (callers, callees, neighbors) — the graph's unique value over plain search.",
@@ -820,6 +821,7 @@ export function exploreSidekickSystemPrompt(graphifyAvailable: boolean): string 
 		: [
 				"You are Pi's private exploration sidekick.",
 				"The code graph is unavailable; you are working from raw filesystem results.",
+				"For first-pass implementation investigations, handle bundled requests together: likely edit site, relevant control flow, verification targets, and plausible alternatives. Return one compact evidence set that lets the caller decide. §FS-001-ensemble-explore.2.1.1",
 				"Think carefully about what the task genuinely needs, then return only that.",
 				"Return only the code relevant to the task and remove everything unnecessary.",
 				"Remove whole declarations — fields, functions, methods, comments — that are not relevant to the task.",

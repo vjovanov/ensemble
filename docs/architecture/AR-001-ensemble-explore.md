@@ -84,6 +84,12 @@ explore agent to keep only task-relevant declarations and drop the rest, **coars
 whole fields/functions/methods/comments may be removed, but a retained function body is kept
 verbatim — never edited or partially elided (§FS-001-ensemble-explore.5.6).
 
+The lead-agent prompt directs the caller to bundle the first exploration pass for implementation
+tasks: ask once for edit site, relevant control flow, verification targets, and alternatives, then
+use follow-up `explore` only for a named missing fact. The sidekick prompt mirrors this by treating
+multi-part first-pass tasks as one investigation and returning the smallest evidence that lets the
+caller decide (§FS-001-ensemble-explore.2.1.1).
+
 ## 4. Phase 2 — registry and classification
 
 4.1 Registry type (tool-owned, per session/branch — §FS-001-ensemble-explore.6.1):

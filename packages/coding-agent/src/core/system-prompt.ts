@@ -114,6 +114,9 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
 	// File exploration guidelines
 	if (hasExplore) {
 		addGuideline("Use explore for file discovery, search, reading, and pre-edit inspection");
+		addGuideline(
+			"Bundle the first explore call for implementation tasks: ask for likely edit sites, relevant control flow, verification targets, and alternatives; use follow-up explore only for a named missing fact",
+		);
 		addGuideline("Do not use bash for file-reading commands unless explore fails or shell output is required");
 	} else if (hasBash && !hasGrep && !hasFind && !hasLs) {
 		addGuideline("Use bash for file operations like ls, rg, find");
