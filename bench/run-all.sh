@@ -261,6 +261,14 @@ metrics_count() {
   printf '%s\n' "$count"
 }
 
+tool_call_report() {
+  node "$BENCH_DIR/lib/tool-call-report.mjs" \
+    --raw-dir "$RAW_DIR" \
+    --instances "${INSTANCE_LIST[*]}" \
+    --arms "${ARM_LIST[*]}" \
+    --out "$RESULTS_DIR/tool-calls.tsv"
+}
+
 total=${#INSTANCE_LIST[@]}
 runs_total=$((total * ${#ARM_LIST[@]}))
 
@@ -279,6 +287,9 @@ for idx in "${!INSTANCE_LIST[@]}"; do
     log "instance job failed: $short"
   fi
 done
+
+echo
+tool_call_report || log "tool-call report failed; check raw session logs"
 
 if [ "$failures" -ne 0 ]; then
   die "$failures instance job(s) failed; skipping grading"

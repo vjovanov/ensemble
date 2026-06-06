@@ -188,12 +188,12 @@ any way: it only attaches an observation sink. Observation is passive (§10.6).
 ### 10.2 What the trace exposes
 
 When enabled, each sub-agent tool call is reported as an event carrying the tool name, its
-start/end timing, its success-or-error status, and its ordinal position in the run. For the explore
-agent these are its graph navigation calls (query, explain, neighbors, stats —
-§FS-001-ensemble-explore.2.1) and its `caller_context` pulls (§FS-002-caller-context). The terminal
-product is reported too — for the explore agent, the ordered `NodeRef` list and one-line summary
-(§FS-001-ensemble-explore.2.2) — so the trace shows the full path from tools called to nodes
-selected.
+start/end timing, its success-or-error status, its result line/byte counts, and its ordinal
+position in the run. For the explore agent these are its graph navigation calls (query, explain,
+neighbors, stats — §FS-001-ensemble-explore.2.1) and its `caller_context` pulls
+(§FS-002-caller-context). The terminal product is reported too — for the explore agent, the
+ordered `NodeRef` list and one-line summary (§FS-001-ensemble-explore.2.2) — so the trace shows
+the full path from tools called to nodes selected.
 
 ### 10.3 Tiered verbosity, cheapest first
 

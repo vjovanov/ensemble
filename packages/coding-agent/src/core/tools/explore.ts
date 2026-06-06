@@ -124,6 +124,8 @@ export interface ExploreDebugEvent {
 	phase?: "start" | "end";
 	status?: "ok" | "error" | "aborted";
 	durationMs?: number;
+	resultLines?: number;
+	resultBytes?: number;
 	args?: unknown; // full level only (§10.3)
 	resultPreview?: string; // full level only (§10.3)
 	// product:
@@ -215,6 +217,7 @@ function instrumentToolsForDebug(tools: AgentTool[], level: ExploreDebugLevel, s
 			});
 			try {
 				const result = await tool.execute(toolCallId, params, signal, onUpdate);
+				const resultText = getToolResultText(result);
 				safeEmit({
 					type: "tool_call",
 					tool: tool.name,
@@ -222,10 +225,13 @@ function instrumentToolsForDebug(tools: AgentTool[], level: ExploreDebugLevel, s
 					phase: "end",
 					status: "ok",
 					durationMs: Date.now() - startedAt,
-					resultPreview: level === "full" ? previewPayload(getToolResultText(result)) : undefined,
+					resultLines: countTextLines(resultText),
+					resultBytes: Buffer.byteLength(resultText, "utf-8"),
+					resultPreview: level === "full" ? previewPayload(resultText) : undefined,
 				});
 				return result;
 			} catch (error) {
+				const resultText = error instanceof Error ? error.message : String(error);
 				safeEmit({
 					type: "tool_call",
 					tool: tool.name,
@@ -233,8 +239,9 @@ function instrumentToolsForDebug(tools: AgentTool[], level: ExploreDebugLevel, s
 					phase: "end",
 					status: "error",
 					durationMs: Date.now() - startedAt,
-					resultPreview:
-						level === "full" ? previewPayload(error instanceof Error ? error.message : String(error)) : undefined,
+					resultLines: countTextLines(resultText),
+					resultBytes: Buffer.byteLength(resultText, "utf-8"),
+					resultPreview: level === "full" ? previewPayload(resultText) : undefined,
 				});
 				throw error;
 			}
@@ -247,6 +254,14 @@ function getToolResultText(result: { content: (TextContent | ImageContent)[] }):
 		.filter((part): part is TextContent => part.type === "text")
 		.map((part) => part.text)
 		.join("\n");
+}
+
+function countTextLines(text: string): number {
+	if (text.length === 0) {
+		return 0;
+	}
+	const lines = text.split("\n");
+	return text.endsWith("\n") ? lines.length - 1 : lines.length;
 }
 
 const exploreSchema = Type.Object({
