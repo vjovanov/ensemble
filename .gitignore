@@ -42,3 +42,6 @@ collect.sh
 
 # graphify build artifacts
 graphify-out/
+
+# benchmark runtime state
+bench/.run-all.lock/

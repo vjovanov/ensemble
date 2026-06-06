@@ -16,6 +16,27 @@
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")"
 
+RUN_PID=""
+LIST=""
+
+cleanup() {
+  local rc=$?
+  trap - EXIT
+  if [ -n "$RUN_PID" ]; then
+    kill -TERM -- "-$RUN_PID" 2>/dev/null || kill -TERM "$RUN_PID" 2>/dev/null || true
+    sleep 2
+    kill -KILL -- "-$RUN_PID" 2>/dev/null || kill -KILL "$RUN_PID" 2>/dev/null || true
+    wait "$RUN_PID" 2>/dev/null || true
+    RUN_PID=""
+  fi
+  [ -n "$LIST" ] && rm -f "$LIST"
+  exit "$rc"
+}
+
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM HUP QUIT
+
 # (repo/dataset path, instance index).
 HARD=(
   # --- curated worst/best for graphify (run-hard.sh) ---
@@ -35,7 +56,6 @@ HARD=(
 )
 
 LIST="$(mktemp)"
-trap 'rm -f "$LIST"' EXIT
 echo "[all] fetching ${#HARD[@]} instances…"
 for spec in "${HARD[@]}"; do
   # shellcheck disable=SC2086  (intentional word-split of "<path> <index>")
@@ -48,6 +68,9 @@ echo "[all] fetched $n instances:"; cat "$LIST"
 [ "$n" -gt 0 ] || { echo "[all] nothing fetched; aborting"; exit 1; }
 
 echo "[all] running $n instances x 2 arms on ${MODEL:-oca/gpt-5.5} (PARALLEL=${PARALLEL:-2})…"
-FORCE=1 PARALLEL="${PARALLEL:-2}" INSTANCES="$(tr '\n' ' ' < "$LIST")" ./run-all.sh
+FORCE=1 PARALLEL="${PARALLEL:-2}" INSTANCES="$(tr '\n' ' ' < "$LIST")" setsid ./run-all.sh &
+RUN_PID=$!
+wait "$RUN_PID"
+RUN_PID=""
 
 echo "[all] done. Results are in results/results.csv"

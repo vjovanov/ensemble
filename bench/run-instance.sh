@@ -21,15 +21,28 @@ ARM_SRC="$WORK_DIR/$ID/$ARM"
 OUT="$RAW_DIR/${ID}__${ARM}"
 mkdir -p "$OUT"
 GRAPHIFY_WATCH_PID=""
+AGENT_PID=""
 PRISTINE_LOCK_HELD=0
 
 stop_graphify_watch() {
   if [ -n "$GRAPHIFY_WATCH_PID" ]; then
     if kill -0 "$GRAPHIFY_WATCH_PID" >/dev/null 2>&1; then
-      kill "$GRAPHIFY_WATCH_PID" >/dev/null 2>&1 || true
+      kill -TERM -- "-$GRAPHIFY_WATCH_PID" >/dev/null 2>&1 || kill "$GRAPHIFY_WATCH_PID" >/dev/null 2>&1 || true
     fi
     wait "$GRAPHIFY_WATCH_PID" >/dev/null 2>&1 || true
     GRAPHIFY_WATCH_PID=""
+  fi
+}
+
+stop_agent() {
+  if [ -n "$AGENT_PID" ]; then
+    if kill -0 "$AGENT_PID" >/dev/null 2>&1; then
+      kill -TERM -- "-$AGENT_PID" >/dev/null 2>&1 || kill "$AGENT_PID" >/dev/null 2>&1 || true
+      sleep 2
+      kill -KILL -- "-$AGENT_PID" >/dev/null 2>&1 || kill -KILL "$AGENT_PID" >/dev/null 2>&1 || true
+    fi
+    wait "$AGENT_PID" >/dev/null 2>&1 || true
+    AGENT_PID=""
   fi
 }
 
@@ -62,6 +75,7 @@ release_pristine_lock() {
 }
 
 cleanup() {
+  stop_agent
   stop_graphify_watch
   release_pristine_lock
 }
@@ -192,9 +206,16 @@ else
       "${MODEL_ARGS[@]}" \
       --exploration "$EXPLORATION" \
       --no-context-files \
-      `# all arms ignore repo AGENTS.md/CLAUDE.md so the only difference is exploration` \
       --session-dir "$SESSION_DIR" \
-    ) >"$OUT/agent.out" 2>"$OUT/agent.err" || log "agent exited nonzero (rc=$?) — see agent.err"
+    ) >"$OUT/agent.out" 2>"$OUT/agent.err" &
+  AGENT_PID=$!
+  if wait "$AGENT_PID"; then
+    AGENT_PID=""
+  else
+    agent_rc=$?
+    AGENT_PID=""
+    log "agent exited nonzero (rc=$agent_rc) — see agent.err"
+  fi
   stop_graphify_watch
 fi
 

@@ -39,6 +39,8 @@ const MAX_TOOL_OUTPUT_BYTES = 64 * 1024;
 const DEFAULT_MAX_SNIPPETS = 8;
 const MAX_FALLBACK_FILES = 1_000;
 const SNIPPET_CONTEXT_LINES = 2;
+const MAX_SOURCE_SLICE_LINES = 80;
+const MAX_SOURCE_SLICE_BYTES = 16 * 1024;
 // §FS-003-agent-protocol.10.3: bound captured payloads like §FS-002-caller-context.6.
 const DEBUG_PAYLOAD_PREVIEW_BYTES = 2_000;
 
@@ -250,7 +252,7 @@ function getToolResultText(result: { content: (TextContent | ImageContent)[] }):
 const exploreSchema = Type.Object({
 	task: Type.String({
 		description:
-			"File exploration task. Describe what needs to be found, understood, or read. Include symbols, paths, or behavior when known.",
+			"Semantic code exploration task. Describe the symbol, behavior, relationship, or failure mode to understand; do not ask for line ranges or file dumps.",
 	}),
 	paths: Type.Optional(
 		Type.Array(Type.String(), {
@@ -260,7 +262,7 @@ const exploreSchema = Type.Object({
 	wholeFiles: Type.Optional(
 		Type.Boolean({
 			description:
-				"Fetch whole nodes/files instead of targeted subsets. Set true when you need — or will soon need — most of a file: fetching it whole once is cheaper than repeated partial fetches.",
+				"Fetch complete file content for explicit paths. Use only when complete file bodies are required; otherwise the sidekick will choose small semantic evidence.",
 		}),
 	),
 	maxSnippets: Type.Optional(
@@ -297,6 +299,17 @@ interface Snippet {
 interface FileContentResult {
 	text: string;
 	truncation?: TruncationResult;
+}
+
+interface SourceSliceRange {
+	path: string;
+	startLine: number;
+	endLine: number;
+}
+
+interface SourceSliceResult {
+	text: string;
+	range: SourceSliceRange;
 }
 
 function toPosixPath(filePath: string): string {
@@ -440,6 +453,52 @@ async function fetchFileContent(rawPath: string, cwd: string): Promise<FileConte
 		text: `<file path="${relativeToCwd(absolutePath, cwd)}">\n${text}\n</file>`,
 		truncation: truncation.truncated ? truncation : undefined,
 	};
+}
+
+// §FS-001-ensemble-explore.2.1: graph-mode source confirmation is bounded and targeted; whole
+// files remain an explicit caller request (§FS-001-ensemble-explore.7.3).
+async function fetchSourceSlice(
+	rawPath: string,
+	rawStartLine: number,
+	rawEndLine: number,
+	cwd: string,
+): Promise<SourceSliceResult> {
+	const absolutePath = await resolveReadPathAsync(rawPath, cwd);
+	const content = await readTextFile(absolutePath);
+	const lines = content.split("\n");
+	const requestedStart = Number.isFinite(rawStartLine) ? Math.floor(rawStartLine) : 1;
+	const requestedEnd = Number.isFinite(rawEndLine) ? Math.floor(rawEndLine) : requestedStart;
+	const lower = Math.max(1, Math.min(requestedStart, requestedEnd));
+	const upper = Math.max(lower, Math.max(requestedStart, requestedEnd));
+	const startLine = lines.length === 0 ? 1 : Math.min(lower, lines.length);
+	const requestedLastLine = lines.length === 0 ? 1 : Math.min(upper, lines.length);
+	const endLine = Math.min(requestedLastLine, startLine + MAX_SOURCE_SLICE_LINES - 1);
+	const numbered = lines
+		.slice(startLine - 1, endLine)
+		.map((line, index) => `${startLine + index}: ${line}`)
+		.join("\n");
+	const truncation = truncateHead(numbered, {
+		maxLines: MAX_SOURCE_SLICE_LINES,
+		maxBytes: MAX_SOURCE_SLICE_BYTES,
+	});
+	const outputEndLine = Math.max(startLine, startLine + truncation.outputLines - 1);
+	const displayPath = relativeToCwd(absolutePath, cwd);
+	const notes: string[] = [];
+	if (endLine < requestedLastLine) {
+		notes.push(`line cap ${MAX_SOURCE_SLICE_LINES}: omitted ${requestedLastLine - endLine} requested lines`);
+	}
+	if (truncation.truncated) {
+		notes.push(`byte cap ${formatSize(MAX_SOURCE_SLICE_BYTES)}: omitted remaining requested content`);
+	}
+	const note = notes.length > 0 ? `\n[${notes.join("; ")}]` : "";
+	return {
+		text: `<source_slice path="${displayPath}" lines="${startLine}-${outputEndLine}">\n${truncation.content}${note}\n</source_slice>`,
+		range: { path: displayPath, startLine, endLine: outputEndLine },
+	};
+}
+
+function rangesOverlap(a: SourceSliceRange, b: SourceSliceRange): boolean {
+	return a.path === b.path && a.startLine <= b.endLine && b.startLine <= a.endLine;
 }
 
 async function walkFiles(roots: string[], cwd: string): Promise<string[]> {
@@ -731,11 +790,14 @@ export function exploreSidekickSystemPrompt(graphifyAvailable: boolean): string 
 	return graphifyAvailable
 		? [
 				"You are Pi's private exploration sidekick. Find the code the task needs and return it.",
+				"The caller gives you semantic goals, not line-dump instructions. Choose the lookup strategy yourself.",
 				"Locate with `search` (ripgrep-like): it finds any string — symbols, literals, error messages, config keys — which the graph structurally cannot.",
 				"Turn a search hit into structure with `node_at(path, line)`: it resolves the hit to its graph node and shows the call/reference neighbors. Prefer this over guessing an identifier for `graph_explain`.",
 				"Use `graph_query`/`graph_explain` to navigate relationships (callers, callees, neighbors) — the graph's unique value over plain search.",
+				"Use `source_slice` only to confirm the smallest relevant source interval after graph/search has identified it.",
 				"Think about what the task genuinely needs and return only that; do not pull in neighbors speculatively.",
-				"When the task needs most of a file, fetch the whole file once with `graph_fetch_node` rather than many partial fetches.",
+				"Do not repeat source, spans, or graph evidence you already returned in this explore run; ask narrower follow-ups when more evidence is needed.",
+				"Do not fetch whole files unless the caller explicitly requested whole files.",
 				"Reproduce any code you return verbatim; never rewrite or summarize code bodies.",
 				callerContextLine,
 				"Do not propose edits. Do not answer the user directly.",
@@ -785,6 +847,13 @@ async function runSidekick(
 		path: Type.String({ description: "File path of a search hit." }),
 		line: Type.Number({ description: "Line number of the search hit." }),
 	});
+	const sourceSliceSchema = Type.Object({
+		path: Type.String({ description: "File path to read after search or graph navigation identified it." }),
+		startLine: Type.Number({ description: "First source line to return." }),
+		endLine: Type.Number({ description: "Last source line to return." }),
+	});
+	const returnedSlices: SourceSliceRange[] = [];
+	const returnedWholeFiles = new Set<string>();
 
 	// §FS-001-ensemble-explore.7.4.4: in required-graph mode a runtime graph miss never degrades to
 	// the filesystem; it surfaces an explicit no-result instead so the caller only ever sees
@@ -819,10 +888,16 @@ async function runSidekick(
 	);
 	const graphFetchNodeTool = makeTextTool(
 		"graph_fetch_node",
-		"Fetch full content for a graph node or file path so it can be trimmed to the relevant code.",
+		"Fetch full content for a graph node or file path. Only use when the caller explicitly requested whole files.",
 		graphFetchNodeSchema,
 		async ({ node }) => {
 			try {
+				const absolutePath = await resolveReadPathAsync(node, context.cwd);
+				const displayPath = relativeToCwd(absolutePath, context.cwd);
+				if (returnedWholeFiles.has(displayPath)) {
+					return `Already returned whole file ${displayPath}; do not request it again.`;
+				}
+				returnedWholeFiles.add(displayPath);
 				return (await fetchFileContent(node, context.cwd)).text;
 			} catch (error) {
 				return `Unable to fetch node "${node}": ${error instanceof Error ? error.message : String(error)}`;
@@ -852,10 +927,30 @@ async function runSidekick(
 		async ({ path, line }, toolSignal) =>
 			(await backend.nodeAt(path, line, toolSignal)) ?? `No graph node found at ${path}:${line}.`,
 	);
+	const sourceSliceTool = makeTextTool(
+		"source_slice",
+		`Read a small source interval after semantic exploration identifies the relevant path. Returns at most ${MAX_SOURCE_SLICE_LINES} lines / ${formatSize(MAX_SOURCE_SLICE_BYTES)}. Do not use for whole files or repeated spans.`,
+		sourceSliceSchema,
+		async ({ path, startLine, endLine }) => {
+			try {
+				const result = await fetchSourceSlice(path, startLine, endLine, context.cwd);
+				const overlap = returnedSlices.find((range) => rangesOverlap(range, result.range));
+				if (overlap) {
+					return `Already returned overlapping source ${overlap.path}:${overlap.startLine}-${overlap.endLine}; ask for a non-overlapping, narrower semantic target if more evidence is required.`;
+				}
+				returnedSlices.push(result.range);
+				return result.text;
+			} catch (error) {
+				return `Unable to read source slice ${path}:${startLine}-${endLine}: ${
+					error instanceof Error ? error.message : String(error)
+				}`;
+			}
+		},
+	);
 
 	// Graph present: text-locate (search/node_at), navigate structure (query/explain), and fetch a
-	//   whole file (graph_fetch_node) when most is needed (§RM-001-bash-sidekick.2.1/.2.2). Graph
-	//   absent: search + trim raw files. Both modes get caller_context (§FS-002-caller-context.9).
+	//   bounded source slice when source confirmation is needed (§FS-001-ensemble-explore.2.1).
+	//   Graph absent: search + trim raw files. Both modes get caller_context (§FS-002-caller-context.9).
 	const callerContextTool = createCallerContextTool(context);
 	const baseTools: AgentTool[] = graphifyAvailable
 		? [
@@ -863,7 +958,8 @@ async function runSidekick(
 				nodeAtTool,
 				graphQueryTool,
 				graphExplainTool,
-				graphFetchNodeTool,
+				sourceSliceTool,
+				...(input.wholeFiles ? [graphFetchNodeTool] : []),
 				graphStatsTool,
 				callerContextTool,
 			]
@@ -905,7 +1001,9 @@ async function runSidekick(
 	signal?.addEventListener("abort", abortSidekick, { once: true });
 	try {
 		const focus = input.paths && input.paths.length > 0 ? `\nFocus paths: ${input.paths.join(", ")}` : "";
-		const wholeFiles = input.wholeFiles ? "\nFetch whole graph nodes/files when they are relevant." : "";
+		const wholeFiles = input.wholeFiles
+			? "\nThe caller explicitly allowed whole-file reads for paths that genuinely require complete content."
+			: "\nDo not fetch whole files; return the smallest semantic evidence that answers the task.";
 		await sidekick.prompt(
 			`Explore this task and return relevant code evidence only:\n${input.task}${focus}${wholeFiles}`,
 		);
@@ -991,10 +1089,11 @@ export function createExploreToolDefinition(
 			"Delegate code discovery to a smart explore sub-agent. Describe in natural language what you need to find, understand, or read; it navigates the code graph and returns small, targeted subsets — the specific functions, types, or lines relevant to your task, not whole files. One well-described explore call replaces many manual grep/find/sed reads: it batches the search and returns only what matters, which keeps your context small. Set wholeFiles: true only when you genuinely need complete file content (e.g. before a large edit).",
 		promptSnippet: "Delegate discovery to a smart explore sub-agent; it returns the minimal relevant code",
 		promptGuidelines: [
-			"Use explore for ALL code discovery, search, and reading — finding symbols/strings/usages, reading files, and pre-edit inspection. Describe the target and let the sub-agent return the minimal relevant code.",
+			"Use explore for ALL code discovery, search, and reading — finding symbols/strings/usages, reading files, and pre-edit inspection. Ask semantic questions about behavior, symbols, or relationships; do not request line ranges or file dumps.",
 			"Do NOT use bash to read or search code: no rg, grep, find, cat, sed, head, tail, or ls on source files. `explore` already runs ripgrep internally, so grepping yourself only duplicates its work and bloats your context. Reserve bash for *executing* things — running tests, builds, formatters, git — never for inspecting source.",
 			"Trust the explore result: do not re-grep or re-read code it already returned. If you need more, ask explore again rather than falling back to shell.",
-			"When you'll need an entire file, ask for it with wholeFiles: true rather than many partial fetches.",
+			"`explore` is intelligent: give it the investigation goal and let it choose graph/search/slice steps. It is expected to return the least unchanged evidence needed.",
+			"Use wholeFiles: true only when complete file content is explicitly necessary.",
 		],
 		parameters: exploreSchema,
 		async execute(_toolCallId, input: ExploreToolInput, signal, _onUpdate, context) {

@@ -58,9 +58,13 @@ The tool reads the call argument, not the prose.
 
 The explore agent's toolset is **backend-conditional** (§FS-001-ensemble-explore.2.1):
 
-- **Graph backend present** — tools are `graph_query`, `graph_explain`, `graph_neighbors`,
-  `graph_stats`; `graph_fetch_node` is removed. The explore agent stays in graph space and relays
+- **Graph backend present** — tools are `search`, `node_at`, `source_slice`, `graph_query`,
+  `graph_explain`, `graph_neighbors`, `graph_stats`; `graph_fetch_node` is removed unless the
+  caller explicitly requests whole files. The explore agent stays in graph space and relays
   node-granular results unchanged — **no post-processing** (§FS-001-ensemble-explore.5.6).
+  `source_slice` is a bounded confirmation aid, not a file-reading primitive: each call returns a
+  small line interval, and the tool rejects repeated or overlapping intervals in the same explore
+  run so unchanged evidence is not paid for twice (§FS-001-ensemble-explore.2.1).
   Backend graph storage is addressed through the graph backend, not as repository files; callers
   may configure an absolute graph file outside the worktree so artifacts remain invisible to
   filesystem search, patch capture, graph tool output, and agent-visible shell environments

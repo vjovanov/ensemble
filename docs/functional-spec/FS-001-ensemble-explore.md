@@ -36,12 +36,20 @@ during a run. A configured hidden graph file MUST resolve outside the caller wor
 in-worktree configured graph file does not satisfy the graph-backend precondition. To overcome
 the graph's structural blind spots — it cannot locate arbitrary text (string literals, error
 messages, config keys) and node-identifier guessing misses often — the agent MAY additionally
-**locate by text search** and resolve a hit (`path:line`) to its graph node, and MAY **fetch a
-whole file** when the task needs most of it (§RM-001-bash-sidekick).
-These are navigation aids: the agent still selects and returns graph-derived nodes (§2.2), so the
-contract that `explore` results are node-granular is preserved. When the backend is absent, the
-explore agent instead works from raw filesystem results and is responsible for trimming them down
-to the relevant code (§5.6, §7.1).
+**locate by text search** and resolve a hit (`path:line`) to its graph node. When graph results
+need source confirmation, the agent MAY read a bounded source slice, but it MUST prefer the
+smallest semantic unit that answers the task and MUST NOT fetch whole files unless the caller
+explicitly requests whole files (§7.3). These are navigation aids: the agent still selects and
+returns graph-derived or narrowly sliced evidence (§2.2), so the contract that `explore` results
+are node-granular is preserved. When the backend is absent, the explore agent instead works from
+raw filesystem results and is responsible for trimming them down to the relevant code (§5.6,
+§7.1).
+
+The caller-facing `explore` request is semantic: it describes the symbol, behavior, failure mode,
+or relationship to investigate, not line ranges to dump. The explore agent is responsible for
+choosing the lookup strategy and MUST return the least evidence needed for the caller to act. It
+MUST NOT repeat evidence it already returned unchanged in the same explore run; overlapping
+source slices are rejected or narrowed before they reach the caller.
 
 ### 2.2 Structured selection result
 
