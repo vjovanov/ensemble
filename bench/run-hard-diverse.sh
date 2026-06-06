@@ -17,7 +17,7 @@
 #     confirm a non-trivial graph.json per repo on first run (harness warns if empty).
 #   - Run AFTER any in-flight sweep finishes (avoid concurrent agents); Docker grading +
 #     collection runs automatically.
-set -uo pipefail
+set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")"
 
 # (repo/dataset path, instance index) — large, diverse codebases.
@@ -31,6 +31,7 @@ HARD=(
 )
 
 LIST="$(mktemp)"
+trap 'rm -f "$LIST"' EXIT
 echo "[diverse] fetching ${#HARD[@]} instances…"
 for spec in "${HARD[@]}"; do
   # shellcheck disable=SC2086  (intentional word-split of "<path> <index>")
@@ -42,8 +43,7 @@ n=$(wc -l < "$LIST" | tr -d ' ')
 echo "[diverse] fetched $n instances:"; cat "$LIST"
 [ "$n" -gt 0 ] || { echo "[diverse] nothing fetched; aborting"; exit 1; }
 
-echo "[diverse] running $n instances x 2 arms on ${MODEL:-oca/gpt-5.5}…"
-FORCE=1 PARALLEL=2 INSTANCES="$(tr '\n' ' ' < "$LIST")" ./run-all.sh
+echo "[diverse] running $n instances x 2 arms on ${MODEL:-oca/gpt-5.5} (PARALLEL=${PARALLEL:-2})…"
+FORCE=1 PARALLEL="${PARALLEL:-2}" INSTANCES="$(tr '\n' ' ' < "$LIST")" ./run-all.sh
 
 echo "[diverse] done. Results are in results/results.csv"
-rm -f "$LIST"

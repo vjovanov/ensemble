@@ -13,7 +13,7 @@
 #   - Large clones (FORCE=1 bypasses the 400MB guard); fetch streams huge dataset files.
 #   - graphify supports every language here (tree-sitter); coverage verified for c/cpp.
 #   - Run AFTER any in-flight sweep finishes; Docker grading + collection runs automatically.
-set -uo pipefail
+set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")"
 
 # (repo/dataset path, instance index).
@@ -35,6 +35,7 @@ HARD=(
 )
 
 LIST="$(mktemp)"
+trap 'rm -f "$LIST"' EXIT
 echo "[all] fetching ${#HARD[@]} instances…"
 for spec in "${HARD[@]}"; do
   # shellcheck disable=SC2086  (intentional word-split of "<path> <index>")
@@ -50,4 +51,3 @@ echo "[all] running $n instances x 2 arms on ${MODEL:-oca/gpt-5.5} (PARALLEL=${P
 FORCE=1 PARALLEL="${PARALLEL:-2}" INSTANCES="$(tr '\n' ' ' < "$LIST")" ./run-all.sh
 
 echo "[all] done. Results are in results/results.csv"
-rm -f "$LIST"
