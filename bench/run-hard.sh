@@ -14,6 +14,7 @@
 #   - Grade afterward with ./eval/run-eval.sh && node collect.mjs
 set -uo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")"
+exec > run-hard.log 2>&1   # write straight to the log (no tee pipe -> no hang if a child leaks the fd)
 
 # (repo/dataset path, instance index) — curated to the most informative cases from the first
 # sweep: the 4 WORST for graphify (graph/classic cacheRead highest) and the 2 BEST, so an A/B
@@ -42,7 +43,7 @@ echo "[run-hard] fetched $n instances:"; cat "$LIST"
 [ "$n" -gt 0 ] || { echo "[run-hard] nothing fetched; aborting"; exit 1; }
 
 echo "[run-hard] running $n instances x 2 arms on ${MODEL:-oca/gpt-5.5}…"
-FORCE=1 PARALLEL=2 INSTANCES="$(tr '\n' ' ' < "$LIST")" ./run-all.sh 2>&1 | tee run-hard.log
+FORCE=1 PARALLEL=2 INSTANCES="$(tr '\n' ' ' < "$LIST")" ./run-all.sh
 
 echo "[run-hard] done. Next: ./eval/run-eval.sh && node collect.mjs"
 rm -f "$LIST"

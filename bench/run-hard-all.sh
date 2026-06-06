@@ -15,6 +15,7 @@
 #   - Run AFTER any in-flight sweep finishes; grade with ./eval/run-eval.sh && node collect.mjs
 set -uo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")"
+exec > run-hard-all.log 2>&1   # write straight to the log (no tee pipe -> no hang if a child leaks the fd)
 
 # (repo/dataset path, instance index).
 HARD=(
@@ -47,7 +48,7 @@ echo "[all] fetched $n instances:"; cat "$LIST"
 [ "$n" -gt 0 ] || { echo "[all] nothing fetched; aborting"; exit 1; }
 
 echo "[all] running $n instances x 2 arms on ${MODEL:-oca/gpt-5.5} (PARALLEL=${PARALLEL:-2})…"
-FORCE=1 PARALLEL="${PARALLEL:-2}" INSTANCES="$(tr '\n' ' ' < "$LIST")" ./run-all.sh 2>&1 | tee run-hard-all.log
+FORCE=1 PARALLEL="${PARALLEL:-2}" INSTANCES="$(tr '\n' ' ' < "$LIST")" ./run-all.sh
 
 echo "[all] done. Next: ./eval/run-eval.sh && node collect.mjs"
 rm -f "$LIST"
