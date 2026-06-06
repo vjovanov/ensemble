@@ -51,12 +51,29 @@ function pickFile(files, langOrPath) {
   return inLang[0]; // smallest = cheapest to pull and graph
 }
 
-async function loadRows(file) {
-  if (file.size > MAX_FILE_MB * 1e6) {
-    throw new Error(`${file.path} is ${(file.size / 1e6).toFixed(0)}MB > MAX_FILE_MB=${MAX_FILE_MB}. Pick a smaller repo or raise MAX_FILE_MB.`);
+// Stream the jsonl and stop once we have `needLines` rows, so a huge dataset file
+// (svelte 503MB, cli/cli 167MB) costs only the bytes up to the requested index.
+async function loadRows(file, needLines = Infinity) {
+  const res = await fetch(resolveUrl(file.path));
+  if (!res.ok || !res.body) throw new Error(`HTTP ${res.status} for ${file.path}`);
+  const reader = res.body.getReader();
+  const dec = new TextDecoder();
+  const rows = [];
+  let buf = "";
+  let done = false;
+  while (!done && rows.length < needLines) {
+    const { value, done: d } = await reader.read();
+    done = d;
+    if (value) buf += dec.decode(value, { stream: true });
+    let nl;
+    while (rows.length < needLines && (nl = buf.indexOf("\n")) >= 0) {
+      const line = buf.slice(0, nl).trim();
+      buf = buf.slice(nl + 1);
+      if (line) rows.push(JSON.parse(line));
+    }
   }
-  const text = await (await fetch(resolveUrl(file.path))).text();
-  return text.split("\n").filter(Boolean).map((l) => JSON.parse(l));
+  if (!done) { try { await reader.cancel(); } catch {} }
+  return rows;
 }
 
 async function main() {
@@ -85,8 +102,9 @@ async function main() {
   }
   const file = pickFile(files, target);
   console.log(`file: ${file.path} (${(file.size / 1024).toFixed(0)}KB)`);
-  const rows = await loadRows(file);
-  console.log(`  ${rows.length} instances in file`);
+  const needLines = Math.max(...idxs.map(Number)) + 1; // stream only up to the last requested index
+  const rows = await loadRows(file, needLines);
+  console.log(`  read ${rows.length} instances (streamed up to index ${needLines - 1})`);
   mkdirSync(INST_DIR, { recursive: true });
   for (const idx of idxs.map(Number)) {
     const row = rows[idx];
