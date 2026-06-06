@@ -9,7 +9,7 @@
 #
 # Honest expectations:
 #   - 12 instances x 2 arms = 24 agent runs on oca/gpt-5.5; budget ~$20-50.
-#   - PARALLEL=2 (2 instances at a time) -> ~6 waves; raise PARALLEL to go faster.
+#   - PARALLEL=2 runs both arms for one instance at a time, then prints the comparison.
 #   - Large clones (FORCE=1 bypasses the 400MB guard); fetch streams huge dataset files.
 #   - graphify supports every language here (tree-sitter); coverage verified for c/cpp.
 #   - Run AFTER any in-flight sweep finishes; Docker grading + collection runs automatically.

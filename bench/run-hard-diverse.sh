@@ -9,7 +9,7 @@
 #
 # Honest expectations:
 #   - 6 instances x 2 arms = 12 agent runs on oca/gpt-5.5; budget ~$10-30.
-#   - runs 2 instances in parallel (PARALLEL=2); per-job logs in raw/.log_<inst>_<arm>.txt.
+#   - runs 2 arms of the same instance in parallel (PARALLEL=2); per-job logs in raw/.log_<inst>_<arm>.txt.
 #   - Large clones (svelte 118MB, nlohmann skipped, cli 75MB, dubbo 60MB, simdjson 95MB);
 #     FORCE=1 bypasses the 400MB guard. fetch streams huge dataset files (svelte 503MB,
 #     cli/cli 167MB) so only the first instance's bytes are downloaded.

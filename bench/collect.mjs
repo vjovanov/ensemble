@@ -124,9 +124,11 @@ function main() {
   if (!haveResolved) console.log("(note: no final_report.json yet — run ./eval/run-eval.sh to fill the 'resolved' column)");
 
   // ---- Headline: graph vs classic (totals, ratios, success rate) ----
-  const sum = (arm, f) => rows.filter((r) => r.arm === arm).reduce((s, r) => s + (Number(r[f]) || 0), 0);
+  const strictValid = (r) => r.arm !== "ensemble-strict" || (r.strictOk !== false && r.strictOk !== "false");
+  const headlineRows = (arm) => rows.filter((r) => r.arm === arm && strictValid(r));
+  const sum = (arm, f) => headlineRows(arm).reduce((s, r) => s + (Number(r[f]) || 0), 0);
   const resolveRate = (arm) => {
-    const rs = rows.filter((r) => r.arm === arm);
+    const rs = headlineRows(arm);
     return `${rs.reduce((s, r) => s + (r.resolved === 1 ? 1 : 0), 0)}/${rs.length}`;
   };
   if (rows.some((r) => r.arm === "ensemble-strict") && rows.some((r) => r.arm === "classic")) {

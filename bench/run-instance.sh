@@ -16,10 +16,12 @@ eval "$(node "$BENCH_DIR/lib/inst-env.mjs" "$INSTANCE_JSON")"
 log "instance=$ID lang=$LANG arm=$ARM model=$MODEL"
 
 PRISTINE="$WORK_DIR/$ID/pristine"
+PRISTINE_LOCK="$WORK_DIR/$ID/.pristine.lock"
 ARM_SRC="$WORK_DIR/$ID/$ARM"
 OUT="$RAW_DIR/${ID}__${ARM}"
 mkdir -p "$OUT"
 GRAPHIFY_WATCH_PID=""
+PRISTINE_LOCK_HELD=0
 
 stop_graphify_watch() {
   if [ -n "$GRAPHIFY_WATCH_PID" ]; then
@@ -30,22 +32,61 @@ stop_graphify_watch() {
     GRAPHIFY_WATCH_PID=""
   fi
 }
-trap stop_graphify_watch EXIT
+
+acquire_pristine_lock() {
+  local lock_pid
+  mkdir -p "$WORK_DIR/$ID"
+  while ! mkdir "$PRISTINE_LOCK" 2>/dev/null; do
+    if [ -f "$PRISTINE_LOCK/pid" ]; then
+      lock_pid="$(cat "$PRISTINE_LOCK/pid" 2>/dev/null || true)"
+      if [ -n "$lock_pid" ] && ! kill -0 "$lock_pid" 2>/dev/null; then
+        rm -f "$PRISTINE_LOCK/pid"
+        rmdir "$PRISTINE_LOCK" 2>/dev/null || true
+        continue
+      fi
+    elif rmdir "$PRISTINE_LOCK" 2>/dev/null; then
+      continue
+    fi
+    sleep 0.2
+  done
+  printf '%s\n' "$$" > "$PRISTINE_LOCK/pid"
+  PRISTINE_LOCK_HELD=1
+}
+
+release_pristine_lock() {
+  if [ "$PRISTINE_LOCK_HELD" = "1" ]; then
+    rm -f "$PRISTINE_LOCK/pid"
+    rmdir "$PRISTINE_LOCK" 2>/dev/null || true
+    PRISTINE_LOCK_HELD=0
+  fi
+}
+
+cleanup() {
+  stop_graphify_watch
+  release_pristine_lock
+}
+trap cleanup EXIT
+trap 'cleanup; exit 130' INT
+trap 'cleanup; exit 143' TERM
 
 # --- 1. Pristine clone at base sha (cached) ---------------------------------
 if [ ! -d "$PRISTINE/.git" ]; then
-  # A tiny dataset file can map to a huge repo (e.g. ts/material-ui ~750MB).
-  # Refuse to pull anything over MAX_REPO_MB unless FORCE=1.
-  REPO_KB=$(node "$BENCH_DIR/lib/repo-size-kb.mjs" "$ORG" "$REPO" 2>/dev/null || echo 0)
-  if [ "${FORCE:-0}" != "1" ] && [ "${REPO_KB:-0}" -gt "$((MAX_REPO_MB * 1024))" ] 2>/dev/null; then
-    die "$ORG/$REPO is ~$((REPO_KB / 1024))MB > MAX_REPO_MB=${MAX_REPO_MB}MB. Pick a smaller repo or set FORCE=1."
+  acquire_pristine_lock
+  if [ ! -d "$PRISTINE/.git" ]; then
+    # A tiny dataset file can map to a huge repo (e.g. ts/material-ui ~750MB).
+    # Refuse to pull anything over MAX_REPO_MB unless FORCE=1.
+    REPO_KB=$(node "$BENCH_DIR/lib/repo-size-kb.mjs" "$ORG" "$REPO" 2>/dev/null || echo 0)
+    if [ "${FORCE:-0}" != "1" ] && [ "${REPO_KB:-0}" -gt "$((MAX_REPO_MB * 1024))" ] 2>/dev/null; then
+      die "$ORG/$REPO is ~$((REPO_KB / 1024))MB > MAX_REPO_MB=${MAX_REPO_MB}MB. Pick a smaller repo or set FORCE=1."
+    fi
+    log "cloning $ORG/$REPO @ ${SHA:0:12} (~$((REPO_KB / 1024))MB)"
+    rm -rf "$PRISTINE"; mkdir -p "$PRISTINE"
+    git clone --quiet --filter=blob:none "https://github.com/$ORG/$REPO" "$PRISTINE" \
+      || die "clone failed for $ORG/$REPO"
+    git -C "$PRISTINE" checkout --quiet --detach "$SHA" \
+      || die "checkout $SHA failed (commit not on default remote?)"
   fi
-  log "cloning $ORG/$REPO @ ${SHA:0:12} (~$((REPO_KB / 1024))MB)"
-  rm -rf "$PRISTINE"; mkdir -p "$PRISTINE"
-  git clone --quiet --filter=blob:none "https://github.com/$ORG/$REPO" "$PRISTINE" \
-    || die "clone failed for $ORG/$REPO"
-  git -C "$PRISTINE" checkout --quiet --detach "$SHA" \
-    || die "checkout $SHA failed (commit not on default remote?)"
+  release_pristine_lock
 fi
 
 # --- 2. Fresh per-arm worktree ------------------------------------------------

@@ -8,7 +8,7 @@
 #
 # Honest expectations:
 #   - 6 instances x 2 arms = 12 agent runs on oca/gpt-5.5; budget ~$10-25.
-#   - runs 2 instances in parallel (PARALLEL=2); per-job logs in raw/.log_<inst>_<arm>.txt.
+#   - runs 2 arms of the same instance in parallel (PARALLEL=2); per-job logs in raw/.log_<inst>_<arm>.txt.
 #   - ~2-5h sequential, plus large clones (FORCE=1 bypasses the 400MB guard).
 #   - Run this AFTER any in-flight sweep finishes (avoid concurrent agents).
 #   - Docker grading + collection runs automatically after the agent runs.
