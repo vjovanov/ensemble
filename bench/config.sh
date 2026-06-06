@@ -34,9 +34,10 @@ fi
 
 # --- Arms -------------------------------------------------------------------
 # ensemble-strict : --exploration sidekick + graph prebuilt + PI_REQUIRE_GRAPH=1 (enforced)
-# sidekick-fs     : --exploration sidekick, graphify forced unavailable (filesystem fallback)
 # classic         : --exploration classic (pre-ensemble pi: read/grep/find/ls)
-: "${ARMS:=ensemble-strict sidekick-fs classic}"
+# (sidekick-fs — filesystem results presented as explore/graph results — dropped: it muddies
+#  the graph-vs-rg comparison. run-instance.sh still supports it if added back to ARMS.)
+: "${ARMS:=ensemble-strict classic}"
 
 # --- Corpus -----------------------------------------------------------------
 # Full Multi-SWE-bench stores small per-repo jsonl files grouped by language dir

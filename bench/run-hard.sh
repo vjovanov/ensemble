@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
 # Fetch and run 6 curated "hard" Multi-SWE-bench instances (4 worst + 2 best for graphify)
-# across the graphify-supported languages (go/rust/ts/java) — through all 3 arms.
+# across the graphify-supported languages (go/rust/ts/java) — through both arms
+# (ensemble-strict graph vs classic rg/sed; sidekick-fs dropped — see config.sh).
 #
 #   ./run-hard.sh                 # fetch + run (streams to run-hard.log)
 #   nohup ./run-hard.sh &         # detached; then: tail -f run-hard.log
 #
 # Honest expectations:
-#   - 6 instances x 3 arms = 18 agent runs on oca/gpt-5.5; budget ~$15-35.
+#   - 6 instances x 2 arms = 12 agent runs on oca/gpt-5.5; budget ~$10-25.
 #   - ~2-5h sequential, plus large clones (FORCE=1 bypasses the 400MB guard).
 #   - Run this AFTER any in-flight sweep finishes (avoid concurrent agents).
 #   - Grade afterward with ./eval/run-eval.sh && node collect.mjs
