@@ -8,6 +8,7 @@
 #
 # Honest expectations:
 #   - 6 instances x 2 arms = 12 agent runs on oca/gpt-5.5; budget ~$10-25.
+#   - runs 2 instances in parallel (PARALLEL=2); per-job logs in raw/.log_<inst>_<arm>.txt.
 #   - ~2-5h sequential, plus large clones (FORCE=1 bypasses the 400MB guard).
 #   - Run this AFTER any in-flight sweep finishes (avoid concurrent agents).
 #   - Grade afterward with ./eval/run-eval.sh && node collect.mjs
@@ -41,7 +42,7 @@ echo "[run-hard] fetched $n instances:"; cat "$LIST"
 [ "$n" -gt 0 ] || { echo "[run-hard] nothing fetched; aborting"; exit 1; }
 
 echo "[run-hard] running $n instances x 3 arms on ${MODEL:-oca/gpt-5.5}…"
-FORCE=1 INSTANCES="$(tr '\n' ' ' < "$LIST")" ./run-all.sh 2>&1 | tee run-hard.log
+FORCE=1 PARALLEL=2 INSTANCES="$(tr '\n' ' ' < "$LIST")" ./run-all.sh 2>&1 | tee run-hard.log
 
 echo "[run-hard] done. Next: ./eval/run-eval.sh && node collect.mjs"
 rm -f "$LIST"
