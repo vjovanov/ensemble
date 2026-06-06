@@ -2,9 +2,9 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { createCallerContextTool } from "../../../src/core/tools/caller-context.ts";
 import type { ExtensionContext } from "../../../src/core/extensions/types.ts";
 import type { SessionEntry } from "../../../src/core/session-manager.ts";
+import { createCallerContextTool } from "../../../src/core/tools/caller-context.ts";
 
 // §FS-002-caller-context / §AR-002-caller-context §10.5: index lists each kind; fetch by
 // ids/recency/query; unparameterised fetch is bounded; over-cap output reports truncation;
@@ -41,7 +41,10 @@ function makeBranch(): SessionEntry[] {
 			id: "a1",
 			parentId: "u1",
 			timestamp: "t2",
-			message: { role: "assistant", content: [{ type: "text", text: "I'll inspect the backend implementation first." }] },
+			message: {
+				role: "assistant",
+				content: [{ type: "text", text: "I'll inspect the backend implementation first." }],
+			},
 		},
 		{
 			type: "message",
@@ -100,7 +103,9 @@ function makeBranch(): SessionEntry[] {
 			timestamp: "t7",
 			message: {
 				role: "assistant",
-				content: [{ type: "text", text: "query() spawns without a timeout; I'll add a GRAPHIFY_TIMEOUT_MS guard." }],
+				content: [
+					{ type: "text", text: "query() spawns without a timeout; I'll add a GRAPHIFY_TIMEOUT_MS guard." },
+				],
 			},
 		},
 		{
@@ -200,7 +205,13 @@ describe("caller_context tool", () => {
 				id: "big",
 				parentId: null,
 				timestamp: "t1",
-				message: { role: "toolResult", toolCallId: "x", toolName: "explore", content: [{ type: "text", text: huge }], isError: false },
+				message: {
+					role: "toolResult",
+					toolCallId: "x",
+					toolName: "explore",
+					content: [{ type: "text", text: huge }],
+					isError: false,
+				},
 			},
 		] as unknown as SessionEntry[];
 		const out = await run(makeContext(branch), { op: "fetch", ids: ["big"] });

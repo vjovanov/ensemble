@@ -11,7 +11,7 @@
 #   - runs 2 instances in parallel (PARALLEL=2); per-job logs in raw/.log_<inst>_<arm>.txt.
 #   - ~2-5h sequential, plus large clones (FORCE=1 bypasses the 400MB guard).
 #   - Run this AFTER any in-flight sweep finishes (avoid concurrent agents).
-#   - Grade afterward with ./eval/run-eval.sh && node collect.mjs
+#   - Docker grading + collection runs automatically after the agent runs.
 set -uo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")"
 exec > run-hard.log 2>&1   # write straight to the log (no tee pipe -> no hang if a child leaks the fd)
@@ -45,5 +45,5 @@ echo "[run-hard] fetched $n instances:"; cat "$LIST"
 echo "[run-hard] running $n instances x 2 arms on ${MODEL:-oca/gpt-5.5}…"
 FORCE=1 PARALLEL=2 INSTANCES="$(tr '\n' ' ' < "$LIST")" ./run-all.sh
 
-echo "[run-hard] done. Next: ./eval/run-eval.sh && node collect.mjs"
+echo "[run-hard] done. Results are in results/results.csv"
 rm -f "$LIST"

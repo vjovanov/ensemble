@@ -12,7 +12,7 @@
 #   - PARALLEL=2 (2 instances at a time) -> ~6 waves; raise PARALLEL to go faster.
 #   - Large clones (FORCE=1 bypasses the 400MB guard); fetch streams huge dataset files.
 #   - graphify supports every language here (tree-sitter); coverage verified for c/cpp.
-#   - Run AFTER any in-flight sweep finishes; grade with ./eval/run-eval.sh && node collect.mjs
+#   - Run AFTER any in-flight sweep finishes; Docker grading + collection runs automatically.
 set -uo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")"
 exec > run-hard-all.log 2>&1   # write straight to the log (no tee pipe -> no hang if a child leaks the fd)
@@ -50,5 +50,5 @@ echo "[all] fetched $n instances:"; cat "$LIST"
 echo "[all] running $n instances x 2 arms on ${MODEL:-oca/gpt-5.5} (PARALLEL=${PARALLEL:-2})…"
 FORCE=1 PARALLEL="${PARALLEL:-2}" INSTANCES="$(tr '\n' ' ' < "$LIST")" ./run-all.sh
 
-echo "[all] done. Next: ./eval/run-eval.sh && node collect.mjs"
+echo "[all] done. Results are in results/results.csv"
 rm -f "$LIST"

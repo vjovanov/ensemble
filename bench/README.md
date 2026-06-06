@@ -44,19 +44,17 @@ node fetch-instances.mjs rust 0 && node fetch-instances.mjs typescript 0 && node
 # 2. Dry run the plumbing first (no paid agent calls):
 DRY_RUN=1 ./run-all.sh
 
-# 3. Real runs (all instances x all arms):
+# 3. Real runs (all instances x all arms), then Docker grade + collect automatically:
 ./run-all.sh                                    # MODEL/ARMS overridable from env
-
-# 4. Grade in Docker:
-./eval/run-eval.sh
-
-# 5. Collect:
-node collect.mjs                                # -> results/results.csv + summary
 ```
 
 The headline is the `collect.mjs` summary: **resolved-rate and $/run & tokens/run per
 arm.** If `ensemble-strict` resolves the same issues as `classic` at lower tokens/cost,
 that's the graph-explore win.
+
+`run-all.sh` invokes `eval/run-eval.sh` after real runs (skipped for `DRY_RUN=1`) and then
+runs `collect.mjs`, so `results/results.csv` is produced immediately. `eval/run-eval.sh` can
+still be run directly to re-grade existing patches.
 
 ## Cost
 
@@ -69,7 +67,7 @@ It scales linearly — 50 instances would be $100+. Keep `instances/` small.
 config.sh            knobs: MODEL, ARMS, pricing, paths
 fetch-instances.mjs  HF datasets-server -> instances/<id>.json
 run-instance.sh      one (instance, arm): clone@sha, graphify, agent, diff, metrics
-run-all.sh           loop instances x arms
+run-all.sh           loop instances x arms, then Docker grade + collect
 lib/build-prompt.mjs resolved_issues -> leak-free problem statement
 lib/parse-session.mjs session jsonl -> tokens/cost/turns + strict assertion
 lib/inst-env.mjs     instance json -> shell vars
@@ -92,7 +90,9 @@ prompts/
   NOTE.txt                 (classic arm only — no sidekick; base prompt pinned by commit)
 session/*.jsonl        all LEAD-agent turns + tool calls
 explore-debug.jsonl    all SIDEKICK tool calls (PI_EXPLORE_DEBUG=full; sidekick arms only)
-agent.out / agent.err  logs    graphify.log   graph build log (strict arm)
+agent.out / agent.err  logs
+graphify.log           initial graph build log (strict arm)
+graphify-watch.log     continuous graph update log (strict arm)
 metrics.json           tokens/cost/turns/strict     patch.diff / patch.jsonl
 ```
 
@@ -109,7 +109,9 @@ runs you intend to publish, so `commit` fully pins the prompts. Archive a set wi
   language (`run-instance.sh` warns if not). If a language yields an empty graph,
   `ensemble-strict` ≡ `sidekick-fs` for it and the comparison is void there.
 - The agent is told not to touch test files; the grader applies the instance's own
-  `test_patch`. `graphify-out/` is excluded from the captured patch.
+  `test_patch`. Strict runs keep graph artifacts under `raw/<id>__ensemble-strict/graphify/`
+  and update them with `graphify watch`; `graphify-out/` is also excluded from the captured
+  patch as a fallback.
 - The eval harness config field names are verified against the current
   `multi-swe-bench` `CliArgs` schema (`mode`/`workdir`/`patch_files`/`dataset_files`/
   `log_dir` are the required ones); bump `eval/run-eval.sh` if the harness schema changes.

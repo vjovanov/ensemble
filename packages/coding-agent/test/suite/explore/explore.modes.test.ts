@@ -1,4 +1,4 @@
-import { cpSync, mkdtempSync } from "node:fs";
+import { chmodSync, cpSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -51,11 +51,12 @@ function fakeContext(cwd: string, model: ReturnType<FauxProviderRegistration["ge
 }
 
 describe("required-graph mode (§FS-001-ensemble-explore.7.4)", () => {
-	const envKeys = ["PI_REQUIRE_GRAPH", "GRAPHIFY_COMMAND"] as const;
+	const envKeys = ["PI_REQUIRE_GRAPH", "GRAPHIFY_COMMAND", "PI_GRAPHIFY_GRAPH_FILE"] as const;
 	let saved: Record<string, string | undefined>;
 	beforeEach(() => {
 		saved = Object.fromEntries(envKeys.map((k) => [k, process.env[k]]));
 		process.env.GRAPHIFY_COMMAND = ABSENT_GRAPHIFY;
+		delete process.env.PI_GRAPHIFY_GRAPH_FILE;
 	});
 	afterEach(() => {
 		for (const k of envKeys) {
@@ -77,6 +78,40 @@ describe("required-graph mode (§FS-001-ensemble-explore.7.4)", () => {
 
 	it("graphBackendEnabled() is false when the graphify binary is missing", async () => {
 		const dir = stageTsFixture();
+		expect(await graphBackendEnabled(dir)).toBe(false);
+	});
+
+	it("graphBackendEnabled() requires a configured external graph file to exist outside the worktree", async () => {
+		const dir = stageTsFixture();
+		const bin = join(dir, "fake-graphify");
+		writeFileSync(bin, "#!/usr/bin/env sh\nexit 0\n");
+		chmodSync(bin, 0o755);
+		process.env.GRAPHIFY_COMMAND = bin;
+
+		process.env.PI_GRAPHIFY_GRAPH_FILE = join(dir, "missing", "graph.json");
+		expect(await graphBackendEnabled(dir)).toBe(false);
+
+		const externalDir = mkdtempSync(join(tmpdir(), "explore-modes-graph-"));
+		const graphFile = join(externalDir, "graph.json");
+		writeFileSync(graphFile, '{"nodes":[],"links":[]}\n');
+		process.env.PI_GRAPHIFY_GRAPH_FILE = graphFile;
+		expect(await graphBackendEnabled(dir)).toBe(true);
+	});
+
+	it("graphBackendEnabled() rejects configured graph files inside the worktree", async () => {
+		const dir = stageTsFixture();
+		const bin = join(dir, "fake-graphify");
+		writeFileSync(bin, "#!/usr/bin/env sh\nexit 0\n");
+		chmodSync(bin, 0o755);
+		process.env.GRAPHIFY_COMMAND = bin;
+
+		const graphFile = join(dir, "hidden-graph", "graph.json");
+		mkdirSync(dirname(graphFile), { recursive: true });
+		writeFileSync(graphFile, '{"nodes":[],"links":[]}\n');
+		process.env.PI_GRAPHIFY_GRAPH_FILE = graphFile;
+		expect(await graphBackendEnabled(dir)).toBe(false);
+
+		process.env.PI_GRAPHIFY_GRAPH_FILE = "hidden-graph/graph.json";
 		expect(await graphBackendEnabled(dir)).toBe(false);
 	});
 
@@ -115,13 +150,14 @@ describe("required-graph mode (§FS-001-ensemble-explore.7.4)", () => {
 });
 
 describe("explore debug visibility (§FS-003-agent-protocol.10)", () => {
-	const envKeys = ["PI_EXPLORE_DEBUG", "GRAPHIFY_COMMAND", "PI_REQUIRE_GRAPH"] as const;
+	const envKeys = ["PI_EXPLORE_DEBUG", "GRAPHIFY_COMMAND", "PI_REQUIRE_GRAPH", "PI_GRAPHIFY_GRAPH_FILE"] as const;
 	let saved: Record<string, string | undefined>;
 	const registrations: FauxProviderRegistration[] = [];
 	beforeEach(() => {
 		saved = Object.fromEntries(envKeys.map((k) => [k, process.env[k]]));
 		process.env.GRAPHIFY_COMMAND = ABSENT_GRAPHIFY;
 		delete process.env.PI_REQUIRE_GRAPH;
+		delete process.env.PI_GRAPHIFY_GRAPH_FILE;
 	});
 	afterEach(() => {
 		setExploreDebugSink(undefined);
@@ -190,6 +226,39 @@ describe("explore debug visibility (§FS-003-agent-protocol.10)", () => {
 		expect(product?.status).toBe("ok");
 		expect(product?.producedOutput).toBe(true);
 		expect(product?.summaryPreview).toBeTruthy();
+	});
+
+	it("does not expose configured graph storage paths in graph stats output", async () => {
+		const events: ExploreDebugEvent[] = [];
+		setExploreDebugSink((e) => events.push(e));
+
+		const registration = registerFauxProvider();
+		registrations.push(registration);
+		registration.setResponses([
+			fauxAssistantMessage(fauxToolCall("graph_stats", {}, { id: "s-path" }), { stopReason: "toolUse" }),
+			fauxAssistantMessage("done"),
+		]);
+
+		const dir = stageTsFixture();
+		const bin = join(dir, "fake-graphify");
+		writeFileSync(bin, "#!/usr/bin/env sh\nexit 0\n");
+		chmodSync(bin, 0o755);
+		const externalDir = mkdtempSync(join(tmpdir(), "explore-modes-graph-"));
+		const graphFile = join(externalDir, "hidden-graph", "graph.json");
+		mkdirSync(dirname(graphFile), { recursive: true });
+		writeFileSync(graphFile, '{"nodes":[{}],"links":[{}]}\n');
+		process.env.GRAPHIFY_COMMAND = bin;
+		process.env.PI_GRAPHIFY_GRAPH_FILE = graphFile;
+		process.env.PI_EXPLORE_DEBUG = "full";
+
+		const def = createExploreToolDefinition(dir);
+		const context = fakeContext(dir, registration.getModel());
+		await def.execute("explore-stats-hidden", { task: "inspect graph stats" }, undefined, undefined, context);
+
+		const stats = events.find((e) => e.type === "tool_call" && e.tool === "graph_stats" && e.phase === "end");
+		expect(stats?.resultPreview).toContain("graphify graph: 1 nodes, 1 edges.");
+		expect(stats?.resultPreview).not.toContain(graphFile);
+		expect(stats?.resultPreview).not.toContain("hidden-graph");
 	});
 
 	it("reports an aborted product when the sub-agent errors before producing a result (§10.2)", async () => {

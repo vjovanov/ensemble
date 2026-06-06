@@ -653,6 +653,22 @@ describe("Coding Agent Tools", () => {
 			expect(Buffer.concat(chunks).toString("utf-8").trim()).toBe("from-local-ops");
 		});
 
+		it("should hide internal graph file configuration from spawned shells", async () => {
+			const previous = process.env.PI_GRAPHIFY_GRAPH_FILE;
+			process.env.PI_GRAPHIFY_GRAPH_FILE = join(testDir, "graphify", "graph.json");
+			try {
+				const bash = createBashTool(testDir);
+				const result = await bash.execute("test-call-hidden-graph-env", {
+					command: "printenv PI_GRAPHIFY_GRAPH_FILE || printf unset",
+				});
+
+				expect(getTextOutput(result)).toBe("unset");
+			} finally {
+				if (previous === undefined) delete process.env.PI_GRAPHIFY_GRAPH_FILE;
+				else process.env.PI_GRAPHIFY_GRAPH_FILE = previous;
+			}
+		});
+
 		it("should preserve executeBash sanitization when using local bash operations", async () => {
 			const result = await executeBashWithOperations(
 				"printf '\\033[31mred\\033[0m\\r\\n'",

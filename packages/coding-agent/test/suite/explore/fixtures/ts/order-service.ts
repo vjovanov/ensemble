@@ -14,6 +14,8 @@ export class OrderService {
 	}
 
 	reset(): void {
-		this.pending = 0;
+		if (this.pending !== 0) {
+			this.pending = 0;
+		}
 	}
 }

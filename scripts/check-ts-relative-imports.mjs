@@ -3,9 +3,13 @@ import { join } from "node:path";
 import ts from "typescript";
 
 const ignoredDirectories = new Set([".git", "coverage", "dist", "node_modules"]);
+const ignoredPaths = new Set(["bench/work", "bench/eval/repos"]);
 const files = [];
 
 function collectTypescriptFiles(directory) {
+	if (ignoredPaths.has(directory.replace(/^\.\//, ""))) {
+		return;
+	}
 	for (const entry of readdirSync(directory, { withFileTypes: true })) {
 		if (entry.isDirectory()) {
 			if (!ignoredDirectories.has(entry.name)) {

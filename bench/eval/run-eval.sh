@@ -7,11 +7,26 @@
 #           multi_swe_bench.harness.run_evaluation).
 #
 #   ./eval/run-eval.sh                 # all arms that have a patch jsonl
+#   INSTANCES='instances/a.json instances/b.json' ./eval/run-eval.sh
 source "$(dirname "${BASH_SOURCE[0]}")/../config.sh"
 
 EVAL_DIR="$BENCH_DIR/eval"
 DATASET="$EVAL_DIR/dataset.jsonl"
 mkdir -p "$EVAL_DIR/workdir" "$EVAL_DIR/repos"
+
+if [ -n "${INSTANCES:-}" ]; then
+  read -r -a INSTANCE_LIST <<< "$INSTANCES"
+else
+  INSTANCE_LIST=("$INST_DIR"/*.json)
+fi
+[ -e "${INSTANCE_LIST[0]}" ] || die "no instances found. Run: node fetch-instances.mjs <lang> <index>"
+
+instance_id_for() {
+  (
+    eval "$(node "$BENCH_DIR/lib/inst-env.mjs" "$1")"
+    printf '%s\n' "$ID"
+  )
+}
 
 command -v docker >/dev/null || die "docker not found"
 python -c "import multi_swe_bench" 2>/dev/null \
@@ -27,7 +42,9 @@ fi
 
 # Dataset = the full instance records (need test_patch + f2p/p2p for grading).
 : > "$DATASET"
-for j in "$INST_DIR"/*.json; do node -e 'process.stdout.write(JSON.stringify(require(process.argv[1]))+"\n")' "$j" >> "$DATASET"; done
+for j in "${INSTANCE_LIST[@]}"; do
+  node -e 'process.stdout.write(JSON.stringify(require(process.argv[1]))+"\n")' "$j" >> "$DATASET"
+done
 log "dataset: $(wc -l < "$DATASET") instances -> $DATASET"
 
 read -r -a ARM_LIST <<< "$ARMS"
@@ -35,7 +52,9 @@ for arm in "${ARM_LIST[@]}"; do
   # Assemble the per-arm patch jsonl from the per-(instance,arm) records.
   patch="$PATCH_DIR/${arm}.jsonl"
   : > "$patch"
-  for rec in "$RAW_DIR"/*__"${arm}"/patch.jsonl; do
+  for inst in "${INSTANCE_LIST[@]}"; do
+    id="$(instance_id_for "$inst")"
+    rec="$RAW_DIR/${id}__${arm}/patch.jsonl"
     [ -e "$rec" ] && cat "$rec" >> "$patch"
   done
   [ -s "$patch" ] || { log "skip $arm (no patches)"; continue; }

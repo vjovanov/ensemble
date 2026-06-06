@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Run every fetched instance across every arm, then collect results.
+# Run every fetched instance across every arm, then grade and collect results.
 #
 #   ./run-all.sh                       # all instances in bench/instances/, all ARMS
 #   INSTANCES='bench/instances/foo.json bar.json' ./run-all.sh
@@ -43,6 +43,15 @@ for inst in "${INSTANCE_LIST[@]}"; do
 done
 wait
 
-log "all runs complete. Patches in $PATCH_DIR/. Next:"
-log "  ./eval/run-eval.sh            # grade patches in Docker (multi_swe_bench harness)"
-log "  node collect.mjs             # join metrics + resolved -> results/results.csv"
+if [ "$DRY_RUN" = "1" ]; then
+  log "all dry-run plumbing complete. Patches in $PATCH_DIR/."
+  log "skipping Docker grading because DRY_RUN=1"
+else
+  log "all runs complete. Grading patches in Docker…"
+  INSTANCES="${INSTANCE_LIST[*]}" "$BENCH_DIR/eval/run-eval.sh" \
+    || log "Docker grading returned nonzero; check $RESULTS_DIR/<arm>/logs"
+  log "collecting metrics + resolved results…"
+  ( cd "$BENCH_DIR" && INSTANCES="${INSTANCE_LIST[*]}" node collect.mjs ) \
+    || log "collect failed; check $RESULTS_DIR and eval reports"
+  log "results: $RESULTS_DIR/results.csv"
+fi

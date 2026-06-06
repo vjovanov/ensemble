@@ -3,6 +3,12 @@ import { delimiter } from "node:path";
 import { spawn, spawnSync } from "child_process";
 import { getBinDir } from "../config.ts";
 
+const INTERNAL_SHELL_ENV_KEYS = new Set([
+	// §FS-001-ensemble-explore.2.1: graph storage can be configured through the
+	// parent process but must not be exposed to agent-visible shell commands.
+	"PI_GRAPHIFY_GRAPH_FILE",
+]);
+
 export interface ShellConfig {
 	shell: string;
 	args: string[];
@@ -117,10 +123,11 @@ export function getShellEnv(): NodeJS.ProcessEnv {
 	const hasBinDir = pathEntries.includes(binDir);
 	const updatedPath = hasBinDir ? currentPath : [binDir, currentPath].filter(Boolean).join(delimiter);
 
-	return {
-		...process.env,
-		[pathKey]: updatedPath,
-	};
+	const env = { ...process.env, [pathKey]: updatedPath };
+	for (const key of INTERNAL_SHELL_ENV_KEYS) {
+		delete env[key];
+	}
+	return env;
 }
 
 /**

@@ -541,12 +541,8 @@ export function getDebugLogPath(): string {
 	return join(getAgentDir(), `${APP_NAME}-debug.log`);
 }
 
-/**
- * Get path to the explore sub-agent debug trace log (§FS-003-agent-protocol.10).
- * This is the out-of-band sink (§10.4) for the explore agent's tool activity when
- * PI_EXPLORE_DEBUG is enabled. Overridable via PI_EXPLORE_DEBUG_LOG so operators (and
- * tests) can redirect the trace.
- */
+// §FS-003-agent-protocol.10: explore sub-agent debug trace log path.
+/** Get path to the explore sub-agent debug trace log. */
 export function getExploreDebugLogPath(): string {
 	const override = process.env.PI_EXPLORE_DEBUG_LOG?.trim();
 	if (override) {

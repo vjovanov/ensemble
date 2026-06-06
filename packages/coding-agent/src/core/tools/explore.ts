@@ -1,5 +1,5 @@
 import { access, appendFile, mkdir, readdir, readFile, stat } from "node:fs/promises";
-import { dirname, extname, resolve as resolvePath, sep } from "node:path";
+import { dirname, extname, isAbsolute, relative as relativePath, resolve as resolvePath, sep } from "node:path";
 import { Agent, type AgentTool, type ThinkingLevel } from "@earendil-works/pi-agent-core";
 import {
 	type Api,
@@ -32,6 +32,7 @@ function graphifyCommand(): string {
 }
 const GRAPHIFY_OUT_DIR = "graphify-out";
 const GRAPHIFY_GRAPH_FILE = "graph.json";
+const GRAPHIFY_GRAPH_FILE_ENV = "PI_GRAPHIFY_GRAPH_FILE";
 const GRAPHIFY_TIMEOUT_MS = 8_000;
 const GRAPHIFY_BUILD_TIMEOUT_MS = 20_000;
 const MAX_TOOL_OUTPUT_BYTES = 64 * 1024;
@@ -45,22 +46,53 @@ const DEBUG_PAYLOAD_PREVIEW_BYTES = 2_000;
 // Required-graph mode (§FS-001-ensemble-explore.7.4)
 // =============================================================================
 
-// §FS-001-ensemble-explore.7.4.1: opt-in, off by default. When on, an enabled graph backend
-// is a hard precondition — explore fails fast instead of falling back to the filesystem (§7.1).
-// Enforced in two places: the CLI startup gate (main.ts, §7.4.2) refuses to start; for embedders
-// that bypass main() (the SDK), the explore tool itself fails fast on each call (createExplore-
-// ToolDefinition, §7.4.3). The startup gate is CLI-only by design; the tool-level check is the
-// backstop that holds the guarantee everywhere.
+// §FS-001-ensemble-explore.7.4.1: opt-in, off by default. When on, enabled
+// graph navigation is a hard precondition instead of using the §7.1 fallback.
+// The CLI gate checks startup; the tool check covers embedders (§7.4.2/.7.4.3).
 export function requireGraphMode(): boolean {
 	const raw = process.env.PI_REQUIRE_GRAPH?.trim().toLowerCase();
 	return raw === "1" || raw === "true" || raw === "yes";
+}
+
+function configuredGraphFile(cwd: string): string | undefined {
+	const graphFile = rawConfiguredGraphFile(cwd);
+	return graphFile && !isPathInsideCwd(cwd, graphFile) ? graphFile : undefined;
+}
+
+function rawConfiguredGraphFile(cwd: string): string | undefined {
+	const raw = process.env[GRAPHIFY_GRAPH_FILE_ENV]?.trim();
+	return raw ? resolvePath(cwd, raw) : undefined;
+}
+
+function isPathInsideCwd(cwd: string, filePath: string): boolean {
+	const relative = relativePath(resolvePath(cwd), resolvePath(filePath));
+	return relative === "" || (!relative.startsWith("..") && !isAbsolute(relative));
+}
+
+function graphifyGraphFile(cwd: string): string {
+	return configuredGraphFile(cwd) ?? resolvePath(cwd, GRAPHIFY_OUT_DIR, GRAPHIFY_GRAPH_FILE);
 }
 
 // §FS-001-ensemble-explore.7.4.1: "enabled" means graphify is both configured and reachable
 // enough to answer (the binary resolves and runs). Deeper "can actually serve" failures are
 // caught lazily and surface as the mid-session fail-fast of §7.4.3.
 export async function graphBackendEnabled(cwd: string, signal?: AbortSignal): Promise<boolean> {
-	return commandAvailable(graphifyCommand(), cwd, signal);
+	if (!(await commandAvailable(graphifyCommand(), cwd, signal))) {
+		return false;
+	}
+	return configuredGraphAvailable(cwd);
+}
+
+async function configuredGraphAvailable(cwd: string): Promise<boolean> {
+	const graphFile = rawConfiguredGraphFile(cwd);
+	if (!graphFile) return true;
+	if (isPathInsideCwd(cwd, graphFile)) return false;
+	try {
+		await access(graphFile);
+		return true;
+	} catch {
+		return false;
+	}
 }
 
 // §FS-001-ensemble-explore.7.4.2: the diagnostic naming graphify as the unmet precondition.
@@ -227,7 +259,8 @@ const exploreSchema = Type.Object({
 	),
 	wholeFiles: Type.Optional(
 		Type.Boolean({
-			description: "Fetch whole nodes/files instead of targeted subsets. Set true when you need — or will soon need — most of a file: fetching it whole once is cheaper than repeated partial fetches.",
+			description:
+				"Fetch whole nodes/files instead of targeted subsets. Set true when you need — or will soon need — most of a file: fetching it whole once is cheaper than repeated partial fetches.",
 		}),
 	),
 	maxSnippets: Type.Optional(
@@ -325,7 +358,17 @@ function isLikelyTextFile(filePath: string): boolean {
 }
 
 function shouldSkipDir(name: string): boolean {
-	return new Set([".git", "node_modules", "dist", "build", "coverage", ".next", ".turbo", ".cache"]).has(name);
+	return new Set([
+		".git",
+		"node_modules",
+		"dist",
+		"build",
+		"coverage",
+		".next",
+		".turbo",
+		".cache",
+		GRAPHIFY_OUT_DIR,
+	]).has(name);
 }
 
 async function runCommand(
@@ -523,7 +566,7 @@ class GraphifyBackend {
 	}
 
 	private graphFile(): string {
-		return resolvePath(this.cwd, GRAPHIFY_OUT_DIR, GRAPHIFY_GRAPH_FILE);
+		return graphifyGraphFile(this.cwd);
 	}
 
 	async isAvailable(signal?: AbortSignal): Promise<boolean> {
@@ -534,9 +577,25 @@ class GraphifyBackend {
 		return this.availableCache;
 	}
 
+	async isEnabled(signal?: AbortSignal): Promise<boolean> {
+		return (await this.isAvailable(signal)) && (await configuredGraphAvailable(this.cwd));
+	}
+
 	async prepare(signal?: AbortSignal): Promise<boolean> {
 		if (!(await this.isAvailable(signal))) {
 			return false;
+		}
+		const externalGraphFile = rawConfiguredGraphFile(this.cwd);
+		if (externalGraphFile) {
+			if (isPathInsideCwd(this.cwd, externalGraphFile)) {
+				return false;
+			}
+			try {
+				await access(externalGraphFile);
+				return true;
+			} catch {
+				return false;
+			}
 		}
 		// `update` builds the graph when absent and re-extracts when present; both run offline.
 		let hasGraph = false;
@@ -636,7 +695,7 @@ class GraphifyBackend {
 			const graph = JSON.parse(raw) as { nodes?: unknown[]; links?: unknown[] };
 			const nodes = Array.isArray(graph.nodes) ? graph.nodes.length : 0;
 			const edges = Array.isArray(graph.links) ? graph.links.length : 0;
-			return `graphify graph: ${nodes} nodes, ${edges} edges (${relativeToCwd(this.graphFile(), this.cwd)}).`;
+			return `graphify graph: ${nodes} nodes, ${edges} edges.`;
 		} catch {
 			return undefined;
 		}
@@ -799,7 +858,15 @@ async function runSidekick(
 	//   absent: search + trim raw files. Both modes get caller_context (§FS-002-caller-context.9).
 	const callerContextTool = createCallerContextTool(context);
 	const baseTools: AgentTool[] = graphifyAvailable
-		? [searchTool, nodeAtTool, graphQueryTool, graphExplainTool, graphFetchNodeTool, graphStatsTool, callerContextTool]
+		? [
+				searchTool,
+				nodeAtTool,
+				graphQueryTool,
+				graphExplainTool,
+				graphFetchNodeTool,
+				graphStatsTool,
+				callerContextTool,
+			]
 		: [graphQueryTool, graphFetchNodeTool, graphStatsTool, callerContextTool];
 
 	// §FS-003-agent-protocol.10: when debug is enabled, observe the sub-agent's tool calls through
@@ -924,21 +991,19 @@ export function createExploreToolDefinition(
 			"Delegate code discovery to a smart explore sub-agent. Describe in natural language what you need to find, understand, or read; it navigates the code graph and returns small, targeted subsets — the specific functions, types, or lines relevant to your task, not whole files. One well-described explore call replaces many manual grep/find/sed reads: it batches the search and returns only what matters, which keeps your context small. Set wholeFiles: true only when you genuinely need complete file content (e.g. before a large edit).",
 		promptSnippet: "Delegate discovery to a smart explore sub-agent; it returns the minimal relevant code",
 		promptGuidelines: [
-			"Prefer one explore call over several bash grep/find/cat/sed reads — describe the target and let the sub-agent fetch the minimal relevant code in a single round-trip.",
-			"Trust the explore result: do not re-grep or re-read code it already returned.",
-			"Use explore for discovery, search, reading, and pre-edit inspection; reach for bash file-reading only when explore fails or the user explicitly asks for shell output.",
-			"When you know you will need an entire file (e.g. a large or cross-cutting edit), ask for it with wholeFiles: true rather than fetching it in pieces across several calls.",
+			"Use explore for ALL code discovery, search, and reading — finding symbols/strings/usages, reading files, and pre-edit inspection. Describe the target and let the sub-agent return the minimal relevant code.",
+			"Do NOT use bash to read or search code: no rg, grep, find, cat, sed, head, tail, or ls on source files. `explore` already runs ripgrep internally, so grepping yourself only duplicates its work and bloats your context. Reserve bash for *executing* things — running tests, builds, formatters, git — never for inspecting source.",
+			"Trust the explore result: do not re-grep or re-read code it already returned. If you need more, ask explore again rather than falling back to shell.",
+			"When you'll need an entire file, ask for it with wholeFiles: true rather than many partial fetches.",
 		],
 		parameters: exploreSchema,
 		async execute(_toolCallId, input: ExploreToolInput, signal, _onUpdate, context) {
 			const maxSnippets = clampSnippetCount(input.maxSnippets);
 			const requireGraph = requireGraphMode();
 			const backend = new GraphifyBackend(cwd);
-			const graphifyAvailable = await backend.isAvailable(signal);
-			// §FS-001-ensemble-explore.7.4.2/.7.4.3: required-graph mode never degrades. If the backend
-			// is not enabled (including mid-session loss after a clean start), fail fast rather than
-			// falling back to the filesystem. Throwing surfaces the precondition to the caller as a
-			// tool error instead of silently returning filesystem-derived content.
+			const graphifyAvailable = await backend.isEnabled(signal);
+			// §FS-001-ensemble-explore.7.4.2/.7.4.3: required-graph mode fails
+			// fast when graph navigation is not enabled, including mid-session loss.
 			if (requireGraph && !graphifyAvailable) {
 				throw new Error(requireGraphUnavailableMessage(cwd));
 			}

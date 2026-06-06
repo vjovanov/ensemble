@@ -20,11 +20,16 @@ const callerContextSchema = Type.Object({
 			Type.Literal("system_prompt"), // §FS-002-caller-context.3.3 / 4.3
 			Type.Literal("user_request"), // §FS-002-caller-context.3.4 / 4.3
 		],
-		{ description: "index: list entries (no bodies). fetch: full text of selected entries. system_prompt / user_request: direct." },
+		{
+			description:
+				"index: list entries (no bodies). fetch: full text of selected entries. system_prompt / user_request: direct.",
+		},
 	),
 	ids: Type.Optional(Type.Array(Type.String(), { description: "fetch selector: entry ids from the index." })),
 	recency: Type.Optional(Type.Number({ description: "fetch selector: the most recent N entries." })),
-	query: Type.Optional(Type.String({ description: "fetch selector: case-insensitive keyword filter over entry text." })),
+	query: Type.Optional(
+		Type.String({ description: "fetch selector: case-insensitive keyword filter over entry text." }),
+	),
 	kinds: Type.Optional(
 		Type.Array(Type.String(), {
 			description: 'filter by kind: "transcript" | "tool_result" | "summary" | "all" (default all).',
@@ -95,7 +100,7 @@ function readBranch(context: ExtensionContext): CallerEntry[] {
 	const entries: CallerEntry[] = [];
 	for (const entry of branch) {
 		const mapped = mapEntry(entry);
-		if (mapped && mapped.text.trim()) entries.push(mapped);
+		if (mapped?.text.trim()) entries.push(mapped);
 	}
 	return entries;
 }
@@ -127,7 +132,9 @@ function applyCap(text: string): string {
 
 function renderIndex(entries: CallerEntry[]): string {
 	if (entries.length === 0) return NO_CONTEXT;
-	return entries.map((e) => `[${e.id}] ${e.kind} · ~${approxTokens(e.text)}t · "${singleLinePreview(e.text)}"`).join("\n");
+	return entries
+		.map((e) => `[${e.id}] ${e.kind} · ~${approxTokens(e.text)}t · "${singleLinePreview(e.text)}"`)
+		.join("\n");
 }
 
 // §AR-002-caller-context.5: select by any supplied selector; bounded default when none.
@@ -159,7 +166,7 @@ export function createCallerContextTool(context: ExtensionContext): AgentTool<ty
 		name: "caller_context",
 		label: "caller_context",
 		description:
-			"Read the calling agent's context on demand: its transcript, prior tool results and files it read, its system prompt, or the user's original request. Use op:\"index\" to survey cheaply, then op:\"fetch\" by ids/recency/query. Take only what you need.",
+			'Read the calling agent\'s context on demand: its transcript, prior tool results and files it read, its system prompt, or the user\'s original request. Use op:"index" to survey cheaply, then op:"fetch" by ids/recency/query. Take only what you need.',
 		parameters: callerContextSchema,
 		execute: async (_toolCallId, params) => {
 			const input = params as CallerContextInput;

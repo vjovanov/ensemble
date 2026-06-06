@@ -2,7 +2,12 @@ import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync
 import { homedir, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { type FauxProviderRegistration, fauxAssistantMessage, fauxToolCall, registerFauxProvider } from "@earendil-works/pi-ai";
+import {
+	type FauxProviderRegistration,
+	fauxAssistantMessage,
+	fauxToolCall,
+	registerFauxProvider,
+} from "@earendil-works/pi-ai";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import type { ExtensionContext } from "../../../src/core/extensions/types.ts";
 import { createExploreTool, createExploreToolDefinition } from "../../../src/core/tools/explore.ts";
@@ -65,7 +70,10 @@ function normalizeGraphify(text: string): string {
 function resolveGraphifyBin(): string | undefined {
 	const env = process.env.GRAPHIFY_TEST_BIN;
 	if (env && existsSync(env)) return env;
-	for (const candidate of [join(homedir(), "f/graphify/.venv/bin/graphify"), join(homedir(), "c/graphify/.venv/bin/graphify")]) {
+	for (const candidate of [
+		join(homedir(), "f/graphify/.venv/bin/graphify"),
+		join(homedir(), "c/graphify/.venv/bin/graphify"),
+	]) {
 		if (existsSync(candidate)) return candidate;
 	}
 	return undefined;
@@ -161,7 +169,13 @@ describeGraphify("mock agent fetches nodes through the sidekick", () => {
 		const dir = stageFixture("ts");
 		const def = createExploreToolDefinition(dir);
 		const context = fakeContext(dir, registration.getModel());
-		const result = await def.execute("explore-sidekick", { task: "find OrderService" }, undefined, undefined, context);
+		const result = await def.execute(
+			"explore-sidekick",
+			{ task: "find OrderService" },
+			undefined,
+			undefined,
+			context,
+		);
 
 		expect(registration.state.callCount).toBe(2); // tool-call turn + final turn
 		const details = (result as { details?: { sidekickUsed?: boolean; backend?: string } }).details;

@@ -61,6 +61,14 @@ The explore agent's toolset is **backend-conditional** (§FS-001-ensemble-explor
 - **Graph backend present** — tools are `graph_query`, `graph_explain`, `graph_neighbors`,
   `graph_stats`; `graph_fetch_node` is removed. The explore agent stays in graph space and relays
   node-granular results unchanged — **no post-processing** (§FS-001-ensemble-explore.5.6).
+  Backend graph storage is addressed through the graph backend, not as repository files; callers
+  may configure an absolute graph file outside the worktree so artifacts remain invisible to
+  filesystem search, patch capture, graph tool output, and agent-visible shell environments
+  (§FS-001-ensemble-explore.2.1). The implementation rejects configured graph files that resolve
+  inside the worktree because normal filesystem tools could discover them. Benchmark strict runs
+  keep external storage current with a graph backend watcher during the agent run, so graph
+  queries reflect source edits without exposing graph artifacts in the worktree
+  (§FS-001-ensemble-explore.2.1).
 - **Graph backend absent** — the explore agent gets filesystem search + read tools, because it must
   see raw code to trim it. It post-processes the results down to the relevant code.
 

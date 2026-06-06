@@ -7,12 +7,16 @@
 import { readFileSync, readdirSync, existsSync, writeFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { instanceId } from "./lib/build-prompt.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const RAW = process.env.RAW_DIR || join(HERE, "raw");
 const RESULTS = process.env.RESULTS_DIR || join(HERE, "results");
 
 const readJSON = (p) => JSON.parse(readFileSync(p, "utf8"));
+const selectedInstances = process.env.INSTANCES
+  ? new Set(process.env.INSTANCES.trim().split(/\s+/).filter(Boolean).map((p) => instanceId(readJSON(p))))
+  : undefined;
 
 // resolved set per arm from the harness final_report.json
 function resolvedByArm() {
@@ -41,6 +45,7 @@ function main() {
   for (const dir of readdirSync(RAW, { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => d.name)) {
     const sep = dir.lastIndexOf("__");
     const instance = dir.slice(0, sep), arm = dir.slice(sep + 2);
+    if (selectedInstances && !selectedInstances.has(instance)) continue;
     const mp = join(RAW, dir, "metrics.json");
     if (!existsSync(mp)) continue;
     const m = readJSON(mp);

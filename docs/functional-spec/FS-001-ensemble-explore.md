@@ -28,14 +28,20 @@ implements it is specified in §AR-001-ensemble-explore.
 
 When the graph backend is present, the explore agent navigates the graph and relays the
 backend's node-granular results unchanged (§5.6). Its primary tool surface is graph navigation
-(query, explain, neighbors, stats). To overcome the graph's structural blind spots — it cannot
-locate arbitrary text (string literals, error messages, config keys) and node-identifier
-guessing misses often — the agent MAY additionally **locate by text search** and resolve a hit
-(`path:line`) to its graph node, and MAY **fetch a whole file** when the task needs most of it
-(§RM-001-bash-sidekick). These are navigation aids: the agent still selects and returns
-graph-derived nodes (§2.2), so the contract that `explore` results are node-granular is
-preserved. When the backend is absent, the explore agent instead works from raw filesystem
-results and is responsible for trimming them down to the relevant code (§5.6, §7.1).
+(query, explain, neighbors, stats). The backend's graph storage is not project source and MUST
+NOT be exposed as ordinary repository files, tool output paths, or agent-visible shell
+environment to the caller or the explore agent; deployments MAY store it outside the repository
+while still serving graph navigation, and MAY keep it continuously updated from source changes
+during a run. A configured hidden graph file MUST resolve outside the caller worktree; an
+in-worktree configured graph file does not satisfy the graph-backend precondition. To overcome
+the graph's structural blind spots — it cannot locate arbitrary text (string literals, error
+messages, config keys) and node-identifier guessing misses often — the agent MAY additionally
+**locate by text search** and resolve a hit (`path:line`) to its graph node, and MAY **fetch a
+whole file** when the task needs most of it (§RM-001-bash-sidekick).
+These are navigation aids: the agent still selects and returns graph-derived nodes (§2.2), so the
+contract that `explore` results are node-granular is preserved. When the backend is absent, the
+explore agent instead works from raw filesystem results and is responsible for trimming them down
+to the relevant code (§5.6, §7.1).
 
 ### 2.2 Structured selection result
 

@@ -15,8 +15,8 @@
 #     cli/cli 167MB) so only the first instance's bytes are downloaded.
 #   - C/C++/JS graph quality is unverified on real repos — graphify *supports* them, but
 #     confirm a non-trivial graph.json per repo on first run (harness warns if empty).
-#   - Run AFTER any in-flight sweep finishes (avoid concurrent agents); grade with
-#     ./eval/run-eval.sh && node collect.mjs
+#   - Run AFTER any in-flight sweep finishes (avoid concurrent agents); Docker grading +
+#     collection runs automatically.
 set -uo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")"
 exec > run-hard-diverse.log 2>&1   # write straight to the log (no tee pipe -> no hang if a child leaks the fd)
@@ -46,5 +46,5 @@ echo "[diverse] fetched $n instances:"; cat "$LIST"
 echo "[diverse] running $n instances x 2 arms on ${MODEL:-oca/gpt-5.5}…"
 FORCE=1 PARALLEL=2 INSTANCES="$(tr '\n' ' ' < "$LIST")" ./run-all.sh
 
-echo "[diverse] done. Next: ./eval/run-eval.sh && node collect.mjs"
+echo "[diverse] done. Results are in results/results.csv"
 rm -f "$LIST"
