@@ -26,11 +26,16 @@ implements it is specified in §AR-001-ensemble-explore.
 
 ### 2.1 Backend-conditional input to the explore agent
 
-When the graph backend is present, the explore agent navigates the graph and does not read raw
-file bodies into its own context; its tool surface is graph navigation (query, explain,
-neighbors, stats) and it relays the backend's node-granular results unchanged (§5.6). When
-the backend is absent, the explore agent instead works from raw filesystem results and is
-responsible for trimming them down to the relevant code (§5.6, §7.1).
+When the graph backend is present, the explore agent navigates the graph and relays the
+backend's node-granular results unchanged (§5.6). Its primary tool surface is graph navigation
+(query, explain, neighbors, stats). To overcome the graph's structural blind spots — it cannot
+locate arbitrary text (string literals, error messages, config keys) and node-identifier
+guessing misses often — the agent MAY additionally **locate by text search** and resolve a hit
+(`path:line`) to its graph node, and MAY **fetch a whole file** when the task needs most of it
+(§RM-001-bash-sidekick). These are navigation aids: the agent still selects and returns
+graph-derived nodes (§2.2), so the contract that `explore` results are node-granular is
+preserved. When the backend is absent, the explore agent instead works from raw filesystem
+results and is responsible for trimming them down to the relevant code (§5.6, §7.1).
 
 ### 2.2 Structured selection result
 

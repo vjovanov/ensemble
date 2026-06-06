@@ -508,6 +508,9 @@ function isGraphifyFailureOutput(stdout: string): boolean {
 	return /^error:/i.test(text) || /^no node matching/i.test(text);
 }
 
+// A node as stored in graphify's graph.json (source_location is a start-only line tag, "L119").
+type GraphNode = { source_file?: string; source_location?: string; id?: string; label?: string };
+
 // §AR-001-ensemble-explore.5 / §FS-001-ensemble-explore.7.1: backend for the real graphify
 // CLI (github.com/safishamsi/graphify). The graph is built offline by `update` (AST, no LLM)
 // into <cwd>/graphify-out/graph.json; `query`/`explain` traverse it and return node structure.
@@ -582,6 +585,47 @@ class GraphifyBackend {
 		return result.stdout.trim();
 	}
 
+	// §RM-001-bash-sidekick.2.1: bridge a text-search hit (path:line) to its graph node, so the
+	// sidekick locates by text (`search`) yet still gets structure, without guessing node ids (~40%
+	// whiffed). Nodes carry source_file + start-only "L119"; the node for a line is greatest start <= line.
+	private graphNodesCache: GraphNode[] | undefined;
+
+	private async graphNodes(): Promise<GraphNode[]> {
+		if (this.graphNodesCache) return this.graphNodesCache;
+		const raw = await readFile(this.graphFile(), "utf-8");
+		const graph = JSON.parse(raw) as { nodes?: GraphNode[] };
+		this.graphNodesCache = Array.isArray(graph.nodes) ? graph.nodes : [];
+		return this.graphNodesCache;
+	}
+
+	async nodeAt(path: string, line: number, signal?: AbortSignal): Promise<string | undefined> {
+		let nodes: GraphNode[];
+		try {
+			nodes = await this.graphNodes();
+		} catch {
+			return undefined;
+		}
+		const startOf = (n: GraphNode): number => {
+			const m = /L(\d+)/.exec(n.source_location ?? "");
+			return m ? Number(m[1]) : 0;
+		};
+		const inFile = nodes.filter((n) => {
+			const sf = n.source_file;
+			return !!sf && (sf === path || sf.endsWith(`/${path}`) || path.endsWith(`/${sf}`) || path.endsWith(sf));
+		});
+		if (inFile.length === 0) return undefined;
+		const atOrBefore = inFile.filter((n) => startOf(n) <= line).sort((a, b) => startOf(b) - startOf(a));
+		const node = atOrBefore[0] ?? inFile.slice().sort((a, b) => startOf(a) - startOf(b))[0];
+		const key = node.label || node.id;
+		if (!key) return undefined;
+		// explain() takes a symbol name or node id; try the human label first, then the id.
+		return (
+			(await this.explain(key, signal)) ??
+			(node.id ? await this.explain(node.id, signal) : undefined) ??
+			`Resolved node "${node.label ?? node.id}" at ${node.source_file} ${node.source_location} (no further graph detail).`
+		);
+	}
+
 	// graphify has no `stats` command; summarize the built graph.json node/edge counts instead.
 	async stats(signal?: AbortSignal): Promise<string | undefined> {
 		if (!(await this.prepare(signal))) {
@@ -627,11 +671,13 @@ export function exploreSidekickSystemPrompt(graphifyAvailable: boolean): string 
 		'You may call caller_context to read the calling agent\'s transcript, its prior tool results and files, its system prompt, or the user\'s original request — op:"index" to survey, then op:"fetch" by ids/recency/query. Take only what you need.';
 	return graphifyAvailable
 		? [
-				"You are Pi's private exploration sidekick.",
-				"Explore only through the graph tools; do not read raw file contents.",
-				"Think carefully about what the task genuinely needs before fetching. Select the minimal set of nodes that answers it; do not pull in neighboring or related nodes speculatively.",
-				"Prefer fetching a whole node or file once when the task will need most of it, over many partial fetches of the same file — repeated partial fetches cost the caller more than one whole fetch.",
-				"Return the relevant graph nodes exactly as the tools provide them — do not trim, reformat, summarize, or otherwise post-process their contents (your job is to choose which nodes to fetch, not to edit their bodies).",
+				"You are Pi's private exploration sidekick. Find the code the task needs and return it.",
+				"Locate with `search` (ripgrep-like): it finds any string — symbols, literals, error messages, config keys — which the graph structurally cannot.",
+				"Turn a search hit into structure with `node_at(path, line)`: it resolves the hit to its graph node and shows the call/reference neighbors. Prefer this over guessing an identifier for `graph_explain`.",
+				"Use `graph_query`/`graph_explain` to navigate relationships (callers, callees, neighbors) — the graph's unique value over plain search.",
+				"Think about what the task genuinely needs and return only that; do not pull in neighbors speculatively.",
+				"When the task needs most of a file, fetch the whole file once with `graph_fetch_node` rather than many partial fetches.",
+				"Reproduce any code you return verbatim; never rewrite or summarize code bodies.",
 				callerContextLine,
 				"Do not propose edits. Do not answer the user directly.",
 			].join("\n")
@@ -670,6 +716,16 @@ async function runSidekick(
 	const graphExplainSchema = Type.Object({ node: Type.String() });
 	const graphFetchNodeSchema = Type.Object({ node: Type.String() });
 	const graphStatsSchema = Type.Object({});
+	// §RM-001-bash-sidekick.2.1: text search (ripgrep-like) so the sidekick can locate by any
+	// string — symbols, literals, errors, configs — what the graph structurally cannot find.
+	const searchSchema = Type.Object({
+		query: Type.String({ description: "Text/pattern to search for across files." }),
+		paths: Type.Optional(Type.Array(Type.String(), { description: "Optional paths to scope the search." })),
+	});
+	const nodeAtSchema = Type.Object({
+		path: Type.String({ description: "File path of a search hit." }),
+		line: Type.Number({ description: "Line number of the search hit." }),
+	});
 
 	// §FS-001-ensemble-explore.7.4.4: in required-graph mode a runtime graph miss never degrades to
 	// the filesystem; it surfaces an explicit no-result instead so the caller only ever sees
@@ -723,13 +779,27 @@ async function runSidekick(
 			return (await backend.stats(toolSignal)) ?? "Graphify is not available; using filesystem nodes.";
 		},
 	);
+	// §RM-001-bash-sidekick.2.1: locate by text, then resolve to the graph node.
+	const searchTool = makeTextTool(
+		"search",
+		"Search file text (ripgrep-like) to locate code by any string — symbols, literals, error messages, config keys. Returns path:line matches. Use this to find where something is before asking the graph about it.",
+		searchSchema,
+		async ({ query, paths }) => fallbackSearch(query, paths ?? input.paths, context.cwd, maxSnippets),
+	);
+	const nodeAtTool = makeTextTool(
+		"node_at",
+		"Resolve a file path + line (e.g. a search hit) to its graph node and explain it (its call/reference neighbors). Bridges text search to graph structure without guessing node identifiers.",
+		nodeAtSchema,
+		async ({ path, line }, toolSignal) =>
+			(await backend.nodeAt(path, line, toolSignal)) ?? `No graph node found at ${path}:${line}.`,
+	);
 
-	// Graph present: navigate + explain, relay nodes verbatim (no raw-file fetch).
-	// Graph absent: search + fetch raw files so the sidekick can trim them itself.
-	// Both modes also get caller_context (§FS-002-caller-context.9): read the caller's context.
+	// Graph present: text-locate (search/node_at), navigate structure (query/explain), and fetch a
+	//   whole file (graph_fetch_node) when most is needed (§RM-001-bash-sidekick.2.1/.2.2). Graph
+	//   absent: search + trim raw files. Both modes get caller_context (§FS-002-caller-context.9).
 	const callerContextTool = createCallerContextTool(context);
 	const baseTools: AgentTool[] = graphifyAvailable
-		? [graphQueryTool, graphExplainTool, graphStatsTool, callerContextTool]
+		? [searchTool, nodeAtTool, graphQueryTool, graphExplainTool, graphFetchNodeTool, graphStatsTool, callerContextTool]
 		: [graphQueryTool, graphFetchNodeTool, graphStatsTool, callerContextTool];
 
 	// §FS-003-agent-protocol.10: when debug is enabled, observe the sub-agent's tool calls through
