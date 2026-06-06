@@ -7,6 +7,10 @@
 - Added project trust gating for project-local settings, resources, instructions, and packages ([#5332](https://github.com/earendil-works/pi/pull/5332)).
 - Added the latest prompt cache hit rate to the interactive footer.
 
+### Changed
+
+- Changed the `explore` sidekick prompt to cap first-pass evidence and avoid whole-file or broad-context dumps during investigation.
+
 ### Fixed
 
 - Fixed built-in tool expand hints to style closing parentheses consistently ([#5359](https://github.com/earendil-works/pi/issues/5359)).

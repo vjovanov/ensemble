@@ -61,6 +61,13 @@ context that the first bundled request could have asked for. This keeps graph na
 the explore agent and avoids paying for multiple caller turns that only refine the same local
 investigation.
 
+Bundled first-pass exploration is a compact answer contract, not permission to dump files or
+large declarations. The explore agent MUST default to a small evidence budget: the likely edit
+site, a concise reason, and no more than a few supporting snippets or facts. Broad caller wording
+such as "read the relevant file" or "inspect the implementation" MUST be interpreted as a request
+to answer the semantic investigation, not as a request to relay whole-file or whole-class content
+unless the caller explicitly uses the whole-file request path (§7.3).
+
 ### 2.2 Structured selection result
 
 The explore agent terminates by emitting a structured result: an ordered list of `NodeRef`

@@ -37,11 +37,11 @@ trap 'exit 130' INT
 trap 'exit 143' TERM HUP QUIT
 
 # (repo/dataset path, instance index) — curated to the most informative cases from the first
-# sweep: the 4 WORST for graphify (graph/classic cacheRead highest) and the 2 BEST, so an A/B
-# of the search+node_at sidekick shows movement where it matters. tokio dropped (graphify
-# segfaults building its graph). Removed as mid-pack/redundant: grpc-go, jackson-databind, logstash.
+# sweep: the 3 WORST for graphify (graph/classic cacheRead highest) and the 2 BEST, so an A/B
+# of the search+node_at sidekick shows movement where it matters. Dropped because graphify
+# cannot build a usable graph for them (require-graph mode fails fast → no run): clap (rust),
+# tokio (rust, segfaults). Removed as mid-pack/redundant: grpc-go, jackson-databind, logstash.
 HARD=(
-  "rust/clap-rs__clap_dataset.jsonl 0"                 # WORST 3.43x (rust)
   "rust/tokio-rs__tracing_dataset.jsonl 0"             # WORST 3.30x (rust)
   "java/fasterxml__jackson-core_dataset.jsonl 0"       # WORST 2.37x (java)
   "ts/vuejs__core_dataset.jsonl 0"                     # WORST 2.16x (ts)

@@ -40,7 +40,7 @@ trap 'exit 143' TERM HUP QUIT
 # (repo/dataset path, instance index).
 HARD=(
   # --- curated worst/best for graphify (run-hard.sh) ---
-  "rust/clap-rs__clap_dataset.jsonl 0"            # rust  worst 3.43x
+  # clap (rust) dropped: graphify cannot build a usable graph → require-graph mode fails fast.
   "rust/tokio-rs__tracing_dataset.jsonl 0"        # rust  worst 3.30x
   "java/fasterxml__jackson-core_dataset.jsonl 0"  # java  worst 2.37x
   "ts/vuejs__core_dataset.jsonl 0"                # ts    worst 2.16x

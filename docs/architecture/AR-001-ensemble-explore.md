@@ -88,7 +88,10 @@ The lead-agent prompt directs the caller to bundle the first exploration pass fo
 tasks: ask once for edit site, relevant control flow, verification targets, and alternatives, then
 use follow-up `explore` only for a named missing fact. The sidekick prompt mirrors this by treating
 multi-part first-pass tasks as one investigation and returning the smallest evidence that lets the
-caller decide (§FS-001-ensemble-explore.2.1.1).
+caller decide (§FS-001-ensemble-explore.2.1.1). The prompt makes that compactness explicit: default
+first-pass output is capped to a small set of snippets/facts, broad "read" wording is interpreted as
+semantic investigation rather than file relay, and high caller-context pressure tightens rather than
+loosens the evidence budget.
 
 ## 4. Phase 2 — registry and classification
 

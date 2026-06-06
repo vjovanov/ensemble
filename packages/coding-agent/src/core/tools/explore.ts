@@ -16,7 +16,7 @@ import { getExploreDebugLogPath } from "../../config.ts";
 import { keyHint } from "../../modes/interactive/components/keybinding-hints.ts";
 import type { Theme } from "../../modes/interactive/theme/theme.ts";
 import { formatPathRelativeToCwdOrAbsolute } from "../../utils/paths.ts";
-import type { ExtensionContext, ToolDefinition, ToolRenderResultOptions } from "../extensions/types.ts";
+import type { ContextUsage, ExtensionContext, ToolDefinition, ToolRenderResultOptions } from "../extensions/types.ts";
 import { convertToLlm } from "../messages.ts";
 import { createCallerContextTool } from "./caller-context.ts";
 import { resolveReadPathAsync, resolveToCwd } from "./path-utils.ts";
@@ -795,18 +795,75 @@ function makeTextTool<TParams extends TSchema>(
 	};
 }
 
+// Caller context pressure tunes evidence size from the lead's context fill: small contexts stay
+// minimal, and large contexts tighten further because each added line is replayed. §FS-001-ensemble-explore.2.1.1
+export type CallerContextPressure = "low" | "moderate" | "high";
+
+// Tunables (env, like PI_EXPLORE_DEBUG): the dial can be disabled, and the two band edges moved.
+// PI_EXPLORE_PRESSURE=off disables it; LOW/HIGH set the low/high percent thresholds.
+const PRESSURE_ENABLED_ENV = "PI_EXPLORE_PRESSURE";
+const PRESSURE_LOW_ENV = "PI_EXPLORE_PRESSURE_LOW";
+const PRESSURE_HIGH_ENV = "PI_EXPLORE_PRESSURE_HIGH";
+const DEFAULT_PRESSURE_LOW = 30;
+const DEFAULT_PRESSURE_HIGH = 70;
+
+function pressureDialEnabled(): boolean {
+	const raw = process.env[PRESSURE_ENABLED_ENV]?.trim().toLowerCase();
+	return !(raw === "off" || raw === "0" || raw === "false" || raw === "no");
+}
+
+// Parse a percent threshold, clamped to [0, 100]; blank or non-numeric falls back to the default.
+function pressureThreshold(envName: string, fallback: number): number {
+	const raw = process.env[envName]?.trim();
+	if (!raw) return fallback;
+	const value = Number(raw);
+	return Number.isFinite(value) ? Math.max(0, Math.min(100, value)) : fallback;
+}
+
+// percent thresholds for the three bands; null percent (e.g. just after compaction) → no line.
+export function callerContextPressure(usage: ContextUsage | undefined): CallerContextPressure | undefined {
+	if (!pressureDialEnabled()) return undefined;
+	const percent = usage?.percent;
+	if (percent == null) return undefined;
+	let low = pressureThreshold(PRESSURE_LOW_ENV, DEFAULT_PRESSURE_LOW);
+	let high = pressureThreshold(PRESSURE_HIGH_ENV, DEFAULT_PRESSURE_HIGH);
+	if (low > high) [low, high] = [high, low]; // tolerate swapped bounds rather than collapse the bands
+	if (percent < low) return "low";
+	if (percent > high) return "high";
+	return "moderate";
+}
+
+function contextPressureLine(pressure: CallerContextPressure | undefined): string | undefined {
+	switch (pressure) {
+		case "low":
+			// Context still small: favor minimality, defer breadth to follow-up explore calls.
+			return "The caller's context is still small — favor minimality over breadth: return only the evidence the current step strictly needs, and leave secondary breadth (alternatives, adjacent control flow) for follow-up explore calls.";
+		case "high":
+			// Context already large: extra evidence is expensive on every later turn.
+			return "The caller's context is already large — avoid adding bulk. Return a decisive answer with only the exact snippets needed; prefer conclusions over extra evidence.";
+		default:
+			return undefined;
+	}
+}
+
 // The explore sidekick's system prompt (exported so harnesses can capture the exact
 // instructions a run used). §RM-001-bash-sidekick.2.1: the "fetch only what the task
 // needs" wording is the digest-tightening that lets delegation reduce lead-model cost.
-export function exploreSidekickSystemPrompt(graphifyAvailable: boolean): string {
+export function exploreSidekickSystemPrompt(graphifyAvailable: boolean, pressure?: CallerContextPressure): string {
 	// §FS-002-caller-context.8: announce the capability, push no content.
 	const callerContextLine =
 		'You may call caller_context to read the calling agent\'s transcript, its prior tool results and files, its system prompt, or the user\'s original request — op:"index" to survey, then op:"fetch" by ids/recency/query. Take only what you need.';
+	const pressureLine = contextPressureLine(pressure);
 	return graphifyAvailable
 		? [
 				"You are Pi's private exploration sidekick. Find the code the task needs and return it.",
 				"The caller gives you semantic goals, not line-dump instructions. Choose the lookup strategy yourself.",
-				"For first-pass implementation investigations, handle bundled requests together: likely edit site, relevant control flow, verification targets, and plausible alternatives. Return one compact evidence set that lets the caller decide. §FS-001-ensemble-explore.2.1.1",
+				"For first-pass implementation investigations, identify the likely edit site and at most 3 supporting facts. Do not return broad surrounding context; the caller can ask a follow-up if needed. §FS-001-ensemble-explore.2.1.1",
+				"Default output budget: <= 120 lines total and <= 4 code excerpts. Prefer 20-60 lines.",
+				"Never return an entire file, class, or long method because it was requested broadly. Return only the exact declarations or slices needed for the task.",
+				"If a tool result is large, summarize what it proves and quote only the smallest exact lines needed as evidence.",
+				"If the caller asks to read a whole file but the task does not require complete content, ignore the breadth and return a narrow evidence set instead.",
+				...(pressureLine ? [pressureLine] : []),
 				"Locate with `search` (ripgrep-like): it finds any string — symbols, literals, error messages, config keys — which the graph structurally cannot.",
 				"Turn a search hit into structure with `node_at(path, line)`: it resolves the hit to its graph node and shows the call/reference neighbors. Prefer this over guessing an identifier for `graph_explain`.",
 				"Use `graph_query`/`graph_explain` to navigate relationships (callers, callees, neighbors) — the graph's unique value over plain search.",
@@ -821,7 +878,12 @@ export function exploreSidekickSystemPrompt(graphifyAvailable: boolean): string 
 		: [
 				"You are Pi's private exploration sidekick.",
 				"The code graph is unavailable; you are working from raw filesystem results.",
-				"For first-pass implementation investigations, handle bundled requests together: likely edit site, relevant control flow, verification targets, and plausible alternatives. Return one compact evidence set that lets the caller decide. §FS-001-ensemble-explore.2.1.1",
+				"For first-pass implementation investigations, identify the likely edit site and at most 3 supporting facts. Do not return broad surrounding context; the caller can ask a follow-up if needed. §FS-001-ensemble-explore.2.1.1",
+				"Default output budget: <= 120 lines total and <= 4 code excerpts. Prefer 20-60 lines.",
+				"Never return an entire file, class, or long method because it was requested broadly. Return only the exact declarations or slices needed for the task.",
+				"If a tool result is large, summarize what it proves and quote only the smallest exact lines needed as evidence.",
+				"If the caller asks to read a whole file but the task does not require complete content, ignore the breadth and return a narrow evidence set instead.",
+				...(pressureLine ? [pressureLine] : []),
 				"Think carefully about what the task genuinely needs, then return only that.",
 				"Return only the code relevant to the task and remove everything unnecessary.",
 				"Remove whole declarations — fields, functions, methods, comments — that are not relevant to the task.",
@@ -989,7 +1051,10 @@ async function runSidekick(
 	const debugSink = debugLevel === "off" ? undefined : resolveExploreDebugSink(context.cwd);
 	const tools = debugSink ? instrumentToolsForDebug(baseTools, debugLevel, debugSink) : baseTools;
 
-	const systemPrompt = exploreSidekickSystemPrompt(graphifyAvailable);
+	// Tune verbosity to the caller's current context fill (§FS-001-ensemble-explore.2.1.1):
+	// terse while the lead context is small, stricter once accumulated context is already large.
+	const pressure = callerContextPressure(context.getContextUsage?.());
+	const systemPrompt = exploreSidekickSystemPrompt(graphifyAvailable, pressure);
 
 	const thinkingLevel = clampThinkingLevel(model, "low") as ThinkingLevel;
 	const sidekick = new Agent({
@@ -1107,10 +1172,11 @@ export function createExploreToolDefinition(
 		promptSnippet: "Delegate discovery to a smart explore sub-agent; it returns the minimal relevant code",
 		promptGuidelines: [
 			"Use explore for ALL code discovery, search, and reading — finding symbols/strings/usages, reading files, and pre-edit inspection. Ask semantic questions about behavior, symbols, or relationships; do not request line ranges or file dumps.",
+			"Ask explore for an answer, not for files. Bad: 'read whole Gson.java'. Good: 'identify why runtime type wrapper chooses TreeTypeAdapter and return only the relevant methods/classes'.",
 			"Do NOT use bash to read or search code: no rg, grep, find, cat, sed, head, tail, or ls on source files. `explore` already runs ripgrep internally, so grepping yourself only duplicates its work and bloats your context. Reserve bash for *executing* things — running tests, builds, formatters, git — never for inspecting source.",
 			"Trust the explore result: do not re-grep or re-read code it already returned. If you need more, ask explore again rather than falling back to shell.",
 			"`explore` is intelligent: give it the investigation goal and let it choose graph/search/slice steps. It is expected to return the least unchanged evidence needed.",
-			"Use wholeFiles: true only when complete file content is explicitly necessary.",
+			"Do not set wholeFiles or ask for whole files during investigation. Use wholeFiles: true only immediately before a broad edit that genuinely needs complete file content.",
 		],
 		parameters: exploreSchema,
 		async execute(_toolCallId, input: ExploreToolInput, signal, _onUpdate, context) {
