@@ -19,7 +19,6 @@
 #     collection runs automatically.
 set -uo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")"
-exec > run-hard-diverse.log 2>&1   # write straight to the log (no tee pipe -> no hang if a child leaks the fd)
 
 # (repo/dataset path, instance index) — large, diverse codebases.
 HARD=(

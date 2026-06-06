@@ -15,7 +15,6 @@
 #   - Run AFTER any in-flight sweep finishes; Docker grading + collection runs automatically.
 set -uo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")"
-exec > run-hard-all.log 2>&1   # write straight to the log (no tee pipe -> no hang if a child leaks the fd)
 
 # (repo/dataset path, instance index).
 HARD=(

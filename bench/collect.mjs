@@ -65,6 +65,26 @@ function main() {
   writeFileSync(outCsv, csv + "\n");
   console.log(`wrote ${outCsv} (${rows.length} rows)`);
 
+  // ---- Complete results: every token count + price + success, per instance ----
+  const armOrder = (a) => (a === "ensemble-strict" ? 0 : a === "classic" ? 2 : 1);
+  const armLbl = (a) => (a === "ensemble-strict" ? "graph" : a);
+  const N = (x) => (x === "" || x == null ? "-" : Number(x).toLocaleString());
+  const byInst = {};
+  for (const r of rows) (byInst[r.instance] ||= []).push(r);
+  console.log("\n════════ COMPLETE RESULTS ════════");
+  console.log(
+    "instance         arm        input   output   cacheRead      total      cost  turns  resolved");
+  for (const inst of Object.keys(byInst).sort()) {
+    for (const r of byInst[inst].sort((a, b) => armOrder(a.arm) - armOrder(b.arm))) {
+      console.log(
+        `${inst.replace(/__.*/, "").slice(0, 16).padEnd(16)} ${armLbl(r.arm).padEnd(9)}` +
+        `${N(r.input).padStart(8)}${N(r.output).padStart(9)}${N(r.cacheRead).padStart(12)}` +
+        `${N(r.totalTokens).padStart(11)}${("$" + (Number(r.costUsd) || 0).toFixed(3)).padStart(10)}` +
+        `${String(r.turns ?? "-").padStart(6)}${String(r.resolved === 1 ? "YES" : r.resolved === 0 ? "no" : "-").padStart(8)}`);
+    }
+    console.log("-".repeat(90));
+  }
+
   // Per-arm summary. A run is "counted" for an arm unless it's an ensemble-strict
   // run that failed the strict guarantee (fell back to filesystem / no explore) —
   // those don't count toward the graph arm, only get reported as `dropped`.
@@ -102,6 +122,21 @@ function main() {
   console.log("* ensemble-strict counts only strict-valid runs (graph-derived explore); `dropped` = runs that fell back or never explored.");
   const haveResolved = Object.keys(resolved).length > 0;
   if (!haveResolved) console.log("(note: no final_report.json yet — run ./eval/run-eval.sh to fill the 'resolved' column)");
+
+  // ---- Headline: graph vs classic (totals, ratios, success rate) ----
+  const sum = (arm, f) => rows.filter((r) => r.arm === arm).reduce((s, r) => s + (Number(r[f]) || 0), 0);
+  const resolveRate = (arm) => {
+    const rs = rows.filter((r) => r.arm === arm);
+    return `${rs.reduce((s, r) => s + (r.resolved === 1 ? 1 : 0), 0)}/${rs.length}`;
+  };
+  if (rows.some((r) => r.arm === "ensemble-strict") && rows.some((r) => r.arm === "classic")) {
+    const gt = sum("ensemble-strict", "totalTokens"), ct = sum("classic", "totalTokens");
+    const gc = sum("ensemble-strict", "costUsd"), cc = sum("classic", "costUsd");
+    console.log("\n════════ HEADLINE: graph vs classic ════════");
+    console.log(`  tokens:  graph ${gt.toLocaleString()}  vs  classic ${ct.toLocaleString()}   →  ${(gt / ct).toFixed(2)}×`);
+    console.log(`  cost:    graph $${gc.toFixed(2)}  vs  classic $${cc.toFixed(2)}   →  ${(gc / cc).toFixed(2)}×`);
+    console.log(`  resolved: graph ${resolveRate("ensemble-strict")}   classic ${resolveRate("classic")}`);
+  }
 }
 
 main();

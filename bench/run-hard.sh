@@ -14,7 +14,6 @@
 #   - Docker grading + collection runs automatically after the agent runs.
 set -uo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")"
-exec > run-hard.log 2>&1   # write straight to the log (no tee pipe -> no hang if a child leaks the fd)
 
 # (repo/dataset path, instance index) — curated to the most informative cases from the first
 # sweep: the 4 WORST for graphify (graph/classic cacheRead highest) and the 2 BEST, so an A/B
