@@ -638,7 +638,7 @@ describe("Coding Agent Tools", () => {
 			expect(message).toContain("Command exited with code 2");
 		});
 
-		it("should compact long-line success output without a digest", async () => {
+		it("should standard-truncate large single-line success output (no compaction)", async () => {
 			const operations: BashOperations = {
 				exec: async (_command, _cwd, { onData }) => {
 					onData(Buffer.from("lib/defaults/index.js:40: adapter: platform.isNode ? 'http' : 'xhr'\n"));
@@ -655,7 +655,7 @@ describe("Coding Agent Tools", () => {
 			});
 
 			const result = await definition.execute(
-				"test-call-bash-summary-long-line-fallback",
+				"test-call-bash-long-line-success",
 				{ command: "long-line-output" },
 				undefined,
 				undefined,
@@ -663,18 +663,18 @@ describe("Coding Agent Tools", () => {
 			);
 			const output = getTextOutput(result);
 
-			expect(output).toContain("Compact head/tail output shown");
+			// Success is never digested or head/tail-compacted; it gets standard truncation.
+			expect(output).not.toContain("Compact head/tail output shown");
 			expect(output).not.toContain("summary unavailable");
-			expect(output).toContain("lib/defaults/index.js:40: adapter:");
-			expect(output).toContain("omitted");
-			expect(output).toContain("Raw bash output:");
-			expect(output.length).toBeLessThan(4000);
 			expect(output).not.toContain("(no output)");
+			expect(output).toContain("Full output:");
+			expect(output).toContain("x".repeat(100));
+			expect(result.details?.truncation?.truncated).toBe(true);
 			expect(result.details?.fullOutputPath).toBeDefined();
 			expect(existsSync(result.details?.fullOutputPath ?? "")).toBe(true);
 		});
 
-		it("should not split UTF-8 characters in compact summary fallback", async () => {
+		it("should not split UTF-8 characters when truncating success output", async () => {
 			const operations: BashOperations = {
 				exec: async (_command, _cwd, { onData }) => {
 					onData(Buffer.from("unicode-start\n", "utf-8"));
@@ -686,12 +686,12 @@ describe("Coding Agent Tools", () => {
 			const definition = createBashToolDefinition(testDir, {
 				operations,
 				outputSummarizer: async () => {
-					throw new Error("summary unavailable");
+					throw new Error("should not run on success");
 				},
 			});
 
 			const result = await definition.execute(
-				"test-call-bash-summary-utf8-fallback",
+				"test-call-bash-utf8-success",
 				{ command: "utf8-output" },
 				undefined,
 				undefined,
@@ -699,12 +699,12 @@ describe("Coding Agent Tools", () => {
 			);
 			const output = getTextOutput(result);
 
-			expect(output).toContain("unicode-start");
 			expect(output).toContain("unicode-end");
 			expect(output).not.toContain("�");
+			expect(output).not.toContain("Compact head/tail output shown");
 		});
 
-		it("should compact broad non-truncated success output without a digest", async () => {
+		it("should return broad successful output in full (no compaction)", async () => {
 			const operations: BashOperations = {
 				exec: async (_command, _cwd, { onData }) => {
 					for (let i = 1; i <= 160; i++) {
@@ -721,7 +721,7 @@ describe("Coding Agent Tools", () => {
 			});
 
 			const result = await definition.execute(
-				"test-call-bash-summary-broad-fallback",
+				"test-call-bash-broad-success",
 				{ command: "broad-rg" },
 				undefined,
 				undefined,
@@ -729,15 +729,14 @@ describe("Coding Agent Tools", () => {
 			);
 			const output = getTextOutput(result);
 
-			expect(output).toContain("Compact head/tail output shown");
-			expect(output).not.toContain("summary unavailable");
+			// 160 short lines is under the truncation limit, so the lead sees every match —
+			// no middle dropped, which is what previously triggered re-greps.
+			expect(output).not.toContain("Compact head/tail output shown");
+			expect(output).not.toContain("omitted");
 			expect(output).toContain("match-001");
+			expect(output).toContain("match-080");
 			expect(output).toContain("match-160");
-			expect(output).toContain("omitted");
-			expect(output).not.toContain("match-080");
-			expect(output.length).toBeLessThan(4000);
-			expect(result.details?.rawTruncation?.truncated).toBe(false);
-			expect(result.details?.fullOutputPath).toBeDefined();
+			expect(result.details).toBeUndefined();
 		});
 
 		it("should disable sidekick summarization when PI_BASH_OUTPUT_SUMMARY is 0", async () => {

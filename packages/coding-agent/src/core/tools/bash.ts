@@ -194,13 +194,14 @@ const BASH_COMPACT_FALLBACK_BYTES = 2 * 1024;
 const BASH_COMPACT_FALLBACK_LINES = 12;
 const BASH_COMPACT_FALLBACK_SOURCE_BYTES = 16 * 1024;
 const BASH_COMPACT_FALLBACK_LINE_BYTES = 240;
-// Output below these bounds is returned raw: too small to be worth a model digest
-// (latency + tokens) or head/tail compaction, and the lead may want its exact lines.
-// Above them, output is broad enough to digest (on failure) or compact (on success).
-// Note these are the *trigger* thresholds; once triggered, compaction keeps only the
-// smaller BASH_COMPACT_FALLBACK_* head/tail.
+// Threshold for digesting a FAILED command's output. Below it, a failure is small
+// enough to return raw — the lead can read it and a model round-trip isn't worth the
+// latency/tokens. Successful output is never digested or compacted (see execute): it
+// returns with standard truncation, identical to the no-sidekick arm, because
+// compacting successful exploration output (rg/grep/sed) dropped matches the lead then
+// re-fetched — costing more turns than it saved. §RM-001-bash-sidekick.2.3
 const BASH_BROAD_MIN_LINES = 40;
-const BASH_BROAD_MIN_BYTES = 8 * 1024;
+const BASH_BROAD_MIN_BYTES = 16 * 1024;
 
 function bashOutputSummaryDisabledByEnv(): boolean {
 	return process.env.PI_BASH_OUTPUT_SUMMARY === "0";
@@ -911,22 +912,23 @@ export function createBashToolDefinition(
 				}
 
 				const snapshot = await finishOutput();
-				if (exitCode !== 0 && exitCode !== null) {
+				const failed = exitCode !== 0 && exitCode !== null;
+				if (failed) {
 					const summarized = await summarizeOutput(snapshot, exitCode, "error");
 					if (summarized) {
 						throw new Error(appendStatus(summarized, `Command exited with code ${exitCode}`));
 					}
-				} else if (compactFor(snapshot)) {
-					// Success skips the lossy model digest; compact broad output locally
-					// while preserving the full raw audit file. §RM-001-bash-sidekick.2.3
-					await ensureFullOutputPersisted();
 				}
+				// Successful output is returned as-is (standard truncation), identical to the
+				// no-sidekick arm. The digest/compaction is reserved for failures: compacting
+				// successful exploration output dropped matches the lead then re-fetched, which
+				// cost more turns than the per-turn saving. §RM-001-bash-sidekick.2.3
 				const { text: outputText, details } = await formatOutput(snapshot, "(no output)", {
-					compact: compactFor(snapshot),
+					compact: failed && compactFor(snapshot),
 					exitCode,
-					status: exitCode !== 0 && exitCode !== null ? "error" : "ok",
+					status: failed ? "error" : "ok",
 				});
-				if (exitCode !== 0 && exitCode !== null) {
+				if (failed) {
 					throw new Error(appendStatus(outputText, `Command exited with code ${exitCode}`));
 				}
 				return { content: [{ type: "text", text: outputText }], details };
