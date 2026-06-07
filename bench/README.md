@@ -10,22 +10,25 @@ official Docker eval harness.
 
 | Arm | Flags | What it isolates |
 |-----|-------|------------------|
-| `classic-bash` | `--exploration classic` + bash sidekick output digest | bash digest only, with classic file exploration |
 | `classic` | `--exploration classic` + raw bash output | baseline: pre-ensemble pi (read/grep/find/ls) |
-| `ensemble-strict` | `--exploration sidekick` + graphify graph prebuilt, asserted graph-derived | graph-based explore |
-| `graph-bash` | same strict graph setup, named for graph + bash-guidance experiments | graph-backed explore with current bash verification guidance |
+| `classic-bash` | `--exploration classic` + bash sidekick output digest | bash digest only, with classic file exploration |
+| `classic-graph-bash` | `--exploration sidekick` + graphify graph prebuilt + bash sidekick output digest | graph-backed explore with bash digest |
+| `classic-graph` | `--exploration sidekick` + graphify graph prebuilt, asserted graph-derived | graph-backed explore |
 | `sidekick-fs` | `--exploration sidekick`, graphify forced unavailable | same tool, filesystem fallback |
+
+Legacy names still work for old runs: `graph-bash` = `classic-graph-bash`,
+`ensemble-strict` = `classic-graph`.
 
 > **Strict mode is genuinely enforced via `PI_REQUIRE_GRAPH=1`** (FS-001 §7.4 required-graph
 > — an env var, not a CLI flag). With it set, pi fail-fasts at startup if graphify isn't
 > enabled and `explore` throws rather than ever falling back (`explore.ts:842`, `main.ts:592`).
-> The `ensemble-strict` arm sets it and prebuilds the graph; `lib/parse-session.mjs`
+> The `classic-graph` and `classic-graph-bash` arms set it and prebuild the graph; `lib/parse-session.mjs`
 > additionally asserts every `explore` call was graph-derived as a belt-and-suspenders check
 > (`strictOk`).
 
 ## Prerequisites
 
-- `graphify` on `PATH` (for `ensemble-strict`) — present at `~/.local/bin/graphify`.
+- `graphify` on `PATH` (for graph arms) — present at `~/.local/bin/graphify`.
 - Docker running (for grading).
 - `pip install multi-swe-bench` (provides the eval harness).
 - Model creds in the env. Default is **gpt-5.5 via OpenRouter** (`PROVIDER=openrouter
@@ -53,9 +56,9 @@ DRY_RUN=1 ./run-all.sh
 Useful flags:
 
 ```bash
-./run-all.sh --langs cpp,js --arms classic-bash,classic
-./run-all.sh --instances simdjson__simdjson-2178 --arms classic-bash,classic
-./run-all.sh --csv /tmp/bench-instances.csv --arms classic-bash,classic
+./run-all.sh --langs cpp,js --arms classic,classic-bash
+./run-all.sh --instances simdjson__simdjson-2178 --arms classic,classic-bash
+./run-all.sh --csv /tmp/bench-instances.csv --arms classic,classic-bash
 BENCH_LANGS='cpp js' ARMS='classic-bash classic' ./run-all.sh
 BENCH_INSTANCES='simdjson__simdjson-2178,sveltejs__svelte-15115' ./run-all.sh
 
@@ -63,6 +66,19 @@ NO_CLASSIC=1 ./run-all.sh        # run configured arms except classic
 REUSE_CLASSIC=1 ./run-all.sh     # skip classic agent runs, but keep old classic rows
 SKIP_EVAL=1 ./run-all.sh         # skip Docker grading; collect from existing reports if present
 REUSE_EVAL=1 ./run-all.sh        # run agents, but keep existing final_report.json per arm
+```
+
+Stable 20-case benchmark:
+
+```bash
+./run-all.sh --csv benchmarks-20.csv --arms classic,classic-bash,classic-graph-bash,classic-graph
+```
+
+Rerun one fixed benchmark and update only that benchmark's current number:
+
+```bash
+./run-all.sh --instances clap-rs__clap-5873 --arms classic-graph-bash
+node collect.mjs
 ```
 
 Prebuilt sweeps:
@@ -79,7 +95,7 @@ Prebuilt sweeps:
 
 The headline is the `collect.mjs` summary: **resolved-rate and $/run & tokens/run per
 arm.** If `classic-bash` resolves the same issues as `classic` at lower tokens/cost,
-that's the isolated bash-sidekick win. If `ensemble-strict` resolves the same issues as
+that's the isolated bash-sidekick win. If `classic-graph` resolves the same issues as
 `classic` at lower tokens/cost, that's the graph-explore win.
 
 `run-all.sh` invokes `eval/run-eval.sh` after real runs (skipped for `DRY_RUN=1`) and then
@@ -103,7 +119,7 @@ lib/parse-session.mjs session jsonl -> tokens/cost/turns + strict assertion
 lib/inst-env.mjs     instance json -> shell vars
 eval/run-eval.sh     wraps multi_swe_bench.harness.run_evaluation
 collect.mjs          metrics + final_report.json -> results.csv + summary
-work/  raw/  patches/  instances/  results/   (generated; git-ignored)
+work/  raw/  raw-history/  patches/  instances/  results/   (generated; git-ignored)
 ```
 
 ## Run bundle format
@@ -133,13 +149,19 @@ exactly. `manifest.json.dirty=true` warns that the tree had uncommitted changes 
 runs you intend to publish, so `commit` fully pins the prompts. Archive a set with
 `snapshots/<name>/` (tracked; the live `raw/` is git-ignored).
 
+Reruns are preserved automatically. Before `raw/<id>__<arm>/` is replaced, the previous bundle is
+moved to `raw-history/<id>__<arm>/<timestamp>/`. Docker validation writes
+`results/validation/<arm>/<id>.json`; older validation records and overwritten arm-level reports
+are copied under `results/history/`. `collect.mjs` reads these per-instance validation records, so
+partial reruns update only the rerun benchmark's resolved number.
+
 ## Caveats
 
 - **graphify language coverage** — verify it produces a non-trivial `graph.json` for each
   language (`run-instance.sh` warns if not). If a language yields an empty graph,
-  `ensemble-strict` ≡ `sidekick-fs` for it and the comparison is void there.
+  `classic-graph` ≡ `sidekick-fs` for it and the comparison is void there.
 - The agent is told not to touch test files; the grader applies the instance's own
-  `test_patch`. Strict runs keep graph artifacts under `raw/<id>__ensemble-strict/graphify/`
+  `test_patch`. Strict runs keep graph artifacts under `raw/<id>__<graph-arm>/graphify/`
   and update them with `graphify watch`; `graphify-out/` is also excluded from the captured
   patch as a fallback.
 - The eval harness config field names are verified against the current

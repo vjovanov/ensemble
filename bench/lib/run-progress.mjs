@@ -112,7 +112,9 @@ function compactNumber(value) {
 }
 
 function label(arm) {
-  return arm === "ensemble-strict" ? "graph" : arm;
+  if (arm === "ensemble-strict") return "classic-graph";
+  if (arm === "graph-bash") return "classic-graph-bash";
+  return arm;
 }
 
 function fit(text, width) {

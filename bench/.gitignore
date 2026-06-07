@@ -2,6 +2,7 @@
 # snapshots/*/raw, snapshots/*/results, etc. stay tracked for the record).
 /work/
 /raw/
+/raw-history/
 /patches/
 /results/
 /instances/

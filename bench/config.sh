@@ -33,13 +33,15 @@ if [ -z "${PRICE:-}" ]; then
 fi
 
 # --- Arms -------------------------------------------------------------------
-# classic-bash    : --exploration classic + bash sidekick output digest
-# classic         : --exploration classic + raw bash output (baseline)
-# ensemble-strict : --exploration sidekick + graph prebuilt + PI_REQUIRE_GRAPH=1 (enforced)
-# graph-bash      : same strict graph setup, retained for old graph+bash experiments
+# classic             : --exploration classic + raw bash output (baseline)
+# classic-bash        : --exploration classic + bash sidekick output digest
+# classic-graph       : --exploration sidekick + graph prebuilt + PI_REQUIRE_GRAPH=1 (enforced)
+# classic-graph-bash  : same strict graph setup + bash sidekick output digest
+# ensemble-strict     : legacy alias for classic-graph
+# graph-bash          : legacy alias for classic-graph-bash
 # (sidekick-fs — filesystem results presented as explore/graph results — dropped: it muddies
 #  the graph-vs-rg comparison. run-instance.sh still supports it if added back to ARMS.)
-: "${ARMS:=classic-bash classic}"
+: "${ARMS:=classic classic-bash classic-graph-bash classic-graph}"
 ARMS="${ARMS//,/ }"
 
 # --- Corpus -----------------------------------------------------------------
@@ -53,10 +55,13 @@ ARMS="${ARMS//,/ }"
 # --- Paths ------------------------------------------------------------------
 WORK_DIR="$BENCH_DIR/work"          # per-instance cloned repos (one src per instance)
 RAW_DIR="$BENCH_DIR/raw"            # per (instance,arm): session jsonl, patch, metrics
+RAW_HISTORY_DIR="$BENCH_DIR/raw-history" # archived previous raw bundles on rerun
 PATCH_DIR="$BENCH_DIR/patches"      # per-arm jsonl of model patches for the eval harness
 INST_DIR="$BENCH_DIR/instances"     # fetched instance json + derived problem.md
 RESULTS_DIR="$BENCH_DIR/results"    # final csv + summary + harness reports
-mkdir -p "$WORK_DIR" "$RAW_DIR" "$PATCH_DIR" "$INST_DIR" "$RESULTS_DIR"
+VALIDATION_DIR="$RESULTS_DIR/validation" # per (instance,arm) resolved status, updated by eval
+RESULTS_HISTORY_DIR="$RESULTS_DIR/history" # archived validation/report outputs on rerun
+mkdir -p "$WORK_DIR" "$RAW_DIR" "$RAW_HISTORY_DIR" "$PATCH_DIR" "$INST_DIR" "$RESULTS_DIR" "$VALIDATION_DIR" "$RESULTS_HISTORY_DIR"
 
 # --- Knobs ------------------------------------------------------------------
 : "${AGENT_TIMEOUT:=1200}"          # seconds per agent run (wall-clock guard)

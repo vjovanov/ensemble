@@ -4,7 +4,8 @@
 #
 #   ./run-instance.sh <instance.json> <arm>
 #
-# Arms: classic-bash | classic | ensemble-strict | graph-bash | sidekick-fs (see config.sh)
+# Arms: classic | classic-bash | classic-graph | classic-graph-bash
+# Legacy aliases: ensemble-strict | graph-bash | sidekick-fs (see config.sh)
 source "$(dirname "${BASH_SOURCE[0]}")/config.sh"
 
 INSTANCE_JSON="${1:?need instance json}"
@@ -84,6 +85,18 @@ trap cleanup EXIT
 trap 'cleanup; exit 130' INT
 trap 'cleanup; exit 143' TERM
 
+archive_existing_bundle() {
+  [ -e "$OUT" ] || return 0
+  stamp="$(date -u +%Y%m%dT%H%M%SZ)"
+  archive_dir="$RAW_HISTORY_DIR/${ID}__${ARM}/$stamp"
+  if [ -e "$archive_dir" ]; then
+    archive_dir="$RAW_HISTORY_DIR/${ID}__${ARM}/${stamp}.$$"
+  fi
+  mkdir -p "$(dirname "$archive_dir")"
+  mv "$OUT" "$archive_dir"
+  log "archived previous raw bundle: $archive_dir"
+}
+
 # --- 1. Pristine clone at base sha (cached) ---------------------------------
 if [ ! -d "$PRISTINE/.git" ]; then
   acquire_pristine_lock
@@ -104,9 +117,9 @@ if [ ! -d "$PRISTINE/.git" ]; then
   release_pristine_lock
 fi
 
-# Each attempt owns its raw bundle. Without clearing this directory, a failed
-# rerun can leave stale metrics/patches from an earlier successful attempt.
-rm -rf "$OUT"
+# Each attempt owns its raw bundle. On rerun, archive the previous bundle first
+# so the latest numbers update in raw/ without losing the old evidence.
+archive_existing_bundle
 mkdir -p "$OUT"
 
 # --- 2. Fresh per-arm worktree ------------------------------------------------
@@ -128,7 +141,7 @@ DEBUG_ENV=("PI_EXPLORE_DEBUG=full" "PI_EXPLORE_DEBUG_LOG=$OUT/explore-debug.json
 rm -f "$OUT/explore-debug.jsonl"
 GRAPHIFY_WATCH_ENABLED=0
 case "$ARM" in
-  ensemble-strict)
+  classic-graph|ensemble-strict)
     command -v "$GRAPHIFY" >/dev/null || die "graphify not on PATH (required for $ARM)"
     log "building graphify graph…"
     GRAPH_ARTIFACT_DIR="$OUT/graphify"
@@ -143,7 +156,7 @@ case "$ARM" in
     # PI_GRAPHIFY_GRAPH_FILE keeps backend artifacts out of the source tree (§FS-001-ensemble-explore.2.1).
     ENVV=("GRAPHIFY_COMMAND=$GRAPHIFY" "PI_REQUIRE_GRAPH=1" "PI_GRAPHIFY_GRAPH_FILE=$GRAPH_FILE" "PI_BASH_OUTPUT_SUMMARY=0" "${DEBUG_ENV[@]}")
     ;;
-  graph-bash)
+  classic-graph-bash|graph-bash)
     command -v "$GRAPHIFY" >/dev/null || die "graphify not on PATH (required for $ARM)"
     log "building graphify graph…"
     GRAPH_ARTIFACT_DIR="$OUT/graphify"
@@ -185,13 +198,13 @@ COMMIT="$(git -C "$REPO_ROOT" rev-parse HEAD 2>/dev/null || echo unknown)"
 DIRTY=false; [ -n "$(git -C "$REPO_ROOT" status --porcelain 2>/dev/null)" ] && DIRTY=true
 DBG=off
 case "$ARM" in
-  ensemble-strict|graph-bash|sidekick-fs) DBG=full ;;
+  classic-graph|classic-graph-bash|ensemble-strict|graph-bash|sidekick-fs) DBG=full ;;
 esac
 REQUIRE_GRAPH=0
 case "$ARM" in
-  ensemble-strict|graph-bash) REQUIRE_GRAPH=1 ;;
+  classic-graph|classic-graph-bash|ensemble-strict|graph-bash) REQUIRE_GRAPH=1 ;;
 esac
-if [ "$ARM" = "classic-bash" ] || [ "$ARM" = "graph-bash" ]; then
+if [ "$ARM" = "classic-bash" ] || [ "$ARM" = "classic-graph-bash" ] || [ "$ARM" = "graph-bash" ]; then
   BASH_OUTPUT_SUMMARY=1
 else
   BASH_OUTPUT_SUMMARY=0

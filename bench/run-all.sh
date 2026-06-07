@@ -3,8 +3,8 @@
 #
 #   ./run-all.sh                       # all instances in bench/instances/, all ARMS
 #   INSTANCES='bench/instances/foo.json bar.json' ./run-all.sh
-#   ARMS='classic-bash classic' ./run-all.sh
-#   ./run-all.sh --langs cpp,js --instances simdjson__simdjson-2178 --arms classic-bash,classic
+#   ARMS='classic classic-bash classic-graph-bash classic-graph' ./run-all.sh
+#   ./run-all.sh --langs cpp,js --instances simdjson__simdjson-2178 --arms classic,classic-bash
 #   ./run-all.sh --csv /tmp/bench.csv --arms classic-bash,classic
 #   DRY_RUN=1 ./run-all.sh             # plumbing only, no paid agent calls
 #
@@ -39,13 +39,13 @@ while [ "$#" -gt 0 ]; do
       REUSE_CLASSIC=1; shift ;;
     --help|-h)
       cat <<'EOF'
-usage: ./run-all.sh [--langs cpp,js] [--instances id-or-path[,id-or-path...]] [--csv file.csv] [--arms classic-bash,classic]
+usage: ./run-all.sh [--langs cpp,js] [--instances id-or-path[,id-or-path...]] [--csv file.csv] [--arms classic,classic-bash]
 
 Selection:
   --langs        Filter fetched bench/instances/*.json by instance language.
   --instances   Comma/space-separated instance ids or JSON paths.
   --csv          CSV with instance/id/path column, or first column containing ids/paths.
-  --arms         Comma/space-separated benchmark arms, e.g. classic-bash,classic.
+  --arms         Comma/space-separated benchmark arms, e.g. classic,classic-bash,classic-graph-bash,classic-graph.
 
 Existing env vars still work: BENCH_LANGS, BENCH_INSTANCES, BENCH_CSV, INSTANCES, ARMS.
 EOF
@@ -261,7 +261,7 @@ instance_summary() {
   local status="$2"
   node -e '
     const fs=require("fs"); const [dir,id,status,...arms]=process.argv.slice(1);
-    const lbl=a=>a==="ensemble-strict"?"graph":a;
+    const lbl=a=>a==="ensemble-strict"?"classic-graph":a==="graph-bash"?"classic-graph-bash":a;
     const val=(m,...keys)=>keys.reduce((found,key)=>found ?? m?.[key], undefined) ?? 0;
     const total=(m)=>val(m,"totalTokens") ||
       val(m,"input","inputTokens") + val(m,"output","outputTokens") +

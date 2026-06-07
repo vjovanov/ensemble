@@ -4,7 +4,7 @@
 //
 //   node collect.mjs            # writes results/results.csv and prints summary
 
-import { readFileSync, readdirSync, existsSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, readdirSync, existsSync, writeFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { instanceId } from "./lib/build-prompt.mjs";
@@ -12,6 +12,7 @@ import { instanceId } from "./lib/build-prompt.mjs";
 const HERE = dirname(fileURLToPath(import.meta.url));
 const RAW = process.env.RAW_DIR || join(HERE, "raw");
 const RESULTS = process.env.RESULTS_DIR || join(HERE, "results");
+const VALIDATION = process.env.VALIDATION_DIR || join(RESULTS, "validation");
 
 const readJSON = (p) => JSON.parse(readFileSync(p, "utf8"));
 const selectedInstances = process.env.INSTANCES
@@ -21,18 +22,45 @@ const selectedArms = process.env.ARMS
   ? new Set(process.env.ARMS.trim().split(/[,\s]+/).filter(Boolean))
   : undefined;
 
-// resolved set per arm from the harness final_report.json
+function setResolved(map, arm, id, value) {
+  map[arm] ||= new Map();
+  map[arm].set(normId(id), value);
+}
+
+function reportList(report, keys) {
+  return keys.flatMap((key) => report[key] || []);
+}
+
+function reportId(entry) {
+  return typeof entry === "string" ? entry : entry.instance_id || entry.id;
+}
+
+// Resolved status per arm. Per-instance validation records are persisted across
+// partial reruns, so they override the latest arm-level final_report.json when present.
 function resolvedByArm() {
   const map = {};
-  for (const arm of readdirSync(RESULTS, { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => d.name)) {
-    if (selectedArms && !selectedArms.has(arm)) continue;
-    const fr = join(RESULTS, arm, "final_report.json");
-    if (!existsSync(fr)) continue;
-    const r = readJSON(fr);
-    // resolved_ids is the array; resolved_instances is a count. Harness ids look
-    // like "org/repo:pr-N"; our raw dirs use instance_id "org__repo-N" — normalize both.
-    const list = r.resolved_ids || r.resolved || [];
-    map[arm] = new Set(list.map((x) => normId(typeof x === "string" ? x : x.instance_id || x.id)));
+  if (existsSync(RESULTS)) {
+    for (const arm of readdirSync(RESULTS, { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => d.name)) {
+      if (selectedArms && !selectedArms.has(arm)) continue;
+      const fr = join(RESULTS, arm, "final_report.json");
+      if (!existsSync(fr)) continue;
+      const r = readJSON(fr);
+      for (const entry of reportList(r, ["resolved_ids", "resolved"])) setResolved(map, arm, reportId(entry), 1);
+      for (const entry of reportList(r, ["unresolved_ids", "unresolved", "incomplete_ids", "incomplete", "empty_patch_ids", "empty_patch", "error_ids", "errors"])) {
+        setResolved(map, arm, reportId(entry), 0);
+      }
+    }
+  }
+  if (existsSync(VALIDATION)) {
+    for (const arm of readdirSync(VALIDATION, { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => d.name)) {
+      if (selectedArms && !selectedArms.has(arm)) continue;
+      const dir = join(VALIDATION, arm);
+      for (const file of readdirSync(dir).filter((name) => name.endsWith(".json"))) {
+        const record = readJSON(join(dir, file));
+        if (record.resolved === true) setResolved(map, arm, record.instance || file.replace(/\.json$/, ""), 1);
+        else if (record.resolved === false) setResolved(map, arm, record.instance || file.replace(/\.json$/, ""), 0);
+      }
+    }
   }
   return map;
 }
@@ -46,6 +74,7 @@ const COLUMNS = ["instance", "arm", "resolved", "input", "output", "cacheRead", 
 function main() {
   const resolved = resolvedByArm();
   const rows = [];
+  mkdirSync(RESULTS, { recursive: true });
   for (const dir of readdirSync(RAW, { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => d.name)) {
     const sep = dir.lastIndexOf("__");
     const instance = dir.slice(0, sep), arm = dir.slice(sep + 2);
@@ -54,7 +83,7 @@ function main() {
     const mp = join(RAW, dir, "metrics.json");
     if (!existsSync(mp)) continue;
     const m = readJSON(mp);
-    const isResolved = resolved[arm] ? (resolved[arm].has(normId(instance)) ? 1 : 0) : "";
+    const isResolved = resolved[arm]?.get(normId(instance)) ?? "";
     rows.push({
       instance, arm, resolved: isResolved,
       input: m.input ?? "", output: m.output ?? "", cacheRead: m.cacheRead ?? "", cacheWrite: m.cacheWrite ?? "",
@@ -71,9 +100,9 @@ function main() {
   console.log(`wrote ${outCsv} (${rows.length} rows)`);
 
   // ---- Complete results: every token count + price + success, per instance ----
-  const isStrictGraphArm = (a) => a === "ensemble-strict" || a === "graph-bash";
-  const armOrder = (a) => (isStrictGraphArm(a) ? 0 : a === "classic-bash" ? 1 : a === "classic" ? 2 : 3);
-  const armLbl = (a) => (a === "ensemble-strict" ? "graph" : a);
+  const isStrictGraphArm = (a) => a === "classic-graph" || a === "classic-graph-bash" || a === "ensemble-strict" || a === "graph-bash";
+  const armOrder = (a) => a === "classic" ? 0 : a === "classic-bash" ? 1 : a === "classic-graph-bash" || a === "graph-bash" ? 2 : a === "classic-graph" || a === "ensemble-strict" ? 3 : 4;
+  const armLbl = (a) => a === "ensemble-strict" ? "classic-graph" : a === "graph-bash" ? "classic-graph-bash" : a;
   const N = (x) => (x === "" || x == null ? "-" : Number(x).toLocaleString());
   const byInst = {};
   for (const r of rows) (byInst[r.instance] ||= []).push(r);
@@ -137,7 +166,11 @@ function main() {
     const rs = headlineRows(arm);
     return `${rs.reduce((s, r) => s + (r.resolved === 1 ? 1 : 0), 0)}/${rs.length}`;
   };
-  const candidates = ["classic-bash", rows.some((r) => r.arm === "graph-bash") ? "graph-bash" : "ensemble-strict"];
+  const candidates = [
+    "classic-bash",
+    rows.some((r) => r.arm === "classic-graph-bash") ? "classic-graph-bash" : "graph-bash",
+    rows.some((r) => r.arm === "classic-graph") ? "classic-graph" : "ensemble-strict",
+  ];
   for (const candidateArm of candidates) {
     if (!rows.some((r) => r.arm === candidateArm) || !rows.some((r) => r.arm === "classic")) continue;
     const candidateTokens = sum(candidateArm, "totalTokens"), classicTokens = sum("classic", "totalTokens");

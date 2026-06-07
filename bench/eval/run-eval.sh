@@ -50,6 +50,29 @@ ensure_eval_prereqs() {
   EVAL_PREREQS_READY=1
 }
 
+archive_existing_arm_report() {
+  local arm="$1" out="$RESULTS_DIR/$1" stamp archive
+  [ -s "$out/final_report.json" ] || return 0
+  stamp="$(date -u +%Y%m%dT%H%M%SZ)"
+  archive="$RESULTS_HISTORY_DIR/reports/$arm/$stamp"
+  mkdir -p "$archive"
+  cp "$out/final_report.json" "$archive/final_report.json"
+  rm -f "$out/final_report.json"
+  log "archived previous final report: $archive/final_report.json"
+}
+
+persist_arm_validation() {
+  local arm="$1" out="$RESULTS_DIR/$1"
+  [ -s "$out/final_report.json" ] || { log "no final_report.json for $arm; validation records unchanged"; return 0; }
+  node "$BENCH_DIR/lib/persist-validation.mjs" \
+    --arm "$arm" \
+    --report "$out/final_report.json" \
+    --out-dir "$VALIDATION_DIR/$arm" \
+    --history-dir "$RESULTS_HISTORY_DIR/validation/$arm" \
+    --instances "${INSTANCE_LIST[*]}"
+  log "validation records: $VALIDATION_DIR/$arm"
+}
+
 # Dataset = the full instance records (need test_patch + f2p/p2p for grading).
 : > "$DATASET"
 for j in "${INSTANCE_LIST[@]}"; do
@@ -71,10 +94,12 @@ for arm in "${ARM_LIST[@]}"; do
   out="$RESULTS_DIR/$arm"; mkdir -p "$out/logs"
   if [ "$REUSE_CLASSIC" = "1" ] && [ "$arm" = "classic" ] && [ -s "$out/final_report.json" ]; then
     log "reuse classic (existing report: $out/final_report.json)"
+    persist_arm_validation "$arm"
     continue
   fi
   if [ "$REUSE_EVAL" = "1" ] && [ -s "$out/final_report.json" ]; then
     log "reuse $arm (existing report: $out/final_report.json)"
+    persist_arm_validation "$arm"
     continue
   fi
   # Per-arm workdir: the harness caches reports by instance id within workdir, so a
@@ -97,8 +122,10 @@ for arm in "${ARM_LIST[@]}"; do
     fs.writeFileSync(cfgPath, JSON.stringify(cfg,null,2));
   ' "$patch" "$DATASET" "$awork" "$EVAL_DIR/repos" "$out" "$cfg"
   ensure_eval_prereqs
+  archive_existing_arm_report "$arm"
   log "evaluating arm=$arm (config: $cfg)"
   python -m multi_swe_bench.harness.run_evaluation --config "$cfg" \
     || log "harness returned nonzero for $arm (check $out/logs)"
   log "report: $out/final_report.json"
+  persist_arm_validation "$arm"
 done
