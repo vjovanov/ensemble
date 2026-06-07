@@ -19,7 +19,6 @@ PRISTINE="$WORK_DIR/$ID/pristine"
 PRISTINE_LOCK="$WORK_DIR/$ID/.pristine.lock"
 ARM_SRC="$WORK_DIR/$ID/$ARM"
 OUT="$RAW_DIR/${ID}__${ARM}"
-mkdir -p "$OUT"
 GRAPHIFY_WATCH_PID=""
 AGENT_PID=""
 PRISTINE_LOCK_HELD=0
@@ -28,6 +27,8 @@ stop_graphify_watch() {
   if [ -n "$GRAPHIFY_WATCH_PID" ]; then
     if kill -0 "$GRAPHIFY_WATCH_PID" >/dev/null 2>&1; then
       kill -TERM -- "-$GRAPHIFY_WATCH_PID" >/dev/null 2>&1 || kill "$GRAPHIFY_WATCH_PID" >/dev/null 2>&1 || true
+      sleep 1
+      kill -KILL -- "-$GRAPHIFY_WATCH_PID" >/dev/null 2>&1 || kill -KILL "$GRAPHIFY_WATCH_PID" >/dev/null 2>&1 || true
     fi
     wait "$GRAPHIFY_WATCH_PID" >/dev/null 2>&1 || true
     GRAPHIFY_WATCH_PID=""
@@ -102,6 +103,11 @@ if [ ! -d "$PRISTINE/.git" ]; then
   fi
   release_pristine_lock
 fi
+
+# Each attempt owns its raw bundle. Without clearing this directory, a failed
+# rerun can leave stale metrics/patches from an earlier successful attempt.
+rm -rf "$OUT"
+mkdir -p "$OUT"
 
 # --- 2. Fresh per-arm worktree ------------------------------------------------
 rm -rf "$ARM_SRC"
@@ -191,7 +197,8 @@ else
   [ -n "${PROVIDER:-}" ] && MODEL_ARGS=(--provider "$PROVIDER" --model "$MODEL")
   if [ "$GRAPHIFY_WATCH_ENABLED" = "1" ]; then
     log "starting graphify watch…"
-    ( cd "$ARM_SRC" && GRAPHIFY_OUT="$GRAPH_ARTIFACT_DIR" "$GRAPHIFY" watch "$ARM_SRC" ) \
+    setsid bash -c 'cd "$1" && exec env GRAPHIFY_OUT="$2" "$3" watch "$1"' \
+      bash "$ARM_SRC" "$GRAPH_ARTIFACT_DIR" "$GRAPHIFY" \
       >"$OUT/graphify-watch.log" 2>&1 &
     GRAPHIFY_WATCH_PID=$!
     sleep 1
