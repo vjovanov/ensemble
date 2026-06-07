@@ -6,7 +6,7 @@ The expensive lead model spends roughly half its turns on read-only bash
 (`rg`/`sed`/`cat`) and on build/test runs (`cargo`/`mvn`/`go test`). Because cached
 conversation replay (`cacheRead`) dominates cost — 89–96% of all tokens in the
 benchmark — and scales with the lead's turn count, moving these turns onto a cheap
-(e.g. 8B) sidekick that returns tight digests should cut expensive-model cost by
+(~24B) sidekick that returns tight digests should cut expensive-model cost by
 ~50–55% **without changing what the lead decides or edits**. This extends the
 §FS-001-ensemble-explore sidekick from graph/file discovery to also covering shell
 exploration and verification.
@@ -81,18 +81,18 @@ can distinguish a true digest from local compaction.
    measure against the archived baseline on the curated worst/best instances.
 2. Complete the structured NodeRef path, then make whole-file substitution a deterministic
    tool-level coverage heuristic — §2.2.
-3. Run the sidekick on a dedicated cheap model. Today `runSidekick` uses the caller's
-   model (`context.model`); a separate, cheaper explore/verify model is the precondition
-   for the economics above.
-4. Capture sidekick token usage for honest accounting. Today the sidekick runs as a
-   detached agent and its usage is discarded; surface it (e.g. a per-run sidecar) so cost
-   reflects all model calls.
-5. Add the compile/test bash digest path (landed: bash returns verdict/root-cause digests
+3. Run the sidekick on a dedicated cheap model (a ~24B explore/verify model). Today
+   `runSidekick` and the bash digest use the caller's model (`context.model`); a separate,
+   cheaper model is the precondition for the economics above.
+4. Add the compile/test bash digest path (landed: bash returns verdict/root-cause digests
    when model context is available, while preserving raw logs for audit) — §2.3.
 
 ## 4. Non-goals
 
 - Changing what the lead decides or which edits it makes; the sidekick only gathers,
   runs, and reports.
-- Pricing sidekick tokens at the lead model's rate — the sidekick is a cheap model, and
-  the comparison that matters is expensive-model cost.
+- Accounting for sidekick tokens at all. The sidekick runs on a cheap ~24B model, so its
+  token cost is immaterial against the expensive lead model — we do not capture, price, or
+  optimize it. The only metric that matters is expensive lead-model cost (input/output/
+  cacheRead/cacheWrite on the lead). Treat the sidekick's own usage as free; do not add it
+  to benchmark cost or "honest accounting" sidecars.
