@@ -86,6 +86,19 @@ can distinguish a true digest from local compaction.
    cheaper model is the precondition for the economics above.
 4. Add the compile/test bash digest path (landed: bash returns verdict/root-cause digests
    when model context is available, while preserving raw logs for audit) — §2.3.
+5. **Next experiment — width-preserving compaction of broad successful output.** Successful
+   output is currently returned verbatim (§DF-001-bash-sidekick-failure-only-digest), which left
+   a fat one-shot `rg` replaying into `cacheRead` (jackson-core-1309: +48% tokens from a single
+   19 KB `rg`). Clip line *width*, preserve line *count* (keep every match location, trim long
+   lines), re-run the rg-heavy classic-bash instances, and adopt only if bytes shrink without
+   raising bash-call count. Discussion and benchmark: §DF-003-bash-success-output-compaction.
+6. **Next experiment — cap the content `explore` injects.** Explore evidence is persistent
+   (replays into `cacheRead`), so a single large whole-file return dominates cost — simdjson-2178
+   blew up to 2.24M tokens on `classic-graph` from a 74.5 KB "return complete code to edit" explore
+   call, and stayed +64% vs classic even on graph-bash. Add a hard byte cap on explore output
+   (env `PI_EXPLORE_MAX_RESULT_BYTES`) that keeps fitted evidence and points the lead to `read` for
+   full content, then re-run the worst graph-bash cases. Discussion and benchmark:
+   §DF-004-explore-injected-content-cap.
 
 ## 4. Non-goals
 

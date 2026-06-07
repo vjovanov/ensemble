@@ -197,10 +197,9 @@ const BASH_COMPACT_FALLBACK_LINE_BYTES = 240;
 // Threshold for digesting a FAILED command's output. Below it, a failure is small
 // enough to return raw — the lead can read it and a model round-trip isn't worth the
 // latency/tokens. Successful output is never digested or compacted (see execute): it
-// returns with standard truncation, identical to the no-sidekick arm, because
-// compacting successful exploration output (rg/grep/sed) dropped matches the lead then
-// re-fetched — costing more turns than it saved. §RM-001-bash-sidekick.2.3
-const BASH_BROAD_MIN_LINES = 40;
+// returns with standard truncation, identical to the no-sidekick arm, because compacting
+// successful exploration output (rg/grep/sed) dropped matches the lead then re-fetched.
+const BASH_BROAD_MIN_LINES = 40; // §RM-001-bash-sidekick.2.3
 const BASH_BROAD_MIN_BYTES = 16 * 1024;
 
 function bashOutputSummaryDisabledByEnv(): boolean {
@@ -919,10 +918,9 @@ export function createBashToolDefinition(
 						throw new Error(appendStatus(summarized, `Command exited with code ${exitCode}`));
 					}
 				}
-				// Successful output is returned as-is (standard truncation), identical to the
-				// no-sidekick arm. The digest/compaction is reserved for failures: compacting
-				// successful exploration output dropped matches the lead then re-fetched, which
-				// cost more turns than the per-turn saving. §RM-001-bash-sidekick.2.3
+				// Success returns as-is (standard truncation), like the no-sidekick arm; the
+				// digest is reserved for failures, because compacting successful exploration
+				// output dropped matches the lead re-fetched, costing turns. §RM-001-bash-sidekick.2.3
 				const { text: outputText, details } = await formatOutput(snapshot, "(no output)", {
 					compact: failed && compactFor(snapshot),
 					exitCode,

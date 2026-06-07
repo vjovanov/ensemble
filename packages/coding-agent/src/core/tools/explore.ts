@@ -41,6 +41,8 @@ const MAX_FALLBACK_FILES = 1_000;
 const SNIPPET_CONTEXT_LINES = 2;
 const MAX_SOURCE_SLICE_LINES = 80;
 const MAX_SOURCE_SLICE_BYTES = 16 * 1024;
+const EXPLORE_RESULT_BYTES_ENV = "PI_EXPLORE_MAX_RESULT_BYTES";
+const DEFAULT_EXPLORE_MAX_RESULT_BYTES = 24 * 1024;
 // §FS-003-agent-protocol.10.3: bound captured payloads like §FS-002-caller-context.6.
 const DEBUG_PAYLOAD_PREVIEW_BYTES = 2_000;
 
@@ -898,6 +900,34 @@ export function exploreSidekickSystemPrompt(graphifyAvailable: boolean, pressure
 			].join("\n");
 }
 
+function exploreMaxResultBytes(): number {
+	const raw = process.env[EXPLORE_RESULT_BYTES_ENV]?.trim();
+	if (!raw) return DEFAULT_EXPLORE_MAX_RESULT_BYTES;
+	const value = Number(raw);
+	return Number.isFinite(value) && value > 0 ? value : DEFAULT_EXPLORE_MAX_RESULT_BYTES;
+}
+
+// Explore evidence is persistent in the caller's transcript and replays into cacheRead every
+// later turn, so one large whole-file return dominates cost. Cap it at a line boundary and point
+// the lead to read() for full content. §DF-004-explore-injected-content-cap
+function capExploreOutput(text: string, maxBytes: number): string {
+	if (Buffer.byteLength(text, "utf-8") <= maxBytes) {
+		return text;
+	}
+	const budget = Math.max(maxBytes - 120, 0);
+	const lines = text.split("\n");
+	const kept: string[] = [];
+	let bytes = 0;
+	for (const line of lines) {
+		const lineBytes = Buffer.byteLength(line, "utf-8") + 1;
+		if (bytes + lineBytes > budget) break;
+		kept.push(line);
+		bytes += lineBytes;
+	}
+	const omitted = lines.length - kept.length;
+	return `${kept.join("\n")}\n\n[explore output capped at ${formatSize(maxBytes)}; ${omitted} more line(s) omitted — read the cited files directly for full content.]`;
+}
+
 // §FS-001-ensemble-explore.2.1 / .5.6: the sidekick is backend-conditional — with graphify it
 // relays graph nodes unchanged (no post-processing); without it, it reads raw files and trims
 // them coarse-grained (whole declarations only, never inside a retained body).
@@ -1120,8 +1150,9 @@ async function runSidekick(
 			.map((content) => content.text)
 			.join("\n")
 			.trim();
-		emitProduct("ok", text);
-		return text.length > 0 ? text : undefined;
+		const capped = text.length > 0 ? capExploreOutput(text, exploreMaxResultBytes()) : "";
+		emitProduct("ok", capped);
+		return capped.length > 0 ? capped : undefined;
 	} finally {
 		signal?.removeEventListener("abort", abortSidekick);
 	}

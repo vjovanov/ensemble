@@ -214,3 +214,5 @@ Declarations are heading lines `# FS-042-user-login: …` in markdown. In a code
 - **Inline citation style.** Inline notes: ≤ 1 line preferred, hard cap 3 lines; ≤ 120 columns.
 - **Always cite the most-specific point.**
 - **Citations climb to reasons (grund.md).** Goals cite reasons, specs cite goals; architecture cites specs; code and executable tests cite specs.
+- **Every experiment produces a decision.** Any benchmark experiment run to inform a choice must end in a `DF`/`DA` decision; an experiment with no recorded decision is incomplete. §GRUND-001-decision-log
+- **Decisions carry their benchmark example.** Each `DF`/`DA` decision must cite the evidence that drove it — which benchmark (run, instance(s), arm(s)) and what happened. A decision without its example is not grounded. §GRUND-001-decision-log
