@@ -10,6 +10,7 @@
 ### Changed
 
 - Changed the `explore` sidekick prompt to cap first-pass evidence and avoid whole-file or broad-context dumps during investigation.
+- Changed the graph-mode `explore` sidekick prompt to use rg-style text search before graph traversal for C-family local bugs.
 
 ### Fixed
 

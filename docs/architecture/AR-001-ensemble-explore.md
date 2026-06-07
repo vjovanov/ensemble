@@ -62,6 +62,10 @@ The explore agent's toolset is **backend-conditional** (§FS-001-ensemble-explor
   `graph_explain`, `graph_neighbors`, `graph_stats`; `graph_fetch_node` is removed unless the
   caller explicitly requests whole files. The explore agent stays in graph space and relays
   node-granular results unchanged — **no post-processing** (§FS-001-ensemble-explore.5.6).
+  For C/C++ and similar C-family repositories, the prompt treats local parser, option, indexing,
+  and flag-handling bugs as lexical-first investigations: use `search` like `rg`, then
+  `source_slice` like `sed -n`, and only then spend graph queries when relationships remain
+  unclear (§FS-001-ensemble-explore.2.1).
   `source_slice` is a bounded confirmation aid, not a file-reading primitive: each call returns a
   small line interval, and the tool rejects repeated or overlapping intervals in the same explore
   run so unchanged evidence is not paid for twice (§FS-001-ensemble-explore.2.1).

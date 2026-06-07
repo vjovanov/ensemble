@@ -41,9 +41,12 @@ need source confirmation, the agent MAY read a bounded source slice, but it MUST
 smallest semantic unit that answers the task and MUST NOT fetch whole files unless the caller
 explicitly requests whole files (§7.3). These are navigation aids: the agent still selects and
 returns graph-derived or narrowly sliced evidence (§2.2), so the contract that `explore` results
-are node-granular is preserved. When the backend is absent, the explore agent instead works from
-raw filesystem results and is responsible for trimming them down to the relevant code (§5.6,
-§7.1).
+are node-granular is preserved. For C-family repositories and local parser, option, indexing, or
+flag-handling bugs, the explore agent SHOULD begin with text search and bounded source slices
+before graph traversal, because exact identifiers, flags, and string literals usually locate the
+edit site more cheaply than broad relationship queries. When the backend is absent, the explore
+agent instead works from raw filesystem results and is responsible for trimming them down to the
+relevant code (§5.6, §7.1).
 
 The caller-facing `explore` request is semantic: it describes the symbol, behavior, failure mode,
 or relationship to investigate, not line ranges to dump. The explore agent is responsible for
