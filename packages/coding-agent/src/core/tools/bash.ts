@@ -43,21 +43,6 @@ export interface BashToolDetails {
 	truncation?: TruncationResult;
 	rawTruncation?: TruncationResult;
 	fullOutputPath?: string;
-	sidekick?:
-		| {
-				used: true;
-				rawLines: number;
-				rawBytes: number;
-				digestLines: number;
-				digestBytes: number;
-		  }
-		| {
-				used: false;
-				rawLines: number;
-				rawBytes: number;
-				fallback: "local-compact" | "raw";
-				reason: string;
-		  };
 }
 
 /**
@@ -209,6 +194,13 @@ const BASH_COMPACT_FALLBACK_BYTES = 2 * 1024;
 const BASH_COMPACT_FALLBACK_LINES = 12;
 const BASH_COMPACT_FALLBACK_SOURCE_BYTES = 16 * 1024;
 const BASH_COMPACT_FALLBACK_LINE_BYTES = 240;
+// Output below these bounds is returned raw: too small to be worth a model digest
+// (latency + tokens) or head/tail compaction, and the lead may want its exact lines.
+// Above them, output is broad enough to digest (on failure) or compact (on success).
+// Note these are the *trigger* thresholds; once triggered, compaction keeps only the
+// smaller BASH_COMPACT_FALLBACK_* head/tail.
+const BASH_BROAD_MIN_LINES = 40;
+const BASH_BROAD_MIN_BYTES = 8 * 1024;
 
 function bashOutputSummaryDisabledByEnv(): boolean {
 	return process.env.PI_BASH_OUTPUT_SUMMARY === "0";
@@ -240,14 +232,6 @@ class BashResultRenderComponent extends Container {
 
 function formatDuration(ms: number): string {
 	return `${(ms / 1000).toFixed(1)}s`;
-}
-
-function countLines(text: string): number {
-	if (text.length === 0) {
-		return 0;
-	}
-	const lines = text.split("\n");
-	return text.endsWith("\n") ? lines.length - 1 : lines.length;
 }
 
 function byteLength(text: string): number {
@@ -390,12 +374,12 @@ function clipHeadTailText(text: string, maxLines: number, maxBytes: number): str
 	return clipToBytes(clipped, maxBytes);
 }
 
-function shouldUseLocalCompactFallback(truncation: TruncationResult, content: string): boolean {
+function outputWarrantsDigest(truncation: TruncationResult, content: string): boolean {
 	return (
 		truncation.truncated ||
-		truncation.totalLines > BASH_COMPACT_FALLBACK_LINES ||
-		truncation.totalBytes > BASH_COMPACT_FALLBACK_BYTES ||
-		byteLength(content) > BASH_COMPACT_FALLBACK_BYTES
+		truncation.totalLines > BASH_BROAD_MIN_LINES ||
+		truncation.totalBytes > BASH_BROAD_MIN_BYTES ||
+		byteLength(content) > BASH_BROAD_MIN_BYTES
 	);
 }
 
@@ -549,14 +533,6 @@ async function summarizeBashOutputWithModel(
 		throw new BashSummaryUnavailableError("empty summary response");
 	}
 	return text;
-}
-
-function summarizeErrorReason(error: unknown): string {
-	if (error instanceof Error && error.message.trim().length > 0) {
-		return error.message.trim().slice(0, 300);
-	}
-	const text = String(error).trim();
-	return text.length > 0 ? text.slice(0, 300) : "summary unavailable";
 }
 
 function formatBashCall(args: { command?: string; timeout?: number } | undefined): string {
@@ -739,26 +715,10 @@ export function createBashToolDefinition(
 			};
 
 			let summaryFallbackFullOutputPath: string | undefined;
-			let summaryFailure:
-				| {
-						rawLines: number;
-						rawBytes: number;
-						reason: string;
-				  }
-				| undefined;
+			// True once a digest was attempted but came back unavailable, so the local
+			// compaction header can say so rather than implying output was skipped.
+			let summaryAttemptFailed = false;
 
-			const sidekickFailureDetails = (fallback: "local-compact" | "raw"): BashToolDetails["sidekick"] => {
-				if (!summaryFailure) {
-					return undefined;
-				}
-				return {
-					used: false,
-					rawLines: summaryFailure.rawLines,
-					rawBytes: summaryFailure.rawBytes,
-					fallback,
-					reason: summaryFailure.reason,
-				};
-			};
 			const outputSummaryEnabled = () =>
 				!outputSummaryDisabled && (outputSummaryForced || hasCustomOutputSummarizer || !!ctx?.model);
 
@@ -766,7 +726,7 @@ export function createBashToolDefinition(
 				snapshot: Awaited<ReturnType<typeof finishOutput>>,
 				emptyText = "(no output)",
 				options?: {
-					compactFallback?: boolean;
+					compact?: boolean;
 					exitCode?: number | null;
 					status?: BashSummaryInput["status"];
 				},
@@ -775,16 +735,12 @@ export function createBashToolDefinition(
 				let text = snapshot.content || emptyText;
 				let details: BashToolDetails | undefined;
 				const fullOutputPath = snapshot.fullOutputPath ?? summaryFallbackFullOutputPath;
-				if (
-					options?.compactFallback &&
-					options.status &&
-					shouldUseLocalCompactFallback(truncation, snapshot.content)
-				) {
+				if (options?.compact && options.status) {
 					const header = formatLocalFallbackHeader(
 						options.status,
 						options.exitCode ?? null,
 						truncation.totalBytes,
-						summaryFailure !== undefined,
+						summaryAttemptFailed,
 					);
 					const footer =
 						fullOutputPath === undefined
@@ -808,20 +764,12 @@ export function createBashToolDefinition(
 					if (clippedOutput) {
 						return {
 							text: [header, clippedOutput, footer].filter(Boolean).join("\n\n"),
-							details: {
-								rawTruncation: truncation,
-								fullOutputPath,
-								sidekick: sidekickFailureDetails("local-compact"),
-							} satisfies BashToolDetails,
+							details: { rawTruncation: truncation, fullOutputPath } satisfies BashToolDetails,
 						};
 					}
 				}
 				if (truncation.truncated) {
-					details = {
-						truncation,
-						fullOutputPath,
-						sidekick: sidekickFailureDetails("raw"),
-					};
+					details = { truncation, fullOutputPath };
 					const startLine = truncation.totalLines - truncation.outputLines + 1;
 					const endLine = truncation.totalLines;
 					if (truncation.lastLinePartial) {
@@ -832,11 +780,6 @@ export function createBashToolDefinition(
 					} else {
 						text += `\n\n[Showing lines ${startLine}-${endLine} of ${truncation.totalLines} (${formatSize(DEFAULT_MAX_BYTES)} limit). Full output: ${fullOutputPath}]`;
 					}
-				} else if (summaryFailure) {
-					details = {
-						fullOutputPath,
-						sidekick: sidekickFailureDetails("raw"),
-					};
 				}
 				return { text, details };
 			};
@@ -866,17 +809,19 @@ export function createBashToolDefinition(
 				return summaryFallbackFullOutputPath;
 			};
 
-			// Broad output gets a digest or local compaction; small output stays raw
-			// because exact short values are often more useful than a lossy digest.
-			const outputWarrantsDigest = (snapshot: Awaited<ReturnType<typeof finishOutput>>) =>
-				shouldUseLocalCompactFallback(snapshot.truncation, snapshot.content);
+			// Broad output gets a digest (on failure) or local compaction (on success);
+			// small output stays raw because exact short values are often more useful.
+			const isBroad = (snapshot: Awaited<ReturnType<typeof finishOutput>>) =>
+				outputWarrantsDigest(snapshot.truncation, snapshot.content);
+			const compactFor = (snapshot: Awaited<ReturnType<typeof finishOutput>>) =>
+				outputSummaryEnabled() && isBroad(snapshot);
 
 			const summarizeOutput = async (
 				snapshot: Awaited<ReturnType<typeof finishOutput>>,
 				exitCode: number | null,
 				status: BashSummaryInput["status"],
 			) => {
-				if (!outputSummaryEnabled() || !outputWarrantsDigest(snapshot)) {
+				if (!outputSummaryEnabled() || !isBroad(snapshot)) {
 					return undefined;
 				}
 				const fullOutputPath = await ensureFullOutputPersisted();
@@ -912,37 +857,17 @@ export function createBashToolDefinition(
 						ctx,
 						signal,
 					);
-				} catch (error) {
-					summaryFailure = {
-						rawLines: snapshot.truncation.totalLines,
-						rawBytes: snapshot.truncation.totalBytes,
-						reason: summarizeErrorReason(error),
-					};
+				} catch (_error) {
+					summaryAttemptFailed = true;
 					return undefined;
 				}
 				if (!summary) {
-					summaryFailure = {
-						rawLines: snapshot.truncation.totalLines,
-						rawBytes: snapshot.truncation.totalBytes,
-						reason: "summary unavailable",
-					};
+					summaryAttemptFailed = true;
 					return undefined;
 				}
-				const digest = appendRawReference(summary.trim(), { ...snapshot, fullOutputPath });
-				return {
-					text: digest,
-					details: {
-						rawTruncation: snapshot.truncation,
-						fullOutputPath,
-						sidekick: {
-							used: true,
-							rawLines: snapshot.truncation.totalLines,
-							rawBytes: snapshot.truncation.totalBytes,
-							digestLines: countLines(digest),
-							digestBytes: byteLength(digest),
-						},
-					} satisfies BashToolDetails,
-				};
+				// On failure the digest is thrown as the tool error; the framework keeps the
+				// message, not structured details, so we only return the text.
+				return appendRawReference(summary.trim(), { ...snapshot, fullOutputPath });
 			};
 
 			try {
@@ -960,10 +885,10 @@ export function createBashToolDefinition(
 					if (err instanceof Error && err.message === "aborted") {
 						const summarized = await summarizeOutput(snapshot, null, "aborted");
 						if (summarized) {
-							throw new Error(appendStatus(summarized.text, "Command aborted"));
+							throw new Error(appendStatus(summarized, "Command aborted"));
 						}
 						const { text } = await formatOutput(snapshot, "", {
-							compactFallback: outputSummaryEnabled(),
+							compact: compactFor(snapshot),
 							exitCode: null,
 							status: "aborted",
 						});
@@ -973,10 +898,10 @@ export function createBashToolDefinition(
 						const timeoutSecs = err.message.split(":")[1];
 						const summarized = await summarizeOutput(snapshot, null, "timeout");
 						if (summarized) {
-							throw new Error(appendStatus(summarized.text, `Command timed out after ${timeoutSecs} seconds`));
+							throw new Error(appendStatus(summarized, `Command timed out after ${timeoutSecs} seconds`));
 						}
 						const { text } = await formatOutput(snapshot, "", {
-							compactFallback: outputSummaryEnabled(),
+							compact: compactFor(snapshot),
 							exitCode: null,
 							status: "timeout",
 						});
@@ -989,15 +914,15 @@ export function createBashToolDefinition(
 				if (exitCode !== 0 && exitCode !== null) {
 					const summarized = await summarizeOutput(snapshot, exitCode, "error");
 					if (summarized) {
-						throw new Error(appendStatus(summarized.text, `Command exited with code ${exitCode}`));
+						throw new Error(appendStatus(summarized, `Command exited with code ${exitCode}`));
 					}
-				} else if (outputSummaryEnabled() && outputWarrantsDigest(snapshot)) {
+				} else if (compactFor(snapshot)) {
 					// Success skips the lossy model digest; compact broad output locally
 					// while preserving the full raw audit file. §RM-001-bash-sidekick.2.3
 					await ensureFullOutputPersisted();
 				}
 				const { text: outputText, details } = await formatOutput(snapshot, "(no output)", {
-					compactFallback: outputSummaryEnabled(),
+					compact: compactFor(snapshot),
 					exitCode,
 					status: exitCode !== 0 && exitCode !== null ? "error" : "ok",
 				});

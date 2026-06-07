@@ -543,7 +543,7 @@ describe("Coding Agent Tools", () => {
 		it("should use an explicitly configured sidekick summarizer without model context", async () => {
 			const operations: BashOperations = {
 				exec: async (_command, _cwd, { onData }) => {
-					for (let i = 1; i <= 20; i++) {
+					for (let i = 1; i <= 60; i++) {
 						onData(Buffer.from(`raw output line ${i} that should not be returned\n`, "utf-8"));
 					}
 					return { exitCode: 2 };
@@ -600,13 +600,12 @@ describe("Coding Agent Tools", () => {
 			expect(getTextOutput(result)).toContain("raw small output");
 			expect(getTextOutput(result)).not.toContain("should not run");
 			expect(summarizerCalls).toBe(0);
-			expect(result.details?.sidekick).toBeUndefined();
 		});
 
 		it("should fall back to compact output when sidekick summarization fails", async () => {
 			const operations: BashOperations = {
 				exec: async (_command, _cwd, { onData }) => {
-					for (let i = 1; i <= 40; i++) {
+					for (let i = 1; i <= 60; i++) {
 						onData(Buffer.from(`fallback line ${i}\n`, "utf-8"));
 					}
 					return { exitCode: 2 };
@@ -671,7 +670,6 @@ describe("Coding Agent Tools", () => {
 			expect(output).toContain("Raw bash output:");
 			expect(output.length).toBeLessThan(4000);
 			expect(output).not.toContain("(no output)");
-			expect(result.details?.sidekick).toBeUndefined();
 			expect(result.details?.fullOutputPath).toBeDefined();
 			expect(existsSync(result.details?.fullOutputPath ?? "")).toBe(true);
 		});
@@ -704,7 +702,6 @@ describe("Coding Agent Tools", () => {
 			expect(output).toContain("unicode-start");
 			expect(output).toContain("unicode-end");
 			expect(output).not.toContain("�");
-			expect(result.details?.sidekick).toBeUndefined();
 		});
 
 		it("should compact broad non-truncated success output without a digest", async () => {
@@ -740,7 +737,6 @@ describe("Coding Agent Tools", () => {
 			expect(output).not.toContain("match-080");
 			expect(output.length).toBeLessThan(4000);
 			expect(result.details?.rawTruncation?.truncated).toBe(false);
-			expect(result.details?.sidekick).toBeUndefined();
 			expect(result.details?.fullOutputPath).toBeDefined();
 		});
 
@@ -769,7 +765,6 @@ describe("Coding Agent Tools", () => {
 
 				expect(getTextOutput(result)).toContain("raw env-disabled output");
 				expect(getTextOutput(result)).not.toContain("should not be used");
-				expect(result.details?.sidekick).toBeUndefined();
 			} finally {
 				if (previous === undefined) delete process.env.PI_BASH_OUTPUT_SUMMARY;
 				else process.env.PI_BASH_OUTPUT_SUMMARY = previous;
