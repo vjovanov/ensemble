@@ -21,6 +21,11 @@ else
 fi
 [ -e "${INSTANCE_LIST[0]}" ] || die "no instances found. Run: node fetch-instances.mjs <lang> <index>"
 
+if [ "$SKIP_EVAL" = "1" ]; then
+  log "skipping Docker grading because SKIP_EVAL=1"
+  exit 0
+fi
+
 instance_id_for() {
   (
     eval "$(node "$BENCH_DIR/lib/inst-env.mjs" "$1")"
@@ -28,22 +33,27 @@ instance_id_for() {
   )
 }
 
-command -v docker >/dev/null || die "docker not found"
-python -c "import multi_swe_bench" 2>/dev/null \
-  || die "multi_swe_bench not installed. Run: pip install multi-swe-bench"
+EVAL_PREREQS_READY=0
+ensure_eval_prereqs() {
+  [ "$EVAL_PREREQS_READY" = "1" ] && return 0
+  command -v docker >/dev/null || die "docker not found"
+  python -c "import multi_swe_bench" 2>/dev/null \
+    || die "multi_swe_bench not installed. Run: pip install multi-swe-bench"
 
-# The Python docker SDK defaults to /var/run/docker.sock. Under rootless Docker
-# the daemon is on a user socket; point the SDK at whatever the CLI's active
-# context uses (else: PermissionError on the root socket).
-if [ -z "${DOCKER_HOST:-}" ]; then
-  ctx_host="$(docker context inspect 2>/dev/null | python -c 'import sys,json; print(json.load(sys.stdin)[0]["Endpoints"]["docker"]["Host"])' 2>/dev/null)"
-  [ -n "$ctx_host" ] && export DOCKER_HOST="$ctx_host" && log "DOCKER_HOST=$DOCKER_HOST (from active docker context)"
-fi
+  # The Python docker SDK defaults to /var/run/docker.sock. Under rootless Docker
+  # the daemon is on a user socket; point the SDK at whatever the CLI's active
+  # context uses (else: PermissionError on the root socket).
+  if [ -z "${DOCKER_HOST:-}" ]; then
+    ctx_host="$(docker context inspect 2>/dev/null | python -c 'import sys,json; print(json.load(sys.stdin)[0]["Endpoints"]["docker"]["Host"])' 2>/dev/null)"
+    [ -n "$ctx_host" ] && export DOCKER_HOST="$ctx_host" && log "DOCKER_HOST=$DOCKER_HOST (from active docker context)"
+  fi
+  EVAL_PREREQS_READY=1
+}
 
 # Dataset = the full instance records (need test_patch + f2p/p2p for grading).
 : > "$DATASET"
 for j in "${INSTANCE_LIST[@]}"; do
-  node -e 'process.stdout.write(JSON.stringify(require(process.argv[1]))+"\n")' "$j" >> "$DATASET"
+  node -e 'const fs=require("fs"); process.stdout.write(JSON.stringify(JSON.parse(fs.readFileSync(process.argv[1],"utf8")))+"\n")' "$j" >> "$DATASET"
 done
 log "dataset: $(wc -l < "$DATASET") instances -> $DATASET"
 
@@ -59,6 +69,14 @@ for arm in "${ARM_LIST[@]}"; do
   done
   [ -s "$patch" ] || { log "skip $arm (no patches)"; continue; }
   out="$RESULTS_DIR/$arm"; mkdir -p "$out/logs"
+  if [ "$REUSE_CLASSIC" = "1" ] && [ "$arm" = "classic" ] && [ -s "$out/final_report.json" ]; then
+    log "reuse classic (existing report: $out/final_report.json)"
+    continue
+  fi
+  if [ "$REUSE_EVAL" = "1" ] && [ -s "$out/final_report.json" ]; then
+    log "reuse $arm (existing report: $out/final_report.json)"
+    continue
+  fi
   # Per-arm workdir: the harness caches reports by instance id within workdir, so a
   # shared workdir makes later arms reuse the first arm's report. Isolate per arm.
   awork="$EVAL_DIR/workdir/$arm"; rm -rf "$awork"; mkdir -p "$awork"
@@ -78,6 +96,7 @@ for arm in "${ARM_LIST[@]}"; do
     };
     fs.writeFileSync(cfgPath, JSON.stringify(cfg,null,2));
   ' "$patch" "$DATASET" "$awork" "$EVAL_DIR/repos" "$out" "$cfg"
+  ensure_eval_prereqs
   log "evaluating arm=$arm (config: $cfg)"
   python -m multi_swe_bench.harness.run_evaluation --config "$cfg" \
     || log "harness returned nonzero for $arm (check $out/logs)"

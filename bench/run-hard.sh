@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Fetch and run 6 curated "hard" Multi-SWE-bench instances (4 worst + 2 best for graphify)
-# across the graphify-supported languages (go/rust/ts/java) — through both arms
-# (ensemble-strict graph vs classic rg/sed; sidekick-fs dropped — see config.sh).
+# across go/rust/ts/java — through the default arms in config.sh
+# (classic-bash vs classic unless ARMS is overridden).
 #
 #   ./run-hard.sh                 # fetch + run (streams to run-hard.log)
 #   nohup ./run-hard.sh &         # detached; then: tail -f run-hard.log
@@ -37,10 +37,8 @@ trap 'exit 130' INT
 trap 'exit 143' TERM HUP QUIT
 
 # (repo/dataset path, instance index) — curated to the most informative cases from the first
-# sweep: the 3 WORST for graphify (graph/classic cacheRead highest) and the 2 BEST, so an A/B
-# of the search+node_at sidekick shows movement where it matters. Dropped because graphify
-# cannot build a usable graph for them (require-graph mode fails fast → no run): clap (rust),
-# tokio (rust, segfaults). Removed as mid-pack/redundant: grpc-go, jackson-databind, logstash.
+# sweep: the 3 WORST for graphify (graph/classic cacheRead highest) and the 2 BEST.
+# They remain useful as mixed-language examples for bash-isolation runs.
 HARD=(
   "rust/tokio-rs__tracing_dataset.jsonl 0"             # WORST 3.30x (rust)
   "java/fasterxml__jackson-core_dataset.jsonl 0"       # WORST 2.37x (java)

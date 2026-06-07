@@ -11,6 +11,7 @@
 
 - Changed the `explore` sidekick prompt to cap first-pass evidence and avoid whole-file or broad-context dumps during investigation.
 - Changed the graph-mode `explore` sidekick prompt to use rg-style text search before graph traversal for C-family local bugs.
+- Changed bash tool results to use a compact bash sidekick digest when model context is available, while preserving raw output in a temp file for audit; set `PI_BASH_OUTPUT_SUMMARY=0` to keep raw bash results.
 
 ### Fixed
 

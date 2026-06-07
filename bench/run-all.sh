@@ -3,22 +3,80 @@
 #
 #   ./run-all.sh                       # all instances in bench/instances/, all ARMS
 #   INSTANCES='bench/instances/foo.json bar.json' ./run-all.sh
-#   ARMS='ensemble-strict classic' ./run-all.sh
+#   ARMS='classic-bash classic' ./run-all.sh
+#   ./run-all.sh --langs cpp,js --instances simdjson__simdjson-2178 --arms classic-bash,classic
+#   ./run-all.sh --csv /tmp/bench.csv --arms classic-bash,classic
 #   DRY_RUN=1 ./run-all.sh             # plumbing only, no paid agent calls
 #
 # Prints each instance/arm as it starts and finishes. Each instance runs its
 # arms together up to PARALLEL, joins them, then prints a side-by-side summary.
 source "$(dirname "${BASH_SOURCE[0]}")/config.sh"
 
-# Instance set: explicit $INSTANCES, else everything under bench/instances/.
-if [ -n "${INSTANCES:-}" ]; then
-  read -r -a INSTANCE_LIST <<< "$INSTANCES"
-else
-  INSTANCE_LIST=("$INST_DIR"/*.json)
-fi
-[ -e "${INSTANCE_LIST[0]}" ] || die "no instances found. Run: node fetch-instances.mjs <lang> <index>"
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --langs|--lang)
+      [ "$#" -ge 2 ] || die "$1 needs a value"
+      BENCH_LANGS="$2"; shift 2 ;;
+    --instances|--instance|--ids|--id)
+      [ "$#" -ge 2 ] || die "$1 needs a value"
+      BENCH_INSTANCES="$2"; shift 2 ;;
+    --csv)
+      [ "$#" -ge 2 ] || die "$1 needs a value"
+      BENCH_CSV="$2"; shift 2 ;;
+    --arms|--modes|--mode)
+      [ "$#" -ge 2 ] || die "$1 needs a value"
+      ARMS="${2//,/ }"; shift 2 ;;
+    --parallel)
+      [ "$#" -ge 2 ] || die "$1 needs a value"
+      PARALLEL="$2"; shift 2 ;;
+    --dry-run)
+      DRY_RUN=1; shift ;;
+    --skip-eval)
+      SKIP_EVAL=1; shift ;;
+    --reuse-eval)
+      REUSE_EVAL=1; shift ;;
+    --reuse-classic)
+      REUSE_CLASSIC=1; shift ;;
+    --help|-h)
+      cat <<'EOF'
+usage: ./run-all.sh [--langs cpp,js] [--instances id-or-path[,id-or-path...]] [--csv file.csv] [--arms classic-bash,classic]
 
-read -r -a ARM_LIST <<< "$ARMS"
+Selection:
+  --langs        Filter fetched bench/instances/*.json by instance language.
+  --instances   Comma/space-separated instance ids or JSON paths.
+  --csv          CSV with instance/id/path column, or first column containing ids/paths.
+  --arms         Comma/space-separated benchmark arms, e.g. classic-bash,classic.
+
+Existing env vars still work: BENCH_LANGS, BENCH_INSTANCES, BENCH_CSV, INSTANCES, ARMS.
+EOF
+      exit 0 ;;
+    *)
+      die "unknown argument: $1" ;;
+  esac
+done
+
+ARMS="${ARMS//,/ }"
+
+SELECTED_INSTANCES="$(node "$BENCH_DIR/lib/select-instances.mjs" \
+  --inst-dir "$INST_DIR" \
+  --instances "${INSTANCES:-}" \
+  --ids "${BENCH_INSTANCES:-${BENCH_IDS:-}}" \
+  --langs "${BENCH_LANGS:-${LANGS:-}}" \
+  --csv "${BENCH_CSV:-}")" \
+  || die "no instances found. Run: node fetch-instances.mjs <lang> <index>"
+readarray -t INSTANCE_LIST <<< "$SELECTED_INSTANCES"
+[ "${#INSTANCE_LIST[@]}" -gt 0 ] || die "no instances matched selection"
+
+read -r -a RESULT_ARM_LIST <<< "$ARMS"
+ARM_LIST=("${RESULT_ARM_LIST[@]}")
+if [ "$REUSE_CLASSIC" = "1" ]; then
+  ARM_LIST=()
+  for arm in "${RESULT_ARM_LIST[@]}"; do
+    [ "$arm" = "classic" ] && continue
+    ARM_LIST+=("$arm")
+  done
+  [ "${#ARM_LIST[@]}" -gt 0 ] || die "REUSE_CLASSIC=1 removed every runnable arm from ARMS='$ARMS'"
+fi
 
 # PARALLEL = how many arms of the same instance to run concurrently (default 1).
 # Instances run sequentially so each joined comparison is for the same benchmark.
@@ -246,7 +304,7 @@ instance_summary() {
       cmp = `   |   ${lbl(candidateArm)} vs ${lbl(baselineArm)}: ${sign(dt)}${fmt(dt)}tok [${deltaBreakdown(candidate,baseline)}] ${sign(dc)}$${dc.toFixed(3)} ${sign(turns)}${turns}t`;
     }
     console.log(`  ${status === "0" ? "OK" : "FAIL"} ${id}   ${parts.join("   |   ")}${cmp}`);
-  ' "$RAW_DIR" "$1" "$status" "${ARM_LIST[@]}"
+  ' "$RAW_DIR" "$1" "$status" "${RESULT_ARM_LIST[@]}"
 }
 
 metrics_count() {
@@ -265,7 +323,7 @@ tool_call_report() {
   node "$BENCH_DIR/lib/tool-call-report.mjs" \
     --raw-dir "$RAW_DIR" \
     --instances "${INSTANCE_LIST[*]}" \
-    --arms "${ARM_LIST[*]}" \
+    --arms "${RESULT_ARM_LIST[*]}" \
     --out "$RESULTS_DIR/tool-calls.tsv"
 }
 
@@ -275,7 +333,7 @@ runs_total=$((total * ${#ARM_LIST[@]}))
 acquire_run_lock
 snapshot_progress_renderer
 
-log "instances=$total arms=(${ARM_LIST[*]}) model=$MODEL parallel=$PARALLEL dry_run=$DRY_RUN"
+log "instances=$total run_arms=(${ARM_LIST[*]}) result_arms=(${RESULT_ARM_LIST[*]}) model=$MODEL parallel=$PARALLEL dry_run=$DRY_RUN skip_eval=$SKIP_EVAL reuse_eval=$REUSE_EVAL reuse_classic=$REUSE_CLASSIC"
 failures=0
 
 for idx in "${!INSTANCE_LIST[@]}"; do
@@ -299,12 +357,16 @@ if [ "$DRY_RUN" = "1" ]; then
   log "all dry-run plumbing complete. Patches in $PATCH_DIR/."
   log "skipping Docker grading because DRY_RUN=1"
 else
-  log "all runs complete. Grading patches in Docker…"
-  INSTANCES="${INSTANCE_LIST[*]}" "$BENCH_DIR/eval/run-eval.sh" \
-    || log "Docker grading returned nonzero; check $RESULTS_DIR/<arm>/logs"
+  if [ "$SKIP_EVAL" = "1" ]; then
+    log "skipping Docker grading because SKIP_EVAL=1"
+  else
+    log "all runs complete. Grading patches in Docker…"
+    INSTANCES="${INSTANCE_LIST[*]}" ARMS="${RESULT_ARM_LIST[*]}" REUSE_CLASSIC="$REUSE_CLASSIC" REUSE_EVAL="$REUSE_EVAL" "$BENCH_DIR/eval/run-eval.sh" \
+      || log "Docker grading returned nonzero; check $RESULTS_DIR/<arm>/logs"
+  fi
   log "collecting results…"
   echo
-  ( cd "$BENCH_DIR" && INSTANCES="${INSTANCE_LIST[*]}" node collect.mjs ) \
+  ( cd "$BENCH_DIR" && INSTANCES="${INSTANCE_LIST[*]}" ARMS="${RESULT_ARM_LIST[*]}" node collect.mjs ) \
     || log "collect failed; check $RESULTS_DIR and eval reports"
   log "results csv: $RESULTS_DIR/results.csv"
 fi

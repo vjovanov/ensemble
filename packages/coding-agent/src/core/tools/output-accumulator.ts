@@ -118,6 +118,11 @@ export class OutputAccumulator {
 		};
 	}
 
+	persistFullOutput(): string {
+		this.ensureTempFile();
+		return this.tempFilePath!;
+	}
+
 	async closeTempFile(): Promise<void> {
 		if (!this.tempFileStream) {
 			return;

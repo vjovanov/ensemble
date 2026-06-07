@@ -7,7 +7,7 @@
 // Cost is computed from the pricing passed in (the in-file usage.cost is often 0).
 // Strict-mode check: the explore tool appends "Graphify unavailable; used filesystem
 // nodes" to its result text whenever it fell back (see explore.ts:617). For the
-// ensemble-strict arm, that marker — or zero explore calls — fails the run.
+// ensemble-strict/graph-bash arms, that marker — or zero explore calls — fails the run.
 //
 // Usage: node parse-session.mjs <session.jsonl> --arm <arm> --price "in out cr cw"
 
@@ -59,9 +59,9 @@ export function parseSession(file, { arm = "", price = [0, 0, 0, 0] } = {}) {
   const cost =
     (pIn * input + pOut * output + pCacheR * cacheRead + pCacheW * cacheWrite) / 1e6;
 
-  // Strict assertion only meaningful for the ensemble-strict arm.
+  // Strict assertion only meaningful for graph-backed strict arms.
   let strictOk = null, strictNote = "";
-  if (arm === "ensemble-strict") {
+  if (arm === "ensemble-strict" || arm === "graph-bash") {
     if (exploreCalls === 0) { strictOk = false; strictNote = "no explore calls (graph never exercised)"; }
     else if (exploreFallbacks > 0) { strictOk = false; strictNote = `${exploreFallbacks}/${exploreCalls} explore calls fell back to filesystem`; }
     else { strictOk = true; strictNote = `${exploreCalls} graph-derived explore calls`; }

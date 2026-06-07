@@ -1,18 +1,20 @@
 # ensemble vs standard-pi benchmark
 
-A small, cheap cross-language benchmark that measures what the ensemble `explore`
-tool is supposed to buy: **resolving real issues for fewer tokens**. It runs the
+A small, cheap cross-language benchmark that measures what the bash sidekick or ensemble
+`explore` tool is supposed to buy: **resolving real issues for fewer tokens**. It runs the
 same agent + model on the same [Multi-SWE-bench](https://github.com/multi-swe-bench/multi-swe-bench)
-instances under three exploration strategies and grades the patches with the
+instances under different benchmark arms and grades the patches with the
 official Docker eval harness.
 
-## The three arms
+## Benchmark Arms
 
 | Arm | Flags | What it isolates |
 |-----|-------|------------------|
+| `classic-bash` | `--exploration classic` + bash sidekick output digest | bash digest only, with classic file exploration |
+| `classic` | `--exploration classic` + raw bash output | baseline: pre-ensemble pi (read/grep/find/ls) |
 | `ensemble-strict` | `--exploration sidekick` + graphify graph prebuilt, asserted graph-derived | graph-based explore |
+| `graph-bash` | same strict graph setup, named for graph + bash-guidance experiments | graph-backed explore with current bash verification guidance |
 | `sidekick-fs` | `--exploration sidekick`, graphify forced unavailable | same tool, filesystem fallback |
-| `classic` | `--exploration classic` | pre-ensemble pi (read/grep/find/ls) |
 
 > **Strict mode is genuinely enforced via `PI_REQUIRE_GRAPH=1`** (FS-001 §7.4 required-graph
 > — an env var, not a CLI flag). With it set, pi fail-fasts at startup if graphify isn't
@@ -48,9 +50,37 @@ DRY_RUN=1 ./run-all.sh
 ./run-all.sh                                    # MODEL/ARMS overridable from env
 ```
 
+Useful flags:
+
+```bash
+./run-all.sh --langs cpp,js --arms classic-bash,classic
+./run-all.sh --instances simdjson__simdjson-2178 --arms classic-bash,classic
+./run-all.sh --csv /tmp/bench-instances.csv --arms classic-bash,classic
+BENCH_LANGS='cpp js' ARMS='classic-bash classic' ./run-all.sh
+BENCH_INSTANCES='simdjson__simdjson-2178,sveltejs__svelte-15115' ./run-all.sh
+
+NO_CLASSIC=1 ./run-all.sh        # run configured arms except classic
+REUSE_CLASSIC=1 ./run-all.sh     # skip classic agent runs, but keep old classic rows
+SKIP_EVAL=1 ./run-all.sh         # skip Docker grading; collect from existing reports if present
+REUSE_EVAL=1 ./run-all.sh        # run agents, but keep existing final_report.json per arm
+```
+
+Prebuilt sweeps:
+
+```bash
+./run-hard.sh          # curated mixed-language hard cases
+./run-hard-diverse.sh  # large mixed-language repos, including jq/zstd/ponyc C coverage
+./verify-batch-2-graphify.sh  # graphify-only preflight for batch 2
+./run-batch-2.sh      # batch 2: C-only sweep across jq, zstd, and ponyc
+./verify-batch-3-graphify.sh  # graphify-only preflight for batch 3
+./run-batch-3.sh      # batch 3: known graph-win cases
+./run-hard-all.sh      # run-hard + run-hard-diverse
+```
+
 The headline is the `collect.mjs` summary: **resolved-rate and $/run & tokens/run per
-arm.** If `ensemble-strict` resolves the same issues as `classic` at lower tokens/cost,
-that's the graph-explore win.
+arm.** If `classic-bash` resolves the same issues as `classic` at lower tokens/cost,
+that's the isolated bash-sidekick win. If `ensemble-strict` resolves the same issues as
+`classic` at lower tokens/cost, that's the graph-explore win.
 
 `run-all.sh` invokes `eval/run-eval.sh` after real runs (skipped for `DRY_RUN=1`) and then
 runs `collect.mjs`, so `results/results.csv` is produced immediately. `eval/run-eval.sh` can
@@ -87,7 +117,7 @@ prompts/
   lead-explore-tool.txt    the explore tool as the LEAD agent sees it (desc + guidelines + params)
   sidekick-graph.txt       explore sub-agent prompt, graph-backed mode
   sidekick-filesystem.txt  explore sub-agent prompt, filesystem-fallback mode
-  NOTE.txt                 (classic arm only — no sidekick; base prompt pinned by commit)
+  NOTE.txt                 (classic/classic-bash arms — no explore sidekick; base prompt pinned by commit)
 session/*.jsonl        all LEAD-agent turns + tool calls
 explore-debug.jsonl    all SIDEKICK tool calls (PI_EXPLORE_DEBUG=full; sidekick arms only)
 agent.out / agent.err  logs

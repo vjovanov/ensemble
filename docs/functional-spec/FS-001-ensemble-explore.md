@@ -184,6 +184,16 @@ methods, comments) may be dropped, but the content inside a *retained* function 
 partially removed or rewritten; kept bodies appear verbatim. Fine-grained edits inside a body
 are prohibited in both modes.
 
+### 5.7 Sidekick cost accounting
+
+Token-savings measurements for `explore` are scoped to the caller-visible model context: the
+caller agent's input, output, cache reads/writes, and the final `explore` tool result. The
+explore agent's internal model usage is separate telemetry and MUST NOT be charged against the
+caller-context savings metric, because the intended deployment runs the explore agent on a
+cheaper local 24B-class network. Benchmark reports MAY show sidekick usage separately for
+operator visibility, but graph-vs-classic savings are judged by the caller-visible context
+needed to reach the same task outcome.
+
 ## 6. Registry lifecycle
 
 ### 6.1 Tool-owned, per session and branch

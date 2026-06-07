@@ -1,14 +1,15 @@
 #!/usr/bin/env bash
-# Combined benchmark: run-hard (6 curated worst/best for graphify) + run-hard-diverse
-# (6 large, diverse repos) = 12 instances across 7 languages (rust/java/ts/go/js/c/cpp)
-# and many domains. Both arms (ensemble-strict graph vs classic rg/sed). The largest
+# Combined benchmark: run-hard (5 curated worst/best for graphify) + run-hard-diverse
+# (8 large, diverse repos) = 13 instances across 7 languages (rust/java/ts/go/js/c/cpp)
+# and many domains. Uses the default arms in config.sh (classic-bash vs classic unless
+# ARMS is overridden). The largest
 # single benchmark set — use this when you want statistical power, not a quick A/B.
 #
 #   ./run-hard-all.sh             # fetch + run (streams to run-hard-all.log)
 #   nohup ./run-hard-all.sh &     # detached
 #
 # Honest expectations:
-#   - 12 instances x 2 arms = 24 agent runs on oca/gpt-5.5; budget ~$20-50.
+#   - 13 instances x 2 arms = 26 agent runs on oca/gpt-5.5; budget ~$20-60.
 #   - PARALLEL=2 runs both arms for one instance at a time, then prints the comparison.
 #   - Large clones (FORCE=1 bypasses the 400MB guard); fetch streams huge dataset files.
 #   - graphify supports every language here (tree-sitter); coverage verified for c/cpp.
@@ -49,7 +50,9 @@ HARD=(
   # --- diverse large codebases (run-hard-diverse.sh) ---
   "js/sveltejs__svelte_dataset.jsonl 0"           # js    compiler/framework
   "cpp/simdjson__simdjson_dataset.jsonl 0"        # cpp   SIMD JSON parser
-  "c/facebook__zstd_dataset.jsonl 0"              # c     compression
+  "c/facebook__zstd_dataset.jsonl 0"              # c     compression / CLI
+  "c/jqlang__jq_dataset.jsonl 0"                  # c     JSON processor / regex capture
+  "c/ponylang__ponyc_dataset.jsonl 0"             # c     compiler frontend
   "go/cli__cli_dataset.jsonl 0"                   # go    GitHub CLI app
   "java/apache__dubbo_dataset.jsonl 0"            # java  RPC framework
   "js/axios__axios_dataset.jsonl 0"               # js    HTTP client

@@ -60,6 +60,21 @@ large yet the lead needs only the verdict, and it is cleanly substitutive — th
 not re-run `cargo`/`mvn` once a trusted sidekick has reported the result, avoiding the
 "lead keeps grepping" failure mode that erodes §2.1.
 
+The delegate request MUST include the caller's verification question, not just the raw shell
+command. For test and check commands the default question is: did the tests/check pass; if not,
+which command, test, file, or assertion failed, and what is the smallest diagnostic needed to act?
+This lets the execution sidekick collapse large logs to a near-zero caller result when the
+verdict is success, while still preserving the actionable failure root cause.
+
+When the model digest is unavailable but bash summaries are enabled, the bash tool should
+still keep broad output compact and useful by returning a very small bounded head/tail
+preview plus the raw output path, including outputs below the normal raw truncation limit.
+This prevents long minified lines or sourcemaps from falling back to an empty `(no output)`
+truncation, and prevents broad `rg`/`sed` exploration from replaying hundreds of raw lines
+into every subsequent lead turn. The fallback is not a replacement for the model digest:
+the tool must record when summarization was attempted but unavailable so benchmark results
+can distinguish a true digest from local compaction.
+
 ## 3. Sequencing
 
 1. `search` + `node_at` locate-then-structure and whole-file fetch (landed — §2.1, §2.2);
@@ -72,7 +87,8 @@ not re-run `cargo`/`mvn` once a trusted sidekick has reported the result, avoidi
 4. Capture sidekick token usage for honest accounting. Today the sidekick runs as a
    detached agent and its usage is discarded; surface it (e.g. a per-run sidecar) so cost
    reflects all model calls.
-5. Add the compile/test delegate tool — §2.3.
+5. Add the compile/test bash digest path (landed: bash returns verdict/root-cause digests
+   when model context is available, while preserving raw logs for audit) — §2.3.
 
 ## 4. Non-goals
 

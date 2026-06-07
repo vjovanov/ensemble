@@ -4,7 +4,13 @@ import { tmpdir } from "os";
 import { join } from "path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { executeBashWithOperations } from "../src/core/bash-executor.ts";
-import { type BashOperations, createBashTool, createLocalBashOperations } from "../src/core/tools/bash.ts";
+import type { ExtensionContext } from "../src/core/extensions/types.ts";
+import {
+	type BashOperations,
+	createBashTool,
+	createBashToolDefinition,
+	createLocalBashOperations,
+} from "../src/core/tools/bash.ts";
 import { computeEditsDiff } from "../src/core/tools/edit-diff.ts";
 import {
 	createEditTool,
@@ -24,6 +30,11 @@ const bashTool = createBashTool(process.cwd());
 const grepTool = createGrepTool(process.cwd());
 const findTool = createFindTool(process.cwd());
 const lsTool = createLsTool(process.cwd());
+
+const bashSummaryContext = {
+	model: { provider: "test", id: "summary-model", api: "test", maxTokens: 1024, contextWindow: 8192 },
+	modelRegistry: {},
+} as ExtensionContext;
 
 // Helper to extract text from content blocks
 function getTextOutput(result: any): string {
@@ -459,11 +470,352 @@ describe("Coding Agent Tools", () => {
 	});
 
 	describe("bash tool", () => {
+		it("describes test/check output as a compact verification digest", () => {
+			const definition = createBashToolDefinition(testDir);
+			const commandSchema = definition.parameters.properties.command as { description?: string };
+
+			expect(definition.description).toContain("pass/fail plus the smallest actionable failure diagnostic");
+			expect(definition.promptGuidelines).toContain(
+				"When running tests or checks with bash, treat the result as a verification question: did it pass; if not, identify the failing command/test/file/assertion and the smallest actionable diagnostic. §RM-001-bash-sidekick.2.3",
+			);
+			expect(definition.promptGuidelines).toContain(
+				"Do not run unbounded streams or redundant validation in bash: bound generated input such as /dev/zero with head -c or an equivalent size limit, redirect noisy success logs, and stop after a successful build plus targeted reproduction unless a concrete failure remains. §RM-001-bash-sidekick.2.3",
+			);
+			expect(commandSchema.description ?? "").toContain("did it pass");
+			expect(commandSchema.description ?? "").toContain("smallest diagnostic needed to act");
+		});
+
 		it("should execute simple commands", async () => {
 			const result = await bashTool.execute("test-call-8", { command: "echo 'test output'" });
 
 			expect(getTextOutput(result)).toContain("test output");
 			expect(result.details).toBeUndefined();
+		});
+
+		it("should digest failing output (seeing head and tail) while preserving raw output", async () => {
+			const operations: BashOperations = {
+				exec: async (_command, _cwd, { onData }) => {
+					for (let i = 1; i <= 100; i++) {
+						onData(Buffer.from(`raw line ${i}\n`, "utf-8"));
+					}
+					return { exitCode: 3 };
+				},
+			};
+			const definition = createBashToolDefinition(testDir, {
+				operations,
+				outputSummarizer: async (input) => {
+					expect(input.command).toBe("chatty-check");
+					expect(input.status).toBe("error");
+					expect(input.exitCode).toBe(3);
+					expect(input.rawLines).toBe(100);
+					// The sidekick sees the whole output, head and tail — not just the tail.
+					expect(input.output).toContain("raw line 1\n");
+					expect(input.output).toContain("raw line 100");
+					expect(input.fullOutputPath).toBeDefined();
+					return "FAIL: chatty-check exited 3.";
+				},
+			});
+
+			let error: unknown;
+			try {
+				await definition.execute(
+					"test-call-bash-summary",
+					{ command: "chatty-check" },
+					undefined,
+					undefined,
+					bashSummaryContext,
+				);
+			} catch (err) {
+				error = err;
+			}
+
+			expect(error).toBeInstanceOf(Error);
+			const message = (error as Error).message;
+			expect(message).toContain("FAIL: chatty-check exited 3.");
+			expect(message).toContain("Command exited with code 3");
+			expect(message).not.toContain("raw line 100");
+			const fullOutputPath = message.match(/Full output: ([^\]\n]+)/)?.[1];
+			expect(fullOutputPath).toBeDefined();
+			expect(existsSync(fullOutputPath!)).toBe(true);
+			expect(readFileSync(fullOutputPath!, "utf-8")).toContain("raw line 100");
+		});
+
+		it("should use an explicitly configured sidekick summarizer without model context", async () => {
+			const operations: BashOperations = {
+				exec: async (_command, _cwd, { onData }) => {
+					for (let i = 1; i <= 20; i++) {
+						onData(Buffer.from(`raw output line ${i} that should not be returned\n`, "utf-8"));
+					}
+					return { exitCode: 2 };
+				},
+			};
+			const definition = createBashToolDefinition(testDir, {
+				operations,
+				outputSummarizer: async () => "FAIL: explicit summarizer ran.",
+			});
+
+			let error: unknown;
+			try {
+				await definition.execute(
+					"test-call-explicit-bash-summary",
+					{ command: "explicit-summary" },
+					undefined,
+					undefined,
+					{} as ExtensionContext,
+				);
+			} catch (err) {
+				error = err;
+			}
+
+			expect(error).toBeInstanceOf(Error);
+			const message = (error as Error).message;
+			expect(message).toContain("FAIL: explicit summarizer ran.");
+			expect(message).not.toContain("that should not be returned");
+		});
+
+		it("should return small output raw without invoking the sidekick", async () => {
+			let summarizerCalls = 0;
+			const operations: BashOperations = {
+				exec: async (_command, _cwd, { onData }) => {
+					onData(Buffer.from("raw small output\n", "utf-8"));
+					return { exitCode: 0 };
+				},
+			};
+			const definition = createBashToolDefinition(testDir, {
+				operations,
+				outputSummarizer: async () => {
+					summarizerCalls++;
+					return "should not run";
+				},
+			});
+
+			const result = await definition.execute(
+				"test-call-bash-small-raw",
+				{ command: "small-check" },
+				undefined,
+				undefined,
+				bashSummaryContext,
+			);
+
+			expect(getTextOutput(result)).toContain("raw small output");
+			expect(getTextOutput(result)).not.toContain("should not run");
+			expect(summarizerCalls).toBe(0);
+			expect(result.details?.sidekick).toBeUndefined();
+		});
+
+		it("should fall back to compact output when sidekick summarization fails", async () => {
+			const operations: BashOperations = {
+				exec: async (_command, _cwd, { onData }) => {
+					for (let i = 1; i <= 40; i++) {
+						onData(Buffer.from(`fallback line ${i}\n`, "utf-8"));
+					}
+					return { exitCode: 2 };
+				},
+			};
+			const definition = createBashToolDefinition(testDir, {
+				operations,
+				outputSummarizer: async () => {
+					throw new Error("summary unavailable");
+				},
+			});
+
+			let error: unknown;
+			try {
+				await definition.execute(
+					"test-call-bash-summary-fallback",
+					{ command: "fallback-check" },
+					undefined,
+					undefined,
+					bashSummaryContext,
+				);
+			} catch (err) {
+				error = err;
+			}
+
+			expect(error).toBeInstanceOf(Error);
+			const message = (error as Error).message;
+			expect(message).toContain("Bash output summary unavailable");
+			expect(message).toContain("fallback line 1");
+			expect(message).toContain("Command exited with code 2");
+		});
+
+		it("should compact long-line success output without a digest", async () => {
+			const operations: BashOperations = {
+				exec: async (_command, _cwd, { onData }) => {
+					onData(Buffer.from("lib/defaults/index.js:40: adapter: platform.isNode ? 'http' : 'xhr'\n"));
+					onData(Buffer.from("x".repeat(120_000)));
+					onData(Buffer.from("\n"));
+					return { exitCode: 0 };
+				},
+			};
+			const definition = createBashToolDefinition(testDir, {
+				operations,
+				outputSummarizer: async () => {
+					throw new Error("should not run on success");
+				},
+			});
+
+			const result = await definition.execute(
+				"test-call-bash-summary-long-line-fallback",
+				{ command: "long-line-output" },
+				undefined,
+				undefined,
+				bashSummaryContext,
+			);
+			const output = getTextOutput(result);
+
+			expect(output).toContain("Compact head/tail output shown");
+			expect(output).not.toContain("summary unavailable");
+			expect(output).toContain("lib/defaults/index.js:40: adapter:");
+			expect(output).toContain("omitted");
+			expect(output).toContain("Raw bash output:");
+			expect(output.length).toBeLessThan(4000);
+			expect(output).not.toContain("(no output)");
+			expect(result.details?.sidekick).toBeUndefined();
+			expect(result.details?.fullOutputPath).toBeDefined();
+			expect(existsSync(result.details?.fullOutputPath ?? "")).toBe(true);
+		});
+
+		it("should not split UTF-8 characters in compact summary fallback", async () => {
+			const operations: BashOperations = {
+				exec: async (_command, _cwd, { onData }) => {
+					onData(Buffer.from("unicode-start\n", "utf-8"));
+					onData(Buffer.from("€".repeat(50_000), "utf-8"));
+					onData(Buffer.from("\nunicode-end\n", "utf-8"));
+					return { exitCode: 0 };
+				},
+			};
+			const definition = createBashToolDefinition(testDir, {
+				operations,
+				outputSummarizer: async () => {
+					throw new Error("summary unavailable");
+				},
+			});
+
+			const result = await definition.execute(
+				"test-call-bash-summary-utf8-fallback",
+				{ command: "utf8-output" },
+				undefined,
+				undefined,
+				bashSummaryContext,
+			);
+			const output = getTextOutput(result);
+
+			expect(output).toContain("unicode-start");
+			expect(output).toContain("unicode-end");
+			expect(output).not.toContain("�");
+			expect(result.details?.sidekick).toBeUndefined();
+		});
+
+		it("should compact broad non-truncated success output without a digest", async () => {
+			const operations: BashOperations = {
+				exec: async (_command, _cwd, { onData }) => {
+					for (let i = 1; i <= 160; i++) {
+						onData(Buffer.from(`match-${String(i).padStart(3, "0")}: ${"x".repeat(40)}\n`, "utf-8"));
+					}
+					return { exitCode: 0 };
+				},
+			};
+			const definition = createBashToolDefinition(testDir, {
+				operations,
+				outputSummarizer: async () => {
+					throw new Error("should not run on success");
+				},
+			});
+
+			const result = await definition.execute(
+				"test-call-bash-summary-broad-fallback",
+				{ command: "broad-rg" },
+				undefined,
+				undefined,
+				bashSummaryContext,
+			);
+			const output = getTextOutput(result);
+
+			expect(output).toContain("Compact head/tail output shown");
+			expect(output).not.toContain("summary unavailable");
+			expect(output).toContain("match-001");
+			expect(output).toContain("match-160");
+			expect(output).toContain("omitted");
+			expect(output).not.toContain("match-080");
+			expect(output.length).toBeLessThan(4000);
+			expect(result.details?.rawTruncation?.truncated).toBe(false);
+			expect(result.details?.sidekick).toBeUndefined();
+			expect(result.details?.fullOutputPath).toBeDefined();
+		});
+
+		it("should disable sidekick summarization when PI_BASH_OUTPUT_SUMMARY is 0", async () => {
+			const previous = process.env.PI_BASH_OUTPUT_SUMMARY;
+			process.env.PI_BASH_OUTPUT_SUMMARY = "0";
+			try {
+				const operations: BashOperations = {
+					exec: async (_command, _cwd, { onData }) => {
+						onData(Buffer.from("raw env-disabled output\n", "utf-8"));
+						return { exitCode: 0 };
+					},
+				};
+				const definition = createBashToolDefinition(testDir, {
+					operations,
+					outputSummarizer: async () => "PASS: should not be used.",
+				});
+
+				const result = await definition.execute(
+					"test-call-bash-summary-env-disabled",
+					{ command: "env-disabled-check" },
+					undefined,
+					undefined,
+					bashSummaryContext,
+				);
+
+				expect(getTextOutput(result)).toContain("raw env-disabled output");
+				expect(getTextOutput(result)).not.toContain("should not be used");
+				expect(result.details?.sidekick).toBeUndefined();
+			} finally {
+				if (previous === undefined) delete process.env.PI_BASH_OUTPUT_SUMMARY;
+				else process.env.PI_BASH_OUTPUT_SUMMARY = previous;
+			}
+		});
+
+		it("should summarize failing bash output instead of throwing raw output", async () => {
+			const operations: BashOperations = {
+				exec: async (_command, _cwd, { onData }) => {
+					for (let i = 1; i <= 50; i++) {
+						onData(Buffer.from(`verbose failure line ${i}\n`, "utf-8"));
+					}
+					return { exitCode: 2 };
+				},
+			};
+			const definition = createBashToolDefinition(testDir, {
+				operations,
+				outputSummarizer: async (input) => {
+					expect(input.status).toBe("error");
+					expect(input.exitCode).toBe(2);
+					return "FAIL: assertion failed in parser.test.ts:42.";
+				},
+			});
+
+			let error: unknown;
+			try {
+				await definition.execute(
+					"test-call-bash-summary-error",
+					{ command: "failing-check" },
+					undefined,
+					undefined,
+					bashSummaryContext,
+				);
+			} catch (err) {
+				error = err;
+			}
+
+			expect(error).toBeInstanceOf(Error);
+			const message = (error as Error).message;
+			expect(message).toContain("FAIL: assertion failed in parser.test.ts:42.");
+			expect(message).toContain("Command exited with code 2");
+			expect(message).not.toContain("verbose failure line 50");
+			const fullOutputPath = message.match(/Full output: ([^\]\n]+)/)?.[1];
+			expect(fullOutputPath).toBeDefined();
+			expect(existsSync(fullOutputPath!)).toBe(true);
+			expect(readFileSync(fullOutputPath!, "utf-8")).toContain("verbose failure line 50");
 		});
 
 		it("should handle command errors", async () => {

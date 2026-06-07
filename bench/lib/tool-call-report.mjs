@@ -8,7 +8,7 @@ function arg(name, fallback = "") {
 }
 
 function splitList(value) {
-  return value.split(/\s+/).filter(Boolean);
+  return value.split(/[,\s]+/).filter(Boolean);
 }
 
 function instanceId(path) {

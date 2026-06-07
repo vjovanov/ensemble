@@ -33,11 +33,14 @@ if [ -z "${PRICE:-}" ]; then
 fi
 
 # --- Arms -------------------------------------------------------------------
+# classic-bash    : --exploration classic + bash sidekick output digest
+# classic         : --exploration classic + raw bash output (baseline)
 # ensemble-strict : --exploration sidekick + graph prebuilt + PI_REQUIRE_GRAPH=1 (enforced)
-# classic         : --exploration classic (pre-ensemble pi: read/grep/find/ls)
+# graph-bash      : same strict graph setup, retained for old graph+bash experiments
 # (sidekick-fs — filesystem results presented as explore/graph results — dropped: it muddies
 #  the graph-vs-rg comparison. run-instance.sh still supports it if added back to ARMS.)
-: "${ARMS:=ensemble-strict classic}"
+: "${ARMS:=classic-bash classic}"
+ARMS="${ARMS//,/ }"
 
 # --- Corpus -----------------------------------------------------------------
 # Full Multi-SWE-bench stores small per-repo jsonl files grouped by language dir
@@ -60,6 +63,10 @@ mkdir -p "$WORK_DIR" "$RAW_DIR" "$PATCH_DIR" "$INST_DIR" "$RESULTS_DIR"
 : "${MAX_REPO_MB:=400}"             # refuse to clone repos bigger than this (FORCE=1 overrides)
 : "${GRAPHIFY:=graphify}"           # graphify binary (must be on PATH for strict arm)
 : "${DRY_RUN:=0}"                   # 1 = skip the paid agent call; exercise plumbing only
+: "${NO_CLASSIC:=0}"                # 1 = remove classic from ARMS
+: "${REUSE_CLASSIC:=0}"             # 1 = skip classic agent runs but keep classic in reports
+: "${SKIP_EVAL:=0}"                 # 1 = skip official Docker grading after agent runs
+: "${REUSE_EVAL:=0}"                # 1 = keep existing final_report.json files instead of regrading
 : "${TSX:=$REPO_ROOT/node_modules/.bin/tsx}"
 
 # The headless pi/ensemble invocation. Mirrors pi-test.sh.
@@ -67,3 +74,15 @@ pi_cli() { "$TSX" --tsconfig "$REPO_ROOT/tsconfig.json" "$REPO_ROOT/packages/cod
 
 log() { printf '\033[36m[bench]\033[0m %s\n' "$*" >&2; }
 die() { printf '\033[31m[bench:err]\033[0m %s\n' "$*" >&2; exit 1; }
+
+if [ "$NO_CLASSIC" = "1" ]; then
+  read -r -a _ARM_FILTER_LIST <<< "$ARMS"
+  _FILTERED_ARMS=()
+  for _arm in "${_ARM_FILTER_LIST[@]}"; do
+    [ "$_arm" = "classic" ] && continue
+    _FILTERED_ARMS+=("$_arm")
+  done
+  [ "${#_FILTERED_ARMS[@]}" -gt 0 ] || die "NO_CLASSIC=1 removed every arm from ARMS='$ARMS'"
+  ARMS="${_FILTERED_ARMS[*]}"
+  unset _arm _ARM_FILTER_LIST _FILTERED_ARMS
+fi

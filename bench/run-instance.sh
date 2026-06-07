@@ -4,7 +4,7 @@
 #
 #   ./run-instance.sh <instance.json> <arm>
 #
-# Arms: ensemble-strict | sidekick-fs | classic   (see config.sh)
+# Arms: classic-bash | classic | ensemble-strict | graph-bash | sidekick-fs (see config.sh)
 source "$(dirname "${BASH_SOURCE[0]}")/config.sh"
 
 INSTANCE_JSON="${1:?need instance json}"
@@ -129,7 +129,7 @@ rm -f "$OUT/explore-debug.jsonl"
 GRAPHIFY_WATCH_ENABLED=0
 case "$ARM" in
   ensemble-strict)
-    command -v "$GRAPHIFY" >/dev/null || die "graphify not on PATH (required for ensemble-strict)"
+    command -v "$GRAPHIFY" >/dev/null || die "graphify not on PATH (required for $ARM)"
     log "building graphify graph…"
     GRAPH_ARTIFACT_DIR="$OUT/graphify"
     rm -rf "$GRAPH_ARTIFACT_DIR" "$ARM_SRC/graphify-out"
@@ -141,17 +141,34 @@ case "$ARM" in
     # PI_REQUIRE_GRAPH=1 makes graphify a hard precondition (FS-001 §7.4): pi
     # fail-fasts at startup and explore throws rather than ever falling back.
     # PI_GRAPHIFY_GRAPH_FILE keeps backend artifacts out of the source tree (§FS-001-ensemble-explore.2.1).
-    ENVV=("GRAPHIFY_COMMAND=$GRAPHIFY" "PI_REQUIRE_GRAPH=1" "PI_GRAPHIFY_GRAPH_FILE=$GRAPH_FILE" "${DEBUG_ENV[@]}")
+    ENVV=("GRAPHIFY_COMMAND=$GRAPHIFY" "PI_REQUIRE_GRAPH=1" "PI_GRAPHIFY_GRAPH_FILE=$GRAPH_FILE" "PI_BASH_OUTPUT_SUMMARY=0" "${DEBUG_ENV[@]}")
+    ;;
+  graph-bash)
+    command -v "$GRAPHIFY" >/dev/null || die "graphify not on PATH (required for $ARM)"
+    log "building graphify graph…"
+    GRAPH_ARTIFACT_DIR="$OUT/graphify"
+    rm -rf "$GRAPH_ARTIFACT_DIR" "$ARM_SRC/graphify-out"
+    ( cd "$ARM_SRC" && GRAPHIFY_OUT="$GRAPH_ARTIFACT_DIR" "$GRAPHIFY" update "$ARM_SRC" >/dev/null 2>"$OUT/graphify.log" ) \
+      || log "graphify update returned nonzero (continuing; strict assert will catch fallback)"
+    GRAPH_FILE="$GRAPH_ARTIFACT_DIR/graph.json"
+    [ -f "$GRAPH_FILE" ] || log "WARN: no graph.json produced for $LANG"
+    GRAPHIFY_WATCH_ENABLED=1
+    ENVV=("GRAPHIFY_COMMAND=$GRAPHIFY" "PI_REQUIRE_GRAPH=1" "PI_GRAPHIFY_GRAPH_FILE=$GRAPH_FILE" "PI_BASH_OUTPUT_SUMMARY=1" "${DEBUG_ENV[@]}")
     ;;
   sidekick-fs)
     # Force graphify unavailable so the sidekick uses the filesystem fallback.
     rm -rf "$ARM_SRC/graphify-out"
-    ENVV=("GRAPHIFY_COMMAND=$BENCH_DIR/no-graphify" "${DEBUG_ENV[@]}")  # nonexistent -> commandAvailable=false
+    ENVV=("GRAPHIFY_COMMAND=$BENCH_DIR/no-graphify" "PI_BASH_OUTPUT_SUMMARY=0" "${DEBUG_ENV[@]}")  # nonexistent -> commandAvailable=false
+    ;;
+  classic-bash)
+    EXPLORATION="classic"
+    rm -rf "$ARM_SRC/graphify-out"
+    ENVV=("GRAPHIFY_COMMAND=$BENCH_DIR/no-graphify" "PI_BASH_OUTPUT_SUMMARY=1")
     ;;
   classic)
     EXPLORATION="classic"
     rm -rf "$ARM_SRC/graphify-out"
-    ENVV=("GRAPHIFY_COMMAND=$BENCH_DIR/no-graphify")
+    ENVV=("GRAPHIFY_COMMAND=$BENCH_DIR/no-graphify" "PI_BASH_OUTPUT_SUMMARY=0")
     ;;
   *) die "unknown arm: $ARM" ;;
 esac
@@ -166,22 +183,39 @@ rm -rf "$SESSION_DIR"; mkdir -p "$SESSION_DIR"
 # logs, all pinned to the product commit it ran against.
 COMMIT="$(git -C "$REPO_ROOT" rev-parse HEAD 2>/dev/null || echo unknown)"
 DIRTY=false; [ -n "$(git -C "$REPO_ROOT" status --porcelain 2>/dev/null)" ] && DIRTY=true
-DBG=off; [ "$ARM" != classic ] && DBG=full   # sidekick arms run with PI_EXPLORE_DEBUG=full
+DBG=off
+case "$ARM" in
+  ensemble-strict|graph-bash|sidekick-fs) DBG=full ;;
+esac
+REQUIRE_GRAPH=0
+case "$ARM" in
+  ensemble-strict|graph-bash) REQUIRE_GRAPH=1 ;;
+esac
+if [ "$ARM" = "classic-bash" ] || [ "$ARM" = "graph-bash" ]; then
+  BASH_OUTPUT_SUMMARY=1
+else
+  BASH_OUTPUT_SUMMARY=0
+fi
 node -e '
   const fs=require("fs");
-  const [out,commit,dirty,model,provider,arm,inst,lang,expl,rg,dbg]=process.argv.slice(1);
+  const [out,commit,dirty,model,provider,arm,inst,lang,expl,rg,dbg,bashSummary]=process.argv.slice(1);
   fs.writeFileSync(out+"/manifest.json", JSON.stringify({
     instance:inst, arm, language:lang,
     commit, dirty:dirty==="true",
     model, provider, exploration:expl, require_graph:rg==="1",
+    bash_output_summary: bashSummary==="1",
     explore_debug: dbg,
-    tool_calls: {lead:"session/*.jsonl", sidekick: arm==="classic" ? null : "explore-debug.jsonl"},
-    prompts_dir: arm==="classic" ? null : "prompts/",
+    tool_calls: {lead:"session/*.jsonl", sidekick: dbg==="full" ? "explore-debug.jsonl" : null},
+    prompts_dir: "prompts/",
   },null,2)+"\n");
-' "$OUT" "$COMMIT" "$DIRTY" "$MODEL" "${PROVIDER:-}" "$ARM" "$ID" "$LANG" "$EXPLORATION" "$([ "$ARM" = ensemble-strict ] && echo 1 || echo 0)" "$DBG"
-if [ "$ARM" = "classic" ]; then
+' "$OUT" "$COMMIT" "$DIRTY" "$MODEL" "${PROVIDER:-}" "$ARM" "$ID" "$LANG" "$EXPLORATION" "$REQUIRE_GRAPH" "$DBG" "$BASH_OUTPUT_SUMMARY"
+if [ "$ARM" = "classic" ] || [ "$ARM" = "classic-bash" ]; then
   mkdir -p "$OUT/prompts"
-  printf 'classic arm: no explore sidekick. Uses the base pi system prompt (pinned by\ncommit %s) plus read/grep/find/ls tools. No explore tool, no sidekick prompt.\n' "$COMMIT" > "$OUT/prompts/NOTE.txt"
+  if [ "$ARM" = "classic-bash" ]; then
+    printf 'classic-bash arm: classic exploration with the bash sidekick enabled. Uses the base pi system prompt (pinned by\ncommit %s) plus read/grep/find/ls tools. No explore sidekick prompt.\n' "$COMMIT" > "$OUT/prompts/NOTE.txt"
+  else
+    printf 'classic arm: classic exploration with bash sidekick disabled. Uses the base pi system prompt (pinned by\ncommit %s) plus read/grep/find/ls tools. No explore sidekick prompt.\n' "$COMMIT" > "$OUT/prompts/NOTE.txt"
+  fi
 else
   "$TSX" --tsconfig "$REPO_ROOT/tsconfig.json" "$BENCH_DIR/lib/dump-prompts.mjs" "$OUT/prompts" >/dev/null 2>&1 \
     || log "WARN: could not dump prompts"

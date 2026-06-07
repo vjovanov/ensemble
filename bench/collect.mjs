@@ -15,13 +15,17 @@ const RESULTS = process.env.RESULTS_DIR || join(HERE, "results");
 
 const readJSON = (p) => JSON.parse(readFileSync(p, "utf8"));
 const selectedInstances = process.env.INSTANCES
-  ? new Set(process.env.INSTANCES.trim().split(/\s+/).filter(Boolean).map((p) => instanceId(readJSON(p))))
+  ? new Set(process.env.INSTANCES.trim().split(/[,\s]+/).filter(Boolean).map((p) => instanceId(readJSON(p))))
+  : undefined;
+const selectedArms = process.env.ARMS
+  ? new Set(process.env.ARMS.trim().split(/[,\s]+/).filter(Boolean))
   : undefined;
 
 // resolved set per arm from the harness final_report.json
 function resolvedByArm() {
   const map = {};
   for (const arm of readdirSync(RESULTS, { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => d.name)) {
+    if (selectedArms && !selectedArms.has(arm)) continue;
     const fr = join(RESULTS, arm, "final_report.json");
     if (!existsSync(fr)) continue;
     const r = readJSON(fr);
@@ -46,6 +50,7 @@ function main() {
     const sep = dir.lastIndexOf("__");
     const instance = dir.slice(0, sep), arm = dir.slice(sep + 2);
     if (selectedInstances && !selectedInstances.has(instance)) continue;
+    if (selectedArms && !selectedArms.has(arm)) continue;
     const mp = join(RAW, dir, "metrics.json");
     if (!existsSync(mp)) continue;
     const m = readJSON(mp);
@@ -66,7 +71,8 @@ function main() {
   console.log(`wrote ${outCsv} (${rows.length} rows)`);
 
   // ---- Complete results: every token count + price + success, per instance ----
-  const armOrder = (a) => (a === "ensemble-strict" ? 0 : a === "classic" ? 2 : 1);
+  const isStrictGraphArm = (a) => a === "ensemble-strict" || a === "graph-bash";
+  const armOrder = (a) => (isStrictGraphArm(a) ? 0 : a === "classic-bash" ? 1 : a === "classic" ? 2 : 3);
   const armLbl = (a) => (a === "ensemble-strict" ? "graph" : a);
   const N = (x) => (x === "" || x == null ? "-" : Number(x).toLocaleString());
   const byInst = {};
@@ -103,9 +109,9 @@ function main() {
 
   const lines = [];
   for (const arm of [...new Set(rows.map((r) => r.arm))]) {
-    if (arm === "ensemble-strict") {
+    if (isStrictGraphArm(arm)) {
       // strict-valid only: drop runs flagged strictOk===false.
-      lines.push(aggregate({ arm, name: "ensemble-strict*" }, (r) => r.strictOk !== false && r.strictOk !== "false"));
+      lines.push(aggregate({ arm, name: `${arm}*` }, (r) => r.strictOk !== false && r.strictOk !== "false"));
     } else {
       lines.push(aggregate({ arm, name: arm }, () => true));
     }
@@ -119,25 +125,27 @@ function main() {
       `${per(a.cost).toFixed(3).padStart(6)}  ${Math.round(per(a.tokens)).toString().padStart(8)}  ` +
       `${per(a.turns).toFixed(1).padStart(8)}   ${String(a.dropped).padStart(6)}`);
   }
-  console.log("* ensemble-strict counts only strict-valid runs (graph-derived explore); `dropped` = runs that fell back or never explored.");
+  console.log("* graph-backed strict arms count only strict-valid runs (graph-derived explore); `dropped` = runs that fell back or never explored.");
   const haveResolved = Object.keys(resolved).length > 0;
   if (!haveResolved) console.log("(note: no final_report.json yet — run ./eval/run-eval.sh to fill the 'resolved' column)");
 
-  // ---- Headline: graph vs classic (totals, ratios, success rate) ----
-  const strictValid = (r) => r.arm !== "ensemble-strict" || (r.strictOk !== false && r.strictOk !== "false");
+  // ---- Headline: candidate vs classic (totals, ratios, success rate) ----
+  const strictValid = (r) => !isStrictGraphArm(r.arm) || (r.strictOk !== false && r.strictOk !== "false");
   const headlineRows = (arm) => rows.filter((r) => r.arm === arm && strictValid(r));
   const sum = (arm, f) => headlineRows(arm).reduce((s, r) => s + (Number(r[f]) || 0), 0);
   const resolveRate = (arm) => {
     const rs = headlineRows(arm);
     return `${rs.reduce((s, r) => s + (r.resolved === 1 ? 1 : 0), 0)}/${rs.length}`;
   };
-  if (rows.some((r) => r.arm === "ensemble-strict") && rows.some((r) => r.arm === "classic")) {
-    const gt = sum("ensemble-strict", "totalTokens"), ct = sum("classic", "totalTokens");
-    const gc = sum("ensemble-strict", "costUsd"), cc = sum("classic", "costUsd");
-    console.log("\n════════ HEADLINE: graph vs classic ════════");
-    console.log(`  tokens:  graph ${gt.toLocaleString()}  vs  classic ${ct.toLocaleString()}   →  ${(gt / ct).toFixed(2)}×`);
-    console.log(`  cost:    graph $${gc.toFixed(2)}  vs  classic $${cc.toFixed(2)}   →  ${(gc / cc).toFixed(2)}×`);
-    console.log(`  resolved: graph ${resolveRate("ensemble-strict")}   classic ${resolveRate("classic")}`);
+  const candidates = ["classic-bash", rows.some((r) => r.arm === "graph-bash") ? "graph-bash" : "ensemble-strict"];
+  for (const candidateArm of candidates) {
+    if (!rows.some((r) => r.arm === candidateArm) || !rows.some((r) => r.arm === "classic")) continue;
+    const candidateTokens = sum(candidateArm, "totalTokens"), classicTokens = sum("classic", "totalTokens");
+    const candidateCost = sum(candidateArm, "costUsd"), classicCost = sum("classic", "costUsd");
+    console.log(`\n════════ HEADLINE: ${armLbl(candidateArm)} vs classic ════════`);
+    console.log(`  tokens:  ${armLbl(candidateArm)} ${candidateTokens.toLocaleString()}  vs  classic ${classicTokens.toLocaleString()}   →  ${(candidateTokens / classicTokens).toFixed(2)}×`);
+    console.log(`  cost:    ${armLbl(candidateArm)} $${candidateCost.toFixed(2)}  vs  classic $${classicCost.toFixed(2)}   →  ${(candidateCost / classicCost).toFixed(2)}×`);
+    console.log(`  resolved: ${armLbl(candidateArm)} ${resolveRate(candidateArm)}   classic ${resolveRate("classic")}`);
   }
 }
 
