@@ -96,3 +96,41 @@ Caveat that motivated this rule: an earlier read off a *partial* (6-instance) ev
 showed graph-bash at "5/20 with regressions" and would have rejected it — only the
 complete, correctness-filtered data showed it actually dominates. Always compare on the
 full resolved set, never a partial report.
+
+# REQ-004-experiment-hygiene: Preserve results, one commit per experiment, track and re-verify
+
+Experiments accrete knowledge only if their results survive and are traceable, and a change
+is trustworthy only if it does not quietly break a related bench. Cite as
+`§REQ-004-experiment-hygiene`.
+
+## 1. Preserve previous results
+
+Never overwrite a prior experiment's recorded results. Reruns archive the previous raw
+bundle (`raw-history/`); A/B conditions are snapshotted to their own directory (e.g.
+`cap-experiment/capoff` vs `capon`). Any `results`/validation an experiment relied on must
+be captured before a later run can overwrite it.
+
+## 2. One commit per experiment
+
+Each experiment — a benchmark run plus its decision/analysis — is its own git commit, so the
+git history *is* the experiment log. The message names the experiment and its outcome
+(worked / failed / mixed) and references the `DF`/`DA` it produced.
+
+## 3. Experiment ledger
+
+Maintain `docs/experiments.md`: one dated row per experiment — what was tried, arms and
+instances, outcome, and a link to the decision. The at-a-glance record of what we tried and
+what worked; update it when an experiment lands.
+
+## 4. Per-bench profile
+
+Maintain `docs/bench-profiles.md`: the file types and shell commands (build/test/explore)
+each instance uses, grouped by command/file profile. It defines which benches are *related*
+(§5) and makes results interpretable (e.g. C/C++ graphify-weak vs JS/Java/Rust graphify-strong).
+
+## 5. Re-verify related benches on change
+
+When a change alters sidekick behavior, re-run the benches it could affect — those sharing
+its language and command/file profile (§4) — and confirm no correctness regression before
+adopting. This extends §REQ-003-strictly-better-than-baseline from one baseline to the
+related set: a change that fixes one bench but breaks a sibling is not adopted.
