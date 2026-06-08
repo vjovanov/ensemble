@@ -1,26 +1,14 @@
 Why: project motivation. Each item is a `GRUND-` declaration; cite as `§GRUND-NNN-slug`.
 
-# GRUND-001-decision-log: Ensemble decisions are grounded in benchmark evidence
+# GRUND-001-cheap-sidekick-economics: Move read-only work off the expensive lead onto a cheap sidekick
 
-We change ensemble behavior experiment-first. Every behavioral or design choice is
-driven by a concrete benchmark observation, and is recorded so the reasoning survives —
-both **what** we chose and the **evidence** that drove it. A choice we cannot tie to a
-benchmark result is a guess, not a decision.
+The expensive lead model spends roughly half its turns on read-only exploration (grep/read)
+and on build/test runs, and cached conversation replay (`cacheRead`) dominates total cost.
+Delegating that work to a cheap (~24B) sidekick that returns tight digests — graph-based
+code discovery and bash verdicts — should cut expensive-model cost substantially **without
+changing what the lead decides or edits**. This is why the ensemble `explore` sidekick and
+bash digest exist (§RM-001-bash-sidekick, §FS-001-ensemble-explore).
 
-## 1. Every decision carries its example
-
-Each decision (a `DF` or `DA` declaration) MUST cite its evidence:
-
-- **which benchmark** — the run, the instance(s), and the arm(s) compared, and
-- **what happened** — the metric or behavior observed that the decision responds to.
-
-A decision without a benchmark example is not grounded. Record the example, or do not
-record the decision as settled.
-
-## 2. Where decisions live
-
-- Product-behavior decisions and tradeoffs: `docs/decisions/functional` (`DF`).
-- Architecture decisions and tradeoffs: `docs/decisions/architectural` (`DA`).
-
-Every experiment — a benchmark run intended to inform a choice — must end in a decision
-(`DF`/`DA`) so the result is not lost. This is enforced as a working rule in `AGENTS.md`.
+How we validate that claim — and the bar a modification must clear — lives in the
+requirements: §REQ-001-decision-log, §REQ-002-benchmark-comparison-methodology, and
+§REQ-003-strictly-better-than-baseline.

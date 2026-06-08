@@ -30,6 +30,11 @@ file = "docs/goals.md"
 title = "Where: project direction and outcomes"
 
 [[kinds]]
+prefix = "REQ"
+file = "docs/requirements.md"
+title = "Requirements: rules every change must satisfy"
+
+[[kinds]]
 prefix = "FS"
 folder = "docs/functional-spec"
 title = "What: behavior, requirements, and constraints"

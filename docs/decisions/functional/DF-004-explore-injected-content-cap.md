@@ -5,7 +5,7 @@
 Open question: how to stop a single large `explore` return from dominating `cacheRead`.
 Explore evidence is **persistent** — it stays in the caller's transcript and replays on every
 later turn — so a large return is far more expensive than the same bytes from a (now-digested)
-bash command. Grounded per §GRUND-001-decision-log. Relates to §FS-001-ensemble-explore and
+bash command. Grounded per §REQ-001-decision-log. Relates to §FS-001-ensemble-explore and
 §RM-001-bash-sidekick.2.1.
 
 ## 1. Problem

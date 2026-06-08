@@ -6,6 +6,42 @@ same agent + model on the same [Multi-SWE-bench](https://github.com/multi-swe-be
 instances under different benchmark arms and grades the patches with the
 official Docker eval harness.
 
+## Latest results — benchmarks-20 (oca/gpt-5.5)
+
+**What we're doing.** The expensive lead model spends roughly half its turns on read-only
+exploration (grep/read) and on build/test runs. We move that work onto a cheap sidekick —
+graph-based code discovery (`explore`) plus bash verdict digests — to cut lead-model cost
+**without losing correctness**. The candidate arm is `classic-graph-bash` (graph + bash
+combined); `classic` is the pre-ensemble baseline. We count **only real fixes** (patches that
+pass the Docker eval, `resolved=1`) and require the candidate to be **strictly better** than
+the baseline: resolve a superset of classic's instances and cost no more on the fixes both
+make (methodology: `docs/requirements.md` §REQ-002, §REQ-003).
+
+**Result: `classic-graph-bash` resolves 11/20 vs `classic`'s 8/20** — a superset (every
+classic fix, plus 3 unique wins: `nushell`, `ponyc-4593`, `jq-2840`), **zero regressions** —
+and is cheaper on the fixes both make: resolved-by-both **−10% cost / −20% tokens** (or
+**−32% / −47%** excluding the two C-family losers `simdjson`/`jq-2919`). Every instance
+graph-bash resolved:
+
+| instance | classic (tok / $) | graph-bash (tok / $) | |
+|---|---|---|---|
+| clap-5873 | 199,138 / $0.26 | 142,921 / $0.20 | both |
+| tracing-2897 | 834,799 / $0.95 | 209,256 / $0.38 | both |
+| go-zero-2787 | 99,388 / $0.23 | 144,713 / $0.28 | both |
+| simdjson-2178 | 451,378 / $0.72 | 982,210 / $1.15 | both |
+| svelte-15115 | 488,804 / $0.57 | 163,540 / $0.33 | both |
+| darkreader-7241 | 80,302 / $0.18 | 23,192 / $0.09 | both |
+| zstd-3438 | 1,007,996 / $0.97 | 765,198 / $0.88 | both |
+| jq-2919 | 144,221 / $0.22 | 202,397 / $0.40 | both |
+| nushell-13870 | 1,023,608 / $0.95 ✗ | 914,978 / $1.12 | unique win |
+| ponyc-4593 | 282,007 / $0.67 ✗ | 188,896 / $0.39 | unique win |
+| jq-2840 | 655,314 / $0.72 ✗ | 412,973 / $0.52 | unique win |
+
+`✗` = classic failed to resolve (its spend wasted). **Caveats:** single seed (n=1);
+per-instance cost is noisy (`simdjson`, `jq-2919` are genuine losses, both C-family — the
+known graphify-on-C/C++ weakness); the five cap-set rows' graph-bash cost is provisional
+pending a clean re-pull.
+
 ## Benchmark Arms
 
 | Arm | Flags | What it isolates |

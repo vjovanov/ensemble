@@ -214,5 +214,8 @@ Declarations are heading lines `# FS-042-user-login: …` in markdown. In a code
 - **Inline citation style.** Inline notes: ≤ 1 line preferred, hard cap 3 lines; ≤ 120 columns.
 - **Always cite the most-specific point.**
 - **Citations climb to reasons (grund.md).** Goals cite reasons, specs cite goals; architecture cites specs; code and executable tests cite specs.
-- **Every experiment produces a decision.** Any benchmark experiment run to inform a choice must end in a `DF`/`DA` decision; an experiment with no recorded decision is incomplete. §GRUND-001-decision-log
-- **Decisions carry their benchmark example.** Each `DF`/`DA` decision must cite the evidence that drove it — which benchmark (run, instance(s), arm(s)) and what happened. A decision without its example is not grounded. §GRUND-001-decision-log
+- **Every experiment produces a decision.** Any benchmark experiment run to inform a choice must end in a `DF`/`DA` decision; an experiment with no recorded decision is incomplete. §REQ-001-decision-log
+- **Decisions carry their benchmark example.** Each `DF`/`DA` decision must cite the evidence that drove it — which benchmark (run, instance(s), arm(s)) and what happened. A decision without its example is not grounded. §REQ-001-decision-log
+- **Compare only real fixes.** Cost/token savings are computed only on instances the candidate arm resolves (resolved by both classic and the candidate, or candidate-only). A cheaper run that does not resolve is not a saving. §REQ-002-benchmark-comparison-methodology
+- **Always analyze correctness regressions.** Instances classic resolves but the candidate does not must always be root-caused, never dropped, and reported alongside any savings figure. §REQ-002-benchmark-comparison-methodology
+- **Ship only if strictly better than classic.** A modification is adopted only if it resolves a superset of classic's instances (no correctness regression) and wins on cost or resolve count — Pareto-dominates classic. Cheaper-but-resolves-fewer is a regression; send it back, do not ship. §REQ-003-strictly-better-than-baseline

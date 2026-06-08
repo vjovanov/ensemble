@@ -3,7 +3,7 @@
 The bash output sidekick (§RM-001-bash-sidekick.2.3) acts only on **failing** commands.
 A failed command's large output may be digested to verdict + root cause; a **successful**
 command's output is returned unchanged (standard truncation), identical to the no-sidekick
-arm. Successful output is never head/tail-compacted or model-digested. Grounded per §GRUND-001-decision-log.
+arm. Successful output is never head/tail-compacted or model-digested. Grounded per §REQ-001-decision-log.
 
 ## 1. Decision
 

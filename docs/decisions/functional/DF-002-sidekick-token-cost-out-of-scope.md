@@ -3,7 +3,7 @@
 The sidekick (explore + bash digest) runs on a cheap ~24B model, so its token cost is
 immaterial against the expensive lead model. We do not capture, price, or optimize sidekick
 tokens; the only tracked metric is lead-model cost. See §RM-001-bash-sidekick.4. Grounded
-per §GRUND-001-decision-log.
+per §REQ-001-decision-log.
 
 ## 1. Decision
 

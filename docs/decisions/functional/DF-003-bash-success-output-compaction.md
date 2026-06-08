@@ -5,7 +5,7 @@
 Open question: how to bound the size of *broad successful* bash output without dropping the
 information the lead needs. §DF-001-bash-sidekick-failure-only-digest settled that successful
 output is returned verbatim (digest reserved for failures); this revisits the size of that
-verbatim output. Grounded per §GRUND-001-decision-log.
+verbatim output. Grounded per §REQ-001-decision-log.
 
 ## 1. The trade-off
 

@@ -1,0 +1,98 @@
+Requirements: rules every change must satisfy. Each item is a `REQ-` declaration; cite as `§REQ-NNN-slug`.
+
+# REQ-001-decision-log: Decisions are grounded in benchmark evidence
+
+We change ensemble behavior experiment-first. Every behavioral or design choice is
+driven by a concrete benchmark observation, and is recorded so the reasoning survives —
+both **what** we chose and the **evidence** that drove it. A choice we cannot tie to a
+benchmark result is a guess, not a decision.
+
+## 1. Every decision carries its example
+
+Each decision (a `DF` or `DA` declaration) MUST cite its evidence:
+
+- **which benchmark** — the run, the instance(s), and the arm(s) compared, and
+- **what happened** — the metric or behavior observed that the decision responds to.
+
+A decision without a benchmark example is not grounded. Record the example, or do not
+record the decision as settled.
+
+## 2. Where decisions live
+
+- Product-behavior decisions and tradeoffs: `docs/decisions/functional` (`DF`).
+- Architecture decisions and tradeoffs: `docs/decisions/architectural` (`DA`).
+
+Every experiment — a benchmark run intended to inform a choice — must end in a decision
+(`DF`/`DA`) so the result is not lost. This is enforced as a working rule in `AGENTS.md`.
+
+# REQ-002-benchmark-comparison-methodology: Compare only real fixes; always analyze correctness regressions
+
+A cheaper run that does not fix the issue is not a saving — it is a failure that happens
+to be cheap. So cost and token comparisons are valid only between runs that actually
+resolve the instance (pass eval, `resolved=1`). This methodology governs every benchmark
+comparison; cite it as `§REQ-002-benchmark-comparison-methodology`.
+
+The comparison is always **the candidate arm vs the `classic` baseline**. The candidate —
+the real win we optimize and claim — is **`classic-graph-bash`** (graph and bash combined).
+The `classic-graph` (graph-only) and `classic-bash` (bash-only) arms exist **only for
+orientation**: to decompose how much each lever contributes. They are not deployment targets
+and never a fallback — graph and bash are meant to compound, so we do not "route to
+graph-alone." Savings and regression analysis below are always about `classic-graph-bash`.
+
+## 1. Which instances count toward savings
+
+Compute cost/token savings **only on instances the candidate resolves** — i.e.
+**resolved by both classic and the candidate, or resolved by the candidate only**. An
+instance the candidate does not resolve contributes nothing to a savings number; never let
+a cheap-but-unsolved run inflate the result.
+
+## 2. Always analyze candidate regressions
+
+Instances that **classic resolves but the candidate does not** are correctness
+regressions. They MUST always be analyzed and root-caused — never silently dropped. They
+are the cost of adopting the candidate and gate any savings claim: a savings figure must
+be reported alongside the count and analysis of these regressions.
+
+## 3. Instances neither arm resolves
+
+Out of scope for the comparison (they measure task difficulty, not the candidate). Report
+the count, but they do not enter savings or regression analysis.
+
+# REQ-003-strictly-better-than-baseline: A modification ships only if it strictly dominates classic
+
+A modification (the candidate, e.g. `classic-graph-bash`) is adopted **only if it is
+strictly better than the `classic` baseline** — never merely cheaper. "Strictly better"
+means it **Pareto-dominates** classic on the §REQ-002-benchmark-comparison-methodology
+metrics: it gives up nothing on correctness and wins on cost (or correctness), with at
+least one strict improvement. Cite as `§REQ-003-strictly-better-than-baseline`.
+
+## 1. The bar (both must hold)
+
+1. **No correctness regression (hard gate).** The candidate must resolve a **superset** of
+   what classic resolves: every instance classic fixes, the candidate must also fix. Losing
+   even one classic-resolved instance fails the bar outright, regardless of cost.
+2. **A real win.** With correctness non-regressed, the candidate must be strictly better on
+   at least one axis: resolve **more** instances than classic (unique wins), and/or cost
+   **less** on the resolved-by-both set (§REQ-002-benchmark-comparison-methodology.1). A
+   candidate that resolves no more and costs the same or more is not better.
+
+## 2. Consequence
+
+A modification that fails either condition is **not adopted** — it is sent back as an open
+problem (a `DF`/`DA` with the failing benchmark), not shipped. Cheaper-but-resolves-fewer is
+a regression, not progress.
+
+## 3. Example (why this rule exists)
+
+On the benchmarks-20 run (complete per-instance validation): `classic` resolved **8/20**.
+`classic-graph` (graph-only) resolved **7/20** and **lost `svelte-15115` and `zstd-3438`**
+(both resolved by classic) — a correctness regression — so under this requirement it is
+**rejected** regardless of any cost gain. `classic-graph-bash` resolved **11/20**: a
+**superset** of classic's 8 plus **3 unique wins** (`nushell-13870`, `ponyc-4593`,
+`jq-2840`) with **zero regressions** — it clears the correctness gate (§1.1) and resolves
+more (§1.2), so it passes; the cost-on-resolved-by-both check then settles the cost axis.
+
+Caveat that motivated this rule: an earlier read off a *partial* (6-instance) eval report
+showed graph-bash at "5/20 with regressions" and would have rejected it — only the
+complete, correctness-filtered data showed it actually dominates. Always compare on the
+full resolved set, never a partial report.
