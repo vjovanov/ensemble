@@ -867,7 +867,12 @@ export function exploreSidekickSystemPrompt(graphifyAvailable: boolean, pressure
 				// For bug fixes, trace symptom -> cause before naming the edit site; this overrides the
 				// 3-fact minimality when the cause is not the symptom site.
 				"When the task is to fix a bug or wrong/failing behavior, do NOT stop at the first site whose text matches the symptom. Trace from the symptom to its ROOT CAUSE by following callers and definitions (`node_at`, `graph_explain`), and return the originating site plus the symptom→cause path. Fixing a symptom site while the real cause is elsewhere is the primary correctness failure to avoid — this takes precedence over the 3-fact minimality above.",
-				"Default output budget: <= 120 lines total and <= 4 code excerpts. Prefer 20-60 lines.",
+				// §DF-009: right-file/wrong-branch is the second correctness failure — the lead fixed the
+				// wrong branch of the right function for lack of the full picture (jq-3238: fixed the
+				// named-capture iteration path; the cause was the general capture-building loop a few lines
+				// above). Return the COMPLETE handler so the lead picks the right branch and keeps cases consistent.
+				"Once you have located the bug's edit site, return the COMPLETE enclosing function/method verbatim, plus every sibling branch or case that handles the same concern (all branches of the same switch/if-chain, every place that builds the same result, all cases of the same loop). The lead must see the whole handler to fix the true branch and keep the cases consistent; a partial view causes a correct-file/wrong-branch fix. This overrides the line/excerpt budget below for the edit site itself.",
+				"Default output budget: <= 120 lines total and <= 4 code excerpts. Prefer 20-60 lines (the bug-fix edit-site rules above take precedence when they conflict).",
 				"Never return an entire file, class, or long method because it was requested broadly. Return only the exact declarations or slices needed for the task.",
 				"If a tool result is large, summarize what it proves and quote only the smallest exact lines needed as evidence.",
 				"If the caller asks to read a whole file but the task does not require complete content, ignore the breadth and return a narrow evidence set instead.",
