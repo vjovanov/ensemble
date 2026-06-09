@@ -1,7 +1,10 @@
 # DF-009-explore-complete-handler-evidence: Return the complete handler at a bug's edit site, not a minimal slice
 
-**Status: Worked (right-file/wrong-branch class).** Grounded per §REQ-001-decision-log; addresses the
-right-file/wrong-branch failures left after §DF-008-explore-root-cause-tracing; relates to §FS-001-ensemble-explore.
+**Status: Reverted — pending scoped multi-seed experiment.** Single-run results were seed-confounded
+and it raised cost on healthy benches (zstd $0.77→$1.42, tracing $0.30→$0.71) — fails §REQ-003 /
+§REQ-004.5. Reverted off main; to be re-evaluated as an `exp/` off `base/001` under
+§REQ-005-research-checkpoints (scoped relevant cases × multi-seed). Grounded per §REQ-001-decision-log;
+relates to §DF-008-explore-root-cause-tracing, §FS-001-ensemble-explore.
 
 ## 1. Problem
 

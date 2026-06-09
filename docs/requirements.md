@@ -170,27 +170,40 @@ to "+156%" (§REQ-004-experiment-hygiene.6) and the `classic` drift (§DF-007-le
 both came from comparing across un-frozen runs; a frozen base eliminates the whole class. Cite as
 `§REQ-005-research-checkpoints`.
 
-## 1. A base checkpoint = code tag + frozen results
+## 0. Multi-seed is the verdict (not single runs)
 
-A base is a blessed commit with frozen results: git tag `base/NNN-slug` (plus a moving `base/current`),
-and `bench/checkpoints/<NNN-slug>/` holding the **lightweight** artifacts per (instance, arm) —
-`metrics.json`, `patch.diff`, `manifest.json`, the `validation/<arm>/<instance>.json` resolved record,
-`results.csv`, and a `META` (commit, date, headline). Heavy `session/`/`graph.json` stay local
-(gitignored). Given the tag you can recover the exact code *and* its measured behavior, forever.
+Resolution is **seed-noisy**: the same code resolves a *different* 8–9 of 11 each run (simdjson and
+tracing-2897 flipped between two identical-code runs). So a single run is not a verdict — every result
+is **multi-seed**: run each (instance, arm) K times (default K=3). Report **pass@K** (resolved in ≥1 of
+K = capability) and the resolved-rate; cost = mean over the resolved seeds. This is *cheaper long-run*
+because it stops us chasing seed noise with prompt tweaks (the DF-008/DF-009 loop). `bench/multiseed.sh`.
+
+## 1. A base checkpoint = code tag + frozen multi-seed results
+
+A base is a blessed commit with frozen **multi-seed** results: git tag `base/NNN-slug` (plus a moving
+`base/current`), and `bench/checkpoints/<NNN-slug>/` holding the **lightweight** artifacts per
+(instance, arm, seed) — `metrics.json`, `patch.diff`, `manifest.json`, the validation resolved record,
+`results.csv`, and a `META` (commit, date, K, headline pass@K). Heavy `session/`/`graph.json` stay
+local (gitignored). Given the tag you recover the exact code *and* its measured behavior, forever.
 Create with `bench/checkpoint.sh <slug>`.
 
-## 2. Experiments branch from the base, in parallel
+## 2. Experiments are SCOPED + multi-seed; full run only on success
 
 Each experiment is a worktree off `base/current` on branch `exp/<slug>` (`bench/experiment.sh <slug>`),
-changes **one thing** (a `DF`/`DA`), re-runs only the affected arms/instances, and is judged with
-`bench/compare.sh` **against the base's frozen results** — so parallel experiments started at different
-times stay valid (they share one frozen reference).
+changes **one thing** (a `DF`/`DA`), and — to stay cheap — runs **only the relevant cases × K seeds**:
+the instances the change could **win** (its targets) plus the ones it could **lose** (regression-risk:
+same language/command profile, §REQ-004-experiment-hygiene.5). It is judged by `bench/compare.sh`
+**against the base's frozen multi-seed numbers** for those cases (pass@K), so parallel experiments at
+different times stay valid. **Only if the scoped experiment passes** do we then do a **full run**
+(all instances) before merging — never a full run per iteration.
 
-## 3. Pick winners; the base advances
+## 3. Pick winners; combine; the base advances
 
-An experiment ships only if strictly better than the base (§REQ-003-strictly-better-than-baseline).
-Winner: `bench/promote.sh <slug>` merges it, cuts `base/NNN+1`, moves `base/current`, re-freezes.
-Loser: keep the `exp/<slug>` branch/tag and its decision doc for the record; do **not** merge.
+An experiment ships only if strictly better than the base on its scoped multi-seed set
+(§REQ-003-strictly-better-than-baseline: no pass@K regression, ≥1 gain or cheaper). Winners are
+**combined** and validated together in **one full multi-seed run**; `bench/promote.sh <slug>` then
+merges, cuts `base/NNN+1`, moves `base/current`, re-freezes. Loser: keep the `exp/<slug>` branch/tag
+and its decision doc for the record; do **not** merge.
 
 ## 4. Tags
 
