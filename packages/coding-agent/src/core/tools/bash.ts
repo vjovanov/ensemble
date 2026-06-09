@@ -1,5 +1,5 @@
 import { constants } from "node:fs";
-import { access as fsAccess, open as fsOpen } from "node:fs/promises";
+import { access as fsAccess, appendFile, open as fsOpen } from "node:fs/promises";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import {
 	type Api,
@@ -208,6 +208,31 @@ function bashOutputSummaryDisabledByEnv(): boolean {
 
 function bashOutputSummaryEnabledByEnv(): boolean {
 	return process.env.PI_BASH_OUTPUT_SUMMARY === "1";
+}
+
+// §DF-014: build/test commands whose SUCCESSFUL broad output is boilerplate the lead doesn't need
+// (a 735-line autoconf/make log floods cacheRead). For these only, a broad success is digested to a
+// verdict — rg/grep/cat/sed successes still return verbatim (their exact values matter). The lead
+// asks "did it build/pass?", not for every libtool line.
+const BUILD_TEST_COMMAND =
+	/(^|[|&;]|\s)(cargo|make|gmake|cmake|ctest|ninja|meson|bazel|autoreconf|libtoolize|\.?\/?configure|\.?\/?gradlew|gradle|mvn|go\s+(test|build|vet)|(npm|pnpm|yarn)\s+(test|run|ci|install|build)|pytest|tox|dotnet\s+(build|test)|mix\s+(test|compile))\b/;
+function isBuildTestCommand(command: string): boolean {
+	return BUILD_TEST_COMMAND.test(command);
+}
+
+// §DF-014: out-of-band capture of (raw output -> digest) for analysis, like explore-debug.jsonl.
+// Never reaches the lead; only written when PI_BASH_DIGEST_DEBUG_LOG is set. Lets explore-pairs
+// --sidekick bash show what the digest collapsed.
+const BASH_DIGEST_DEBUG_LOG_ENV = "PI_BASH_DIGEST_DEBUG_LOG";
+const BASH_DIGEST_DEBUG_RAW_CAP = 8 * 1024;
+async function appendBashDigestDebug(rec: Record<string, unknown>): Promise<void> {
+	const path = process.env[BASH_DIGEST_DEBUG_LOG_ENV]?.trim();
+	if (!path) return;
+	try {
+		await appendFile(path, `${JSON.stringify({ ts: new Date().toISOString(), ...rec })}\n`);
+	} catch {
+		// Debug capture is best-effort; never let it affect the tool.
+	}
 }
 
 type BashRenderState = {
@@ -867,7 +892,21 @@ export function createBashToolDefinition(
 				}
 				// On failure the digest is thrown as the tool error; the framework keeps the
 				// message, not structured details, so we only return the text.
-				return appendRawReference(summary.trim(), { ...snapshot, fullOutputPath });
+				const digest = summary.trim();
+				// §DF-014: capture raw -> digest out-of-band (never to the lead) for analysis.
+				await appendBashDigestDebug({
+					command,
+					status,
+					exitCode,
+					rawLines: snapshot.truncation.totalLines,
+					rawBytes: snapshot.truncation.totalBytes,
+					rawOutput:
+						digestOutput.length > BASH_DIGEST_DEBUG_RAW_CAP
+							? `${digestOutput.slice(0, BASH_DIGEST_DEBUG_RAW_CAP)}\n…[clipped ${digestOutput.length - BASH_DIGEST_DEBUG_RAW_CAP} chars]`
+							: digestOutput,
+					digest,
+				});
+				return appendRawReference(digest, { ...snapshot, fullOutputPath });
 			};
 
 			try {
@@ -916,6 +955,16 @@ export function createBashToolDefinition(
 					const summarized = await summarizeOutput(snapshot, exitCode, "error");
 					if (summarized) {
 						throw new Error(appendStatus(summarized, `Command exited with code ${exitCode}`));
+					}
+				}
+				// §DF-014: digest broad SUCCESSFUL build/test output to a verdict (revises §DF-001's
+				// failure-only rule for build/test commands only). A 735-line make/autoconf success log
+				// is boilerplate that floods cacheRead; the lead needs only "did it build/pass". Other
+				// successful output (rg/grep/cat/sed) stays verbatim — its exact values matter.
+				if (!failed && isBuildTestCommand(command)) {
+					const verdict = await summarizeOutput(snapshot, exitCode, "ok");
+					if (verdict) {
+						return { content: [{ type: "text", text: verdict }] };
 					}
 				}
 				// Success returns as-is (standard truncation), like the no-sidekick arm; the

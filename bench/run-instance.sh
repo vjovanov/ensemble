@@ -140,6 +140,9 @@ declare -a SKILL_ARGS=()   # extra pi flags (e.g. --skill) for arms that load a 
 # Lets us see whether/how the sidekick reads the parent via caller_context.
 DEBUG_ENV=("PI_EXPLORE_DEBUG=full" "PI_EXPLORE_DEBUG_LOG=$OUT/explore-debug.jsonl")
 rm -f "$OUT/explore-debug.jsonl"
+# §DF-014: out-of-band capture of bash (raw output -> digest) for the bash-summary arms.
+BASH_DIGEST_DEBUG=("PI_BASH_DIGEST_DEBUG_LOG=$OUT/bash-digest-debug.jsonl")
+rm -f "$OUT/bash-digest-debug.jsonl"
 GRAPHIFY_WATCH_ENABLED=0
 case "$ARM" in
   classic-graph|ensemble-strict)
@@ -167,7 +170,7 @@ case "$ARM" in
     GRAPH_FILE="$GRAPH_ARTIFACT_DIR/graph.json"
     [ -f "$GRAPH_FILE" ] || log "WARN: no graph.json produced for $LANG"
     GRAPHIFY_WATCH_ENABLED=1
-    ENVV=("GRAPHIFY_COMMAND=$GRAPHIFY" "PI_REQUIRE_GRAPH=1" "PI_GRAPHIFY_GRAPH_FILE=$GRAPH_FILE" "PI_BASH_OUTPUT_SUMMARY=1" "${DEBUG_ENV[@]}")
+    ENVV=("GRAPHIFY_COMMAND=$GRAPHIFY" "PI_REQUIRE_GRAPH=1" "PI_GRAPHIFY_GRAPH_FILE=$GRAPH_FILE" "PI_BASH_OUTPUT_SUMMARY=1" "${BASH_DIGEST_DEBUG[@]}" "${DEBUG_ENV[@]}")
     ;;
   sidekick-fs)
     # Force graphify unavailable so the sidekick uses the filesystem fallback.
@@ -177,7 +180,7 @@ case "$ARM" in
   classic-bash)
     EXPLORATION="classic"
     rm -rf "$ARM_SRC/graphify-out"
-    ENVV=("GRAPHIFY_COMMAND=$BENCH_DIR/no-graphify" "PI_BASH_OUTPUT_SUMMARY=1")
+    ENVV=("GRAPHIFY_COMMAND=$BENCH_DIR/no-graphify" "PI_BASH_OUTPUT_SUMMARY=1" "${BASH_DIGEST_DEBUG[@]}")
     ;;
   classic)
     EXPLORATION="classic"

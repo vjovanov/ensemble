@@ -58,6 +58,21 @@ function renderCall(args) {
   return out.join("\n");
 }
 
+// §DF-014: for the bash sidekick, the out-of-band debug log holds the ORIGINAL raw output that the
+// digest replaced — pair it back in so we can see what the digest collapsed.
+let bashDbg = [];
+if (TOOL === "bash") {
+  const dbgPath = sf.replace(/\/session\/[^/]*$/, "/bash-digest-debug.jsonl");
+  if (existsSync(dbgPath)) {
+    bashDbg = readFileSync(dbgPath, "utf8").split("\n").filter(Boolean)
+      .map((l) => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
+  }
+}
+const takeOriginal = (command) => {
+  const i = bashDbg.findIndex((r) => r.command === command);
+  return i >= 0 ? bashDbg.splice(i, 1)[0] : null;
+};
+
 const clip = (t) => (opt.full || t.length <= opt.max ? t : t.slice(0, opt.max) + `\n… [+${t.length - opt.max} more chars; --full for all]`);
 console.log(`# ${TOOL} sidekick pairs — ${id || sf}  arm=${opt.arm}`);
 console.log(`# session: ${sf}`);
@@ -72,6 +87,17 @@ for (const [cid, { seq, args }] of ordered) {
   // isError = the command failed; whether the result was digested vs raw depends on size (broad
   // failures are digested, small ones returned raw) and isn't marked in the session — read the text.
   const flag = r?.isError ? (TOOL === "bash" ? ", FAILED" : ", ERROR") : "";
+  if (TOOL === "bash") {
+    const orig = takeOriginal(args.command);
+    if (orig) {
+      console.log(`  → ORIGINAL (${orig.rawBytes} bytes, ${orig.rawLines} lines, status=${orig.status}) — digested out-of-band:`);
+      console.log(clip(orig.rawOutput || "").split("\n").map((x) => "    │ " + x).join("\n"));
+      console.log(`  → PROCESSED (digest, ${rtext.length} chars):`);
+      console.log(clip(rtext).split("\n").map((x) => "    " + x).join("\n"));
+      console.log("");
+      continue;
+    }
+  }
   console.log(`  → RESULT (${rtext.length} chars, ${rtext.split("\n").length} lines${r?.backend ? ", backend=" + r.backend : ""}${flag}):`);
   console.log(clip(rtext).split("\n").map((x) => "    " + x).join("\n"));
   console.log("");
