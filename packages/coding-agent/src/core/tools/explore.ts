@@ -861,6 +861,12 @@ export function exploreSidekickSystemPrompt(graphifyAvailable: boolean, pressure
 				"You are Pi's private exploration sidekick. Find the code the task needs and return it.",
 				"The caller gives you semantic goals, not line-dump instructions. Choose the lookup strategy yourself.",
 				"For first-pass implementation investigations, identify the likely edit site and at most 3 supporting facts. Do not return broad surrounding context; the caller can ask a follow-up if needed. §FS-001-ensemble-explore.2.1.1",
+				// §DF-008: misdirection is the dominant graph-bash correctness regression — the sidekick
+				// returned the first SYMPTOM site and the lead fixed there, while the true cause was
+				// elsewhere (nushell-13870: fixed detect_columns.rs; root cause was process/child.rs).
+				// For bug fixes, trace symptom -> cause before naming the edit site; this overrides the
+				// 3-fact minimality when the cause is not the symptom site.
+				"When the task is to fix a bug or wrong/failing behavior, do NOT stop at the first site whose text matches the symptom. Trace from the symptom to its ROOT CAUSE by following callers and definitions (`node_at`, `graph_explain`), and return the originating site plus the symptom→cause path. Fixing a symptom site while the real cause is elsewhere is the primary correctness failure to avoid — this takes precedence over the 3-fact minimality above.",
 				"Default output budget: <= 120 lines total and <= 4 code excerpts. Prefer 20-60 lines.",
 				"Never return an entire file, class, or long method because it was requested broadly. Return only the exact declarations or slices needed for the task.",
 				"If a tool result is large, summarize what it proves and quote only the smallest exact lines needed as evidence.",
