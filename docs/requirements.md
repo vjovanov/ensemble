@@ -161,3 +161,45 @@ Rules:
   Mixing a fresh arm with a stale baseline (the `classic` drift behind the `classic-graphify` −19%,
   §DF-007-lead-driven-graphify-skill.5) understates/overstates savings — re-run the baseline arm at the
   same commit before claiming a delta.
+
+# REQ-005-research-checkpoints: A frozen base is the only comparison reference; explore in parallel, promote winners
+
+Research advances by branching experiments from an immutable **base** and comparing every result
+against the base's *frozen* numbers — never against live `raw/`. The contamination that inverted clap
+to "+156%" (§REQ-004-experiment-hygiene.6) and the `classic` drift (§DF-007-lead-driven-graphify-skill.5)
+both came from comparing across un-frozen runs; a frozen base eliminates the whole class. Cite as
+`§REQ-005-research-checkpoints`.
+
+## 1. A base checkpoint = code tag + frozen results
+
+A base is a blessed commit with frozen results: git tag `base/NNN-slug` (plus a moving `base/current`),
+and `bench/checkpoints/<NNN-slug>/` holding the **lightweight** artifacts per (instance, arm) —
+`metrics.json`, `patch.diff`, `manifest.json`, the `validation/<arm>/<instance>.json` resolved record,
+`results.csv`, and a `META` (commit, date, headline). Heavy `session/`/`graph.json` stay local
+(gitignored). Given the tag you can recover the exact code *and* its measured behavior, forever.
+Create with `bench/checkpoint.sh <slug>`.
+
+## 2. Experiments branch from the base, in parallel
+
+Each experiment is a worktree off `base/current` on branch `exp/<slug>` (`bench/experiment.sh <slug>`),
+changes **one thing** (a `DF`/`DA`), re-runs only the affected arms/instances, and is judged with
+`bench/compare.sh` **against the base's frozen results** — so parallel experiments started at different
+times stay valid (they share one frozen reference).
+
+## 3. Pick winners; the base advances
+
+An experiment ships only if strictly better than the base (§REQ-003-strictly-better-than-baseline).
+Winner: `bench/promote.sh <slug>` merges it, cuts `base/NNN+1`, moves `base/current`, re-freezes.
+Loser: keep the `exp/<slug>` branch/tag and its decision doc for the record; do **not** merge.
+
+## 4. Tags
+
+`base/NNN-slug` (immutable reference line) · `base/current` (latest) · `exp/slug` (endpoints, kept
+win-or-lose so we never re-explore them).
+
+## 5. Locked choices
+
+Freeze **lightweight** (metrics + patch + manifest + validation; never session/graph blobs) — gittable,
+and avoids the 5.2 M-insertion bloat the full-bundle cap-experiment commit caused. Checkpoints live
+**in-repo** (`bench/checkpoints/`) for simplicity; revisit an orphan `results` branch only if they grow
+large.
