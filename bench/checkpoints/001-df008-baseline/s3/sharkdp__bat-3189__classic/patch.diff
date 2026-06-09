@@ -1,0 +1,15 @@
+diff --git c/src/bin/bat/main.rs i/src/bin/bat/main.rs
+index 253c388594..6b62855e0c 100644
+--- c/src/bin/bat/main.rs
++++ i/src/bin/bat/main.rs
+@@ -210,7 +210,9 @@ pub fn list_themes(
+ 
+     let default_theme_name = default_theme(color_scheme(detect_color_scheme).unwrap_or_default());
+     for theme in assets.themes() {
+-        let default_theme_info = if !config.loop_through && default_theme_name == theme {
++        let default_theme_info = if config.loop_through {
++            ""
++        } else if default_theme_name == theme {
+             " (default)"
+         } else if default_theme(ColorScheme::Dark) == theme {
+             " (default dark)"

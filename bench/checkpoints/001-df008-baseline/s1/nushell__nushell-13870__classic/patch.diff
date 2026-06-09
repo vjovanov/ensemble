@@ -1,0 +1,78 @@
+diff --git c/crates/nu-command/src/system/run_external.rs i/crates/nu-command/src/system/run_external.rs
+index 70a00bc815..d618c796a0 100644
+--- c/crates/nu-command/src/system/run_external.rs
++++ i/crates/nu-command/src/system/run_external.rs
+@@ -180,12 +180,15 @@ impl Command for External {
+         }
+ 
+         // Wrap the output into a `PipelineData::ByteStream`.
+-        let child = ChildProcess::new(
++        let mut child = ChildProcess::new(
+             child,
+             merged_stream,
+             matches!(stderr, OutDest::Pipe),
+             call.head,
+         )?;
++        child.set_check_exit_status(
++            !matches!(stdout, OutDest::Pipe) && !matches!(stderr, OutDest::Pipe),
++        );
+         Ok(PipelineData::ByteStream(
+             ByteStream::child(child, call.head),
+             None,
+diff --git c/crates/nu-protocol/src/process/child.rs i/crates/nu-protocol/src/process/child.rs
+index 320427a819..c6374ce4f8 100644
+--- c/crates/nu-protocol/src/process/child.rs
++++ i/crates/nu-protocol/src/process/child.rs
+@@ -109,6 +109,7 @@ pub struct ChildProcess {
+     pub stdout: Option<ChildPipe>,
+     pub stderr: Option<ChildPipe>,
+     exit_status: ExitStatusFuture,
++    check_exit_status: bool,
+     span: Span,
+ }
+ 
+@@ -155,6 +156,7 @@ impl ChildProcess {
+             exit_status: exit_status
+                 .map(ExitStatusFuture::Running)
+                 .unwrap_or(ExitStatusFuture::Finished(Ok(ExitStatus::Exited(0)))),
++            check_exit_status: true,
+             span,
+         }
+     }
+@@ -163,6 +165,10 @@ impl ChildProcess {
+         self.exit_status = ExitStatusFuture::Finished(Ok(ExitStatus::Exited(exit_code)));
+     }
+ 
++    pub fn set_check_exit_status(&mut self, check_exit_status: bool) {
++        self.check_exit_status = check_exit_status;
++    }
++
+     pub fn span(&self) -> Span {
+         self.span
+     }
+@@ -182,7 +188,10 @@ impl ChildProcess {
+             Vec::new()
+         };
+ 
+-        self.exit_status.wait(self.span)?.check_ok(self.span)?;
++        let exit_status = self.exit_status.wait(self.span)?;
++        if self.check_exit_status {
++            exit_status.check_ok(self.span)?;
++        }
+ 
+         Ok(bytes)
+     }
+@@ -223,7 +232,12 @@ impl ChildProcess {
+             consume_pipe(stderr).err_span(self.span)?;
+         }
+ 
+-        self.exit_status.wait(self.span)?.check_ok(self.span)
++        let exit_status = self.exit_status.wait(self.span)?;
++        if self.check_exit_status {
++            exit_status.check_ok(self.span)
++        } else {
++            Ok(())
++        }
+     }
+ 
+     pub fn try_wait(&mut self) -> Result<Option<ExitStatus>, ShellError> {

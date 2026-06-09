@@ -1,0 +1,310 @@
+diff --git c/include/simdjson/dom/element-inl.h i/include/simdjson/dom/element-inl.h
+index 1f071da608..26e71ea66f 100644
+--- c/include/simdjson/dom/element-inl.h
++++ i/include/simdjson/dom/element-inl.h
+@@ -383,8 +383,9 @@ inline simdjson_result<element> element::at_pointer(std::string_view json_pointe
+     case internal::tape_type::START_ARRAY:
+       return array(tape).at_pointer(json_pointer);
+     default: {
+-      if(!json_pointer.empty()) { // a non-empty string is invalid on an atom
+-        return INVALID_JSON_POINTER;
++      if(!json_pointer.empty()) {
++        // A pointer starting with '/' is syntactically valid, but cannot be resolved through a scalar.
++        return json_pointer[0] == '/' ? NO_SUCH_FIELD : INVALID_JSON_POINTER;
+       }
+       // an empty string means that we return the current node
+       dom::element copy(*this);
+diff --git c/include/simdjson/generic/ondemand/document-inl.h i/include/simdjson/generic/ondemand/document-inl.h
+index 70072c42b1..4bfc3218df 100644
+--- c/include/simdjson/generic/ondemand/document-inl.h
++++ i/include/simdjson/generic/ondemand/document-inl.h
+@@ -312,7 +312,8 @@ simdjson_inline simdjson_result<value> document::at_pointer(std::string_view jso
+     case json_type::object:
+       return (*this).get_object().at_pointer(json_pointer);
+     default:
+-      return INVALID_JSON_POINTER;
++      // A pointer starting with '/' is syntactically valid, but cannot be resolved through a scalar.
++      return json_pointer[0] == '/' ? NO_SUCH_FIELD : INVALID_JSON_POINTER;
+   }
+ }
+ 
+diff --git c/include/simdjson/generic/ondemand/value-inl.h i/include/simdjson/generic/ondemand/value-inl.h
+index 41e02fa24e..eaded5b886 100644
+--- c/include/simdjson/generic/ondemand/value-inl.h
++++ i/include/simdjson/generic/ondemand/value-inl.h
+@@ -240,6 +240,9 @@ simdjson_inline int32_t value::current_depth() const noexcept{
+ }
+ 
+ simdjson_inline simdjson_result<value> value::at_pointer(std::string_view json_pointer) noexcept {
++  if (json_pointer.empty()) {
++    return value(iter);
++  }
+   json_type t;
+   SIMDJSON_TRY(type().get(t));
+   switch (t)
+@@ -249,7 +252,8 @@ simdjson_inline simdjson_result<value> value::at_pointer(std::string_view json_p
+     case json_type::object:
+       return (*this).get_object().at_pointer(json_pointer);
+     default:
+-      return INVALID_JSON_POINTER;
++      // A pointer starting with '/' is syntactically valid, but cannot be resolved through a scalar.
++      return json_pointer[0] == '/' ? NO_SUCH_FIELD : INVALID_JSON_POINTER;
+   }
+ }
+ 
+diff --git c/singleheader/simdjson.h i/singleheader/simdjson.h
+index 985ffe1144..f6eb8bbeeb 100644
+--- c/singleheader/simdjson.h
++++ i/singleheader/simdjson.h
+@@ -7448,8 +7448,9 @@ inline simdjson_result<element> element::at_pointer(std::string_view json_pointe
+     case internal::tape_type::START_ARRAY:
+       return array(tape).at_pointer(json_pointer);
+     default: {
+-      if(!json_pointer.empty()) { // a non-empty string is invalid on an atom
+-        return INVALID_JSON_POINTER;
++      if(!json_pointer.empty()) {
++        // A pointer starting with '/' is syntactically valid, but cannot be resolved through a scalar.
++        return json_pointer[0] == '/' ? NO_SUCH_FIELD : INVALID_JSON_POINTER;
+       }
+       // an empty string means that we return the current node
+       dom::element copy(*this);
+@@ -36776,7 +36777,8 @@ simdjson_inline simdjson_result<value> document::at_pointer(std::string_view jso
+     case json_type::object:
+       return (*this).get_object().at_pointer(json_pointer);
+     default:
+-      return INVALID_JSON_POINTER;
++      // A pointer starting with '/' is syntactically valid, but cannot be resolved through a scalar.
++      return json_pointer[0] == '/' ? NO_SUCH_FIELD : INVALID_JSON_POINTER;
+   }
+ }
+ 
+@@ -40084,6 +40086,9 @@ simdjson_inline int32_t value::current_depth() const noexcept{
+ }
+ 
+ simdjson_inline simdjson_result<value> value::at_pointer(std::string_view json_pointer) noexcept {
++  if (json_pointer.empty()) {
++    return value(iter);
++  }
+   json_type t;
+   SIMDJSON_TRY(type().get(t));
+   switch (t)
+@@ -40093,7 +40098,8 @@ simdjson_inline simdjson_result<value> value::at_pointer(std::string_view json_p
+     case json_type::object:
+       return (*this).get_object().at_pointer(json_pointer);
+     default:
+-      return INVALID_JSON_POINTER;
++      // A pointer starting with '/' is syntactically valid, but cannot be resolved through a scalar.
++      return json_pointer[0] == '/' ? NO_SUCH_FIELD : INVALID_JSON_POINTER;
+   }
+ }
+ 
+@@ -47113,7 +47119,8 @@ simdjson_inline simdjson_result<value> document::at_pointer(std::string_view jso
+     case json_type::object:
+       return (*this).get_object().at_pointer(json_pointer);
+     default:
+-      return INVALID_JSON_POINTER;
++      // A pointer starting with '/' is syntactically valid, but cannot be resolved through a scalar.
++      return json_pointer[0] == '/' ? NO_SUCH_FIELD : INVALID_JSON_POINTER;
+   }
+ }
+ 
+@@ -50421,6 +50428,9 @@ simdjson_inline int32_t value::current_depth() const noexcept{
+ }
+ 
+ simdjson_inline simdjson_result<value> value::at_pointer(std::string_view json_pointer) noexcept {
++  if (json_pointer.empty()) {
++    return value(iter);
++  }
+   json_type t;
+   SIMDJSON_TRY(type().get(t));
+   switch (t)
+@@ -50430,7 +50440,8 @@ simdjson_inline simdjson_result<value> value::at_pointer(std::string_view json_p
+     case json_type::object:
+       return (*this).get_object().at_pointer(json_pointer);
+     default:
+-      return INVALID_JSON_POINTER;
++      // A pointer starting with '/' is syntactically valid, but cannot be resolved through a scalar.
++      return json_pointer[0] == '/' ? NO_SUCH_FIELD : INVALID_JSON_POINTER;
+   }
+ }
+ 
+@@ -57942,7 +57953,8 @@ simdjson_inline simdjson_result<value> document::at_pointer(std::string_view jso
+     case json_type::object:
+       return (*this).get_object().at_pointer(json_pointer);
+     default:
+-      return INVALID_JSON_POINTER;
++      // A pointer starting with '/' is syntactically valid, but cannot be resolved through a scalar.
++      return json_pointer[0] == '/' ? NO_SUCH_FIELD : INVALID_JSON_POINTER;
+   }
+ }
+ 
+@@ -61250,6 +61262,9 @@ simdjson_inline int32_t value::current_depth() const noexcept{
+ }
+ 
+ simdjson_inline simdjson_result<value> value::at_pointer(std::string_view json_pointer) noexcept {
++  if (json_pointer.empty()) {
++    return value(iter);
++  }
+   json_type t;
+   SIMDJSON_TRY(type().get(t));
+   switch (t)
+@@ -61259,7 +61274,8 @@ simdjson_inline simdjson_result<value> value::at_pointer(std::string_view json_p
+     case json_type::object:
+       return (*this).get_object().at_pointer(json_pointer);
+     default:
+-      return INVALID_JSON_POINTER;
++      // A pointer starting with '/' is syntactically valid, but cannot be resolved through a scalar.
++      return json_pointer[0] == '/' ? NO_SUCH_FIELD : INVALID_JSON_POINTER;
+   }
+ }
+ 
+@@ -68770,7 +68786,8 @@ simdjson_inline simdjson_result<value> document::at_pointer(std::string_view jso
+     case json_type::object:
+       return (*this).get_object().at_pointer(json_pointer);
+     default:
+-      return INVALID_JSON_POINTER;
++      // A pointer starting with '/' is syntactically valid, but cannot be resolved through a scalar.
++      return json_pointer[0] == '/' ? NO_SUCH_FIELD : INVALID_JSON_POINTER;
+   }
+ }
+ 
+@@ -72078,6 +72095,9 @@ simdjson_inline int32_t value::current_depth() const noexcept{
+ }
+ 
+ simdjson_inline simdjson_result<value> value::at_pointer(std::string_view json_pointer) noexcept {
++  if (json_pointer.empty()) {
++    return value(iter);
++  }
+   json_type t;
+   SIMDJSON_TRY(type().get(t));
+   switch (t)
+@@ -72087,7 +72107,8 @@ simdjson_inline simdjson_result<value> value::at_pointer(std::string_view json_p
+     case json_type::object:
+       return (*this).get_object().at_pointer(json_pointer);
+     default:
+-      return INVALID_JSON_POINTER;
++      // A pointer starting with '/' is syntactically valid, but cannot be resolved through a scalar.
++      return json_pointer[0] == '/' ? NO_SUCH_FIELD : INVALID_JSON_POINTER;
+   }
+ }
+ 
+@@ -79713,7 +79734,8 @@ simdjson_inline simdjson_result<value> document::at_pointer(std::string_view jso
+     case json_type::object:
+       return (*this).get_object().at_pointer(json_pointer);
+     default:
+-      return INVALID_JSON_POINTER;
++      // A pointer starting with '/' is syntactically valid, but cannot be resolved through a scalar.
++      return json_pointer[0] == '/' ? NO_SUCH_FIELD : INVALID_JSON_POINTER;
+   }
+ }
+ 
+@@ -83021,6 +83043,9 @@ simdjson_inline int32_t value::current_depth() const noexcept{
+ }
+ 
+ simdjson_inline simdjson_result<value> value::at_pointer(std::string_view json_pointer) noexcept {
++  if (json_pointer.empty()) {
++    return value(iter);
++  }
+   json_type t;
+   SIMDJSON_TRY(type().get(t));
+   switch (t)
+@@ -83030,7 +83055,8 @@ simdjson_inline simdjson_result<value> value::at_pointer(std::string_view json_p
+     case json_type::object:
+       return (*this).get_object().at_pointer(json_pointer);
+     default:
+-      return INVALID_JSON_POINTER;
++      // A pointer starting with '/' is syntactically valid, but cannot be resolved through a scalar.
++      return json_pointer[0] == '/' ? NO_SUCH_FIELD : INVALID_JSON_POINTER;
+   }
+ }
+ 
+@@ -90979,7 +91005,8 @@ simdjson_inline simdjson_result<value> document::at_pointer(std::string_view jso
+     case json_type::object:
+       return (*this).get_object().at_pointer(json_pointer);
+     default:
+-      return INVALID_JSON_POINTER;
++      // A pointer starting with '/' is syntactically valid, but cannot be resolved through a scalar.
++      return json_pointer[0] == '/' ? NO_SUCH_FIELD : INVALID_JSON_POINTER;
+   }
+ }
+ 
+@@ -94287,6 +94314,9 @@ simdjson_inline int32_t value::current_depth() const noexcept{
+ }
+ 
+ simdjson_inline simdjson_result<value> value::at_pointer(std::string_view json_pointer) noexcept {
++  if (json_pointer.empty()) {
++    return value(iter);
++  }
+   json_type t;
+   SIMDJSON_TRY(type().get(t));
+   switch (t)
+@@ -94296,7 +94326,8 @@ simdjson_inline simdjson_result<value> value::at_pointer(std::string_view json_p
+     case json_type::object:
+       return (*this).get_object().at_pointer(json_pointer);
+     default:
+-      return INVALID_JSON_POINTER;
++      // A pointer starting with '/' is syntactically valid, but cannot be resolved through a scalar.
++      return json_pointer[0] == '/' ? NO_SUCH_FIELD : INVALID_JSON_POINTER;
+   }
+ }
+ 
+@@ -101716,7 +101747,8 @@ simdjson_inline simdjson_result<value> document::at_pointer(std::string_view jso
+     case json_type::object:
+       return (*this).get_object().at_pointer(json_pointer);
+     default:
+-      return INVALID_JSON_POINTER;
++      // A pointer starting with '/' is syntactically valid, but cannot be resolved through a scalar.
++      return json_pointer[0] == '/' ? NO_SUCH_FIELD : INVALID_JSON_POINTER;
+   }
+ }
+ 
+@@ -105024,6 +105056,9 @@ simdjson_inline int32_t value::current_depth() const noexcept{
+ }
+ 
+ simdjson_inline simdjson_result<value> value::at_pointer(std::string_view json_pointer) noexcept {
++  if (json_pointer.empty()) {
++    return value(iter);
++  }
+   json_type t;
+   SIMDJSON_TRY(type().get(t));
+   switch (t)
+@@ -105033,7 +105068,8 @@ simdjson_inline simdjson_result<value> value::at_pointer(std::string_view json_p
+     case json_type::object:
+       return (*this).get_object().at_pointer(json_pointer);
+     default:
+-      return INVALID_JSON_POINTER;
++      // A pointer starting with '/' is syntactically valid, but cannot be resolved through a scalar.
++      return json_pointer[0] == '/' ? NO_SUCH_FIELD : INVALID_JSON_POINTER;
+   }
+ }
+ 
+@@ -112466,7 +112502,8 @@ simdjson_inline simdjson_result<value> document::at_pointer(std::string_view jso
+     case json_type::object:
+       return (*this).get_object().at_pointer(json_pointer);
+     default:
+-      return INVALID_JSON_POINTER;
++      // A pointer starting with '/' is syntactically valid, but cannot be resolved through a scalar.
++      return json_pointer[0] == '/' ? NO_SUCH_FIELD : INVALID_JSON_POINTER;
+   }
+ }
+ 
+@@ -115774,6 +115811,9 @@ simdjson_inline int32_t value::current_depth() const noexcept{
+ }
+ 
+ simdjson_inline simdjson_result<value> value::at_pointer(std::string_view json_pointer) noexcept {
++  if (json_pointer.empty()) {
++    return value(iter);
++  }
+   json_type t;
+   SIMDJSON_TRY(type().get(t));
+   switch (t)
+@@ -115783,7 +115823,8 @@ simdjson_inline simdjson_result<value> value::at_pointer(std::string_view json_p
+     case json_type::object:
+       return (*this).get_object().at_pointer(json_pointer);
+     default:
+-      return INVALID_JSON_POINTER;
++      // A pointer starting with '/' is syntactically valid, but cannot be resolved through a scalar.
++      return json_pointer[0] == '/' ? NO_SUCH_FIELD : INVALID_JSON_POINTER;
+   }
+ }
+ 

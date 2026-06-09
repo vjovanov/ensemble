@@ -1,0 +1,44 @@
+diff --git c/src/generators/utils/parse.ts i/src/generators/utils/parse.ts
+index dce4ad0ae2..ec7ebee4ef 100644
+--- c/src/generators/utils/parse.ts
++++ i/src/generators/utils/parse.ts
+@@ -101,7 +101,7 @@ export function indexSitesFixesConfig<T extends SiteProps>(text: string): SitePr
+     // Array of tuples, where first number is an offset of record start and second number is record length.
+     const offsets: Array<[number, number]> = [];
+ 
+-    function processBlock(recordStart: number, recordEnd: number, index: number) {
++    function processBlock(recordStart: number, recordEnd: number) {
+         // TODO: more formal definition of URLs and delimiters
+         const block = text.substring(recordStart, recordEnd);
+         const lines = block.split('\n');
+@@ -116,6 +116,7 @@ export function indexSitesFixesConfig<T extends SiteProps>(text: string): SitePr
+             return;
+         }
+ 
++        const index = offsets.length;
+         const urls = parseArray(lines.slice(0, commandIndices[0]).join('\n'));
+         for (const url of urls) {
+             const domain = getDomain(url);
+@@ -143,19 +144,17 @@ export function indexSitesFixesConfig<T extends SiteProps>(text: string): SitePr
+ 
+     let recordStart = 0;
+     // Delimiter between two blocks
+-    const delimiterRegex = /\s*={2,}\s*/gm;
++    const delimiterRegex = /^\s*={2,}\s*$/gm;
+     let delimiter: RegExpMatchArray;
+-    let count = 0;
+     while ((delimiter = delimiterRegex.exec(text))) {
+         const nextDelimiterStart = delimiter.index;
+         const nextDelimiterEnd = delimiter.index + delimiter[0].length;
+ 
+-        processBlock(recordStart, nextDelimiterStart, count);
++        processBlock(recordStart, nextDelimiterStart);
+ 
+         recordStart = nextDelimiterEnd;
+-        count++;
+     }
+-    processBlock(recordStart, text.length, count);
++    processBlock(recordStart, text.length);
+ 
+     return {offsets: encodeOffsets(offsets), domains, domainPatterns, cache: {}};
+ }

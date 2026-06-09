@@ -1,0 +1,81 @@
+diff --git c/crates/nu-engine/src/eval.rs i/crates/nu-engine/src/eval.rs
+index ccb494e68e..9d835a22c0 100644
+--- c/crates/nu-engine/src/eval.rs
++++ i/crates/nu-engine/src/eval.rs
+@@ -478,6 +478,19 @@ fn eval_element_with_input<D: DebugContext>(
+     result
+ }
+ 
++fn ignore_external_exit_status(data: &mut PipelineData) {
++    if let PipelineData::ByteStream(stream, _) = data {
++        stream.ignore_exit_status();
++    }
++}
++
++fn preserves_external_exit_status(engine_state: &EngineState, element: &PipelineElement) -> bool {
++    matches!(
++        &element.expr.expr,
++        Expr::Call(call) if engine_state.get_decl(call.decl_id).name() == "complete"
++    )
++}
++
+ pub fn eval_block_with_early_return<D: DebugContext>(
+     engine_state: &EngineState,
+     stack: &mut Stack,
+@@ -522,6 +535,9 @@ fn eval_block_inner<D: DebugContext>(
+             )?;
+             let stack = &mut stack.push_redirection(stdout, stderr);
+             input = eval_element_with_input::<D>(engine_state, stack, element, input)?;
++            if !preserves_external_exit_status(engine_state, next) {
++                ignore_external_exit_status(&mut input);
++            }
+         }
+ 
+         if last_pipeline {
+diff --git c/crates/nu-engine/src/eval_ir.rs i/crates/nu-engine/src/eval_ir.rs
+index 7cc4e0267d..2d2d2a4633 100644
+--- c/crates/nu-engine/src/eval_ir.rs
++++ i/crates/nu-engine/src/eval_ir.rs
+@@ -524,7 +524,10 @@ fn eval_instruction<D: DebugContext>(
+             }
+         }
+         Instruction::Call { decl_id, src_dst } => {
+-            let input = ctx.take_reg(*src_dst);
++            let mut input = ctx.take_reg(*src_dst);
++            if ctx.engine_state.get_decl(*decl_id).name() != "complete" {
++                ignore_external_exit_status(&mut input);
++            }
+             let result = eval_call::<D>(ctx, *decl_id, *span, input)?;
+             ctx.put_reg(*src_dst, result);
+             Ok(Continue)
+@@ -1365,6 +1368,12 @@ fn collect(data: PipelineData, fallback_span: Span) -> Result<PipelineData, Shel
+ }
+ 
+ /// Helper for drain behavior.
++fn ignore_external_exit_status(data: &mut PipelineData) {
++    if let PipelineData::ByteStream(stream, _) = data {
++        stream.ignore_exit_status();
++    }
++}
++
+ fn drain(ctx: &mut EvalContext<'_>, data: PipelineData) -> Result<InstructionResult, ShellError> {
+     use self::InstructionResult::*;
+     match data {
+diff --git c/crates/nu-protocol/src/pipeline/byte_stream.rs i/crates/nu-protocol/src/pipeline/byte_stream.rs
+index 6811b7b89b..7a219bac1c 100644
+--- c/crates/nu-protocol/src/pipeline/byte_stream.rs
++++ i/crates/nu-protocol/src/pipeline/byte_stream.rs
+@@ -348,6 +348,13 @@ impl ByteStream {
+         &mut self.stream
+     }
+ 
++    /// Prevent a child process byte stream from reporting a non-zero exit status.
++    pub fn ignore_exit_status(&mut self) {
++        if let ByteStreamSource::Child(child) = &mut self.stream {
++            child.set_exit_code(0);
++        }
++    }
++
+     /// Returns the [`Span`] associated with the [`ByteStream`].
+     pub fn span(&self) -> Span {
+         self.span

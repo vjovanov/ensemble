@@ -1,0 +1,18 @@
+{
+  "instance": "jqlang__jq-3238",
+  "arm": "classic",
+  "language": "c",
+  "commit": "3006b90a345107b2c4af313aec0ee693d628dbdc",
+  "dirty": true,
+  "model": "oca/gpt-5.5",
+  "provider": "OCA",
+  "exploration": "classic",
+  "require_graph": false,
+  "bash_output_summary": false,
+  "explore_debug": "off",
+  "tool_calls": {
+    "lead": "session/*.jsonl",
+    "sidekick": null
+  },
+  "prompts_dir": "prompts/"
+}

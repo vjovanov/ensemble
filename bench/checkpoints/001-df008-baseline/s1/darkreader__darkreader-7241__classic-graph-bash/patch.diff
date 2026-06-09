@@ -1,0 +1,41 @@
+diff --git c/src/generators/utils/parse.ts i/src/generators/utils/parse.ts
+index dce4ad0ae2..c9bf5dc90e 100644
+--- c/src/generators/utils/parse.ts
++++ i/src/generators/utils/parse.ts
+@@ -113,7 +113,7 @@ export function indexSitesFixesConfig<T extends SiteProps>(text: string): SitePr
+         });
+ 
+         if (commandIndices.length === 0) {
+-            return;
++            return false;
+         }
+ 
+         const urls = parseArray(lines.slice(0, commandIndices[0]).join('\n'));
+@@ -139,21 +139,23 @@ export function indexSitesFixesConfig<T extends SiteProps>(text: string): SitePr
+             }
+         }
+         offsets.push([recordStart, recordEnd - recordStart]);
++        return true;
+     }
+ 
+     let recordStart = 0;
+-    // Delimiter between two blocks
+-    const delimiterRegex = /\s*={2,}\s*/gm;
++    // Delimiter between two blocks (a line containing only two or more "=" characters).
++    const delimiterRegex = /^\s*={2,}\s*$/gm;
+     let delimiter: RegExpMatchArray;
+     let count = 0;
+     while ((delimiter = delimiterRegex.exec(text))) {
+         const nextDelimiterStart = delimiter.index;
+         const nextDelimiterEnd = delimiter.index + delimiter[0].length;
+ 
+-        processBlock(recordStart, nextDelimiterStart, count);
++        if (processBlock(recordStart, nextDelimiterStart, count)) {
++            count++;
++        }
+ 
+         recordStart = nextDelimiterEnd;
+-        count++;
+     }
+     processBlock(recordStart, text.length, count);
+ 

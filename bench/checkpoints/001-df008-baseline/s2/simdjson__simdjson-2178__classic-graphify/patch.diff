@@ -1,0 +1,334 @@
+diff --git c/include/simdjson/dom/element-inl.h i/include/simdjson/dom/element-inl.h
+index 1f071da608..16b24742e2 100644
+--- c/include/simdjson/dom/element-inl.h
++++ i/include/simdjson/dom/element-inl.h
+@@ -383,8 +383,12 @@ inline simdjson_result<element> element::at_pointer(std::string_view json_pointe
+     case internal::tape_type::START_ARRAY:
+       return array(tape).at_pointer(json_pointer);
+     default: {
+-      if(!json_pointer.empty()) { // a non-empty string is invalid on an atom
+-        return INVALID_JSON_POINTER;
++      if(!json_pointer.empty()) {
++        if (json_pointer[0] != '/') { return INVALID_JSON_POINTER; }
++        for (size_t escape = json_pointer.find('~'); escape != std::string_view::npos; escape = json_pointer.find('~', escape + 2)) {
++          if (escape + 1 >= json_pointer.size() || (json_pointer[escape + 1] != '0' && json_pointer[escape + 1] != '1')) { return INVALID_JSON_POINTER; }
++        }
++        return NO_SUCH_FIELD;
+       }
+       // an empty string means that we return the current node
+       dom::element copy(*this);
+diff --git c/include/simdjson/generic/ondemand/document-inl.h i/include/simdjson/generic/ondemand/document-inl.h
+index 70072c42b1..e8a3b52bc6 100644
+--- c/include/simdjson/generic/ondemand/document-inl.h
++++ i/include/simdjson/generic/ondemand/document-inl.h
+@@ -311,8 +311,13 @@ simdjson_inline simdjson_result<value> document::at_pointer(std::string_view jso
+       return (*this).get_array().at_pointer(json_pointer);
+     case json_type::object:
+       return (*this).get_object().at_pointer(json_pointer);
+-    default:
+-      return INVALID_JSON_POINTER;
++    default: {
++      if (json_pointer[0] != '/') { return INVALID_JSON_POINTER; }
++      for (size_t escape = json_pointer.find('~'); escape != std::string_view::npos; escape = json_pointer.find('~', escape + 2)) {
++        if (escape + 1 >= json_pointer.size() || (json_pointer[escape + 1] != '0' && json_pointer[escape + 1] != '1')) { return INVALID_JSON_POINTER; }
++      }
++      return NO_SUCH_FIELD;
++    }
+   }
+ }
+ 
+diff --git c/include/simdjson/generic/ondemand/value-inl.h i/include/simdjson/generic/ondemand/value-inl.h
+index 41e02fa24e..6b92f97bfa 100644
+--- c/include/simdjson/generic/ondemand/value-inl.h
++++ i/include/simdjson/generic/ondemand/value-inl.h
+@@ -248,8 +248,13 @@ simdjson_inline simdjson_result<value> value::at_pointer(std::string_view json_p
+       return (*this).get_array().at_pointer(json_pointer);
+     case json_type::object:
+       return (*this).get_object().at_pointer(json_pointer);
+-    default:
+-      return INVALID_JSON_POINTER;
++    default: {
++      if (json_pointer.empty() || json_pointer[0] != '/') { return INVALID_JSON_POINTER; }
++      for (size_t escape = json_pointer.find('~'); escape != std::string_view::npos; escape = json_pointer.find('~', escape + 2)) {
++        if (escape + 1 >= json_pointer.size() || (json_pointer[escape + 1] != '0' && json_pointer[escape + 1] != '1')) { return INVALID_JSON_POINTER; }
++      }
++      return NO_SUCH_FIELD;
++    }
+   }
+ }
+ 
+diff --git c/singleheader/simdjson.h i/singleheader/simdjson.h
+index 985ffe1144..041d25f476 100644
+--- c/singleheader/simdjson.h
++++ i/singleheader/simdjson.h
+@@ -7448,8 +7448,12 @@ inline simdjson_result<element> element::at_pointer(std::string_view json_pointe
+     case internal::tape_type::START_ARRAY:
+       return array(tape).at_pointer(json_pointer);
+     default: {
+-      if(!json_pointer.empty()) { // a non-empty string is invalid on an atom
+-        return INVALID_JSON_POINTER;
++      if(!json_pointer.empty()) {
++        if (json_pointer[0] != '/') { return INVALID_JSON_POINTER; }
++        for (size_t escape = json_pointer.find('~'); escape != std::string_view::npos; escape = json_pointer.find('~', escape + 2)) {
++          if (escape + 1 >= json_pointer.size() || (json_pointer[escape + 1] != '0' && json_pointer[escape + 1] != '1')) { return INVALID_JSON_POINTER; }
++        }
++        return NO_SUCH_FIELD;
+       }
+       // an empty string means that we return the current node
+       dom::element copy(*this);
+@@ -36775,8 +36779,13 @@ simdjson_inline simdjson_result<value> document::at_pointer(std::string_view jso
+       return (*this).get_array().at_pointer(json_pointer);
+     case json_type::object:
+       return (*this).get_object().at_pointer(json_pointer);
+-    default:
+-      return INVALID_JSON_POINTER;
++    default: {
++      if (json_pointer[0] != '/') { return INVALID_JSON_POINTER; }
++      for (size_t escape = json_pointer.find('~'); escape != std::string_view::npos; escape = json_pointer.find('~', escape + 2)) {
++        if (escape + 1 >= json_pointer.size() || (json_pointer[escape + 1] != '0' && json_pointer[escape + 1] != '1')) { return INVALID_JSON_POINTER; }
++      }
++      return NO_SUCH_FIELD;
++    }
+   }
+ }
+ 
+@@ -40092,8 +40101,13 @@ simdjson_inline simdjson_result<value> value::at_pointer(std::string_view json_p
+       return (*this).get_array().at_pointer(json_pointer);
+     case json_type::object:
+       return (*this).get_object().at_pointer(json_pointer);
+-    default:
+-      return INVALID_JSON_POINTER;
++    default: {
++      if (json_pointer.empty() || json_pointer[0] != '/') { return INVALID_JSON_POINTER; }
++      for (size_t escape = json_pointer.find('~'); escape != std::string_view::npos; escape = json_pointer.find('~', escape + 2)) {
++        if (escape + 1 >= json_pointer.size() || (json_pointer[escape + 1] != '0' && json_pointer[escape + 1] != '1')) { return INVALID_JSON_POINTER; }
++      }
++      return NO_SUCH_FIELD;
++    }
+   }
+ }
+ 
+@@ -47112,8 +47126,13 @@ simdjson_inline simdjson_result<value> document::at_pointer(std::string_view jso
+       return (*this).get_array().at_pointer(json_pointer);
+     case json_type::object:
+       return (*this).get_object().at_pointer(json_pointer);
+-    default:
+-      return INVALID_JSON_POINTER;
++    default: {
++      if (json_pointer[0] != '/') { return INVALID_JSON_POINTER; }
++      for (size_t escape = json_pointer.find('~'); escape != std::string_view::npos; escape = json_pointer.find('~', escape + 2)) {
++        if (escape + 1 >= json_pointer.size() || (json_pointer[escape + 1] != '0' && json_pointer[escape + 1] != '1')) { return INVALID_JSON_POINTER; }
++      }
++      return NO_SUCH_FIELD;
++    }
+   }
+ }
+ 
+@@ -50429,8 +50448,13 @@ simdjson_inline simdjson_result<value> value::at_pointer(std::string_view json_p
+       return (*this).get_array().at_pointer(json_pointer);
+     case json_type::object:
+       return (*this).get_object().at_pointer(json_pointer);
+-    default:
+-      return INVALID_JSON_POINTER;
++    default: {
++      if (json_pointer.empty() || json_pointer[0] != '/') { return INVALID_JSON_POINTER; }
++      for (size_t escape = json_pointer.find('~'); escape != std::string_view::npos; escape = json_pointer.find('~', escape + 2)) {
++        if (escape + 1 >= json_pointer.size() || (json_pointer[escape + 1] != '0' && json_pointer[escape + 1] != '1')) { return INVALID_JSON_POINTER; }
++      }
++      return NO_SUCH_FIELD;
++    }
+   }
+ }
+ 
+@@ -57941,8 +57965,13 @@ simdjson_inline simdjson_result<value> document::at_pointer(std::string_view jso
+       return (*this).get_array().at_pointer(json_pointer);
+     case json_type::object:
+       return (*this).get_object().at_pointer(json_pointer);
+-    default:
+-      return INVALID_JSON_POINTER;
++    default: {
++      if (json_pointer[0] != '/') { return INVALID_JSON_POINTER; }
++      for (size_t escape = json_pointer.find('~'); escape != std::string_view::npos; escape = json_pointer.find('~', escape + 2)) {
++        if (escape + 1 >= json_pointer.size() || (json_pointer[escape + 1] != '0' && json_pointer[escape + 1] != '1')) { return INVALID_JSON_POINTER; }
++      }
++      return NO_SUCH_FIELD;
++    }
+   }
+ }
+ 
+@@ -61258,8 +61287,13 @@ simdjson_inline simdjson_result<value> value::at_pointer(std::string_view json_p
+       return (*this).get_array().at_pointer(json_pointer);
+     case json_type::object:
+       return (*this).get_object().at_pointer(json_pointer);
+-    default:
+-      return INVALID_JSON_POINTER;
++    default: {
++      if (json_pointer.empty() || json_pointer[0] != '/') { return INVALID_JSON_POINTER; }
++      for (size_t escape = json_pointer.find('~'); escape != std::string_view::npos; escape = json_pointer.find('~', escape + 2)) {
++        if (escape + 1 >= json_pointer.size() || (json_pointer[escape + 1] != '0' && json_pointer[escape + 1] != '1')) { return INVALID_JSON_POINTER; }
++      }
++      return NO_SUCH_FIELD;
++    }
+   }
+ }
+ 
+@@ -68769,8 +68803,13 @@ simdjson_inline simdjson_result<value> document::at_pointer(std::string_view jso
+       return (*this).get_array().at_pointer(json_pointer);
+     case json_type::object:
+       return (*this).get_object().at_pointer(json_pointer);
+-    default:
+-      return INVALID_JSON_POINTER;
++    default: {
++      if (json_pointer[0] != '/') { return INVALID_JSON_POINTER; }
++      for (size_t escape = json_pointer.find('~'); escape != std::string_view::npos; escape = json_pointer.find('~', escape + 2)) {
++        if (escape + 1 >= json_pointer.size() || (json_pointer[escape + 1] != '0' && json_pointer[escape + 1] != '1')) { return INVALID_JSON_POINTER; }
++      }
++      return NO_SUCH_FIELD;
++    }
+   }
+ }
+ 
+@@ -72086,8 +72125,13 @@ simdjson_inline simdjson_result<value> value::at_pointer(std::string_view json_p
+       return (*this).get_array().at_pointer(json_pointer);
+     case json_type::object:
+       return (*this).get_object().at_pointer(json_pointer);
+-    default:
+-      return INVALID_JSON_POINTER;
++    default: {
++      if (json_pointer.empty() || json_pointer[0] != '/') { return INVALID_JSON_POINTER; }
++      for (size_t escape = json_pointer.find('~'); escape != std::string_view::npos; escape = json_pointer.find('~', escape + 2)) {
++        if (escape + 1 >= json_pointer.size() || (json_pointer[escape + 1] != '0' && json_pointer[escape + 1] != '1')) { return INVALID_JSON_POINTER; }
++      }
++      return NO_SUCH_FIELD;
++    }
+   }
+ }
+ 
+@@ -79712,8 +79756,13 @@ simdjson_inline simdjson_result<value> document::at_pointer(std::string_view jso
+       return (*this).get_array().at_pointer(json_pointer);
+     case json_type::object:
+       return (*this).get_object().at_pointer(json_pointer);
+-    default:
+-      return INVALID_JSON_POINTER;
++    default: {
++      if (json_pointer[0] != '/') { return INVALID_JSON_POINTER; }
++      for (size_t escape = json_pointer.find('~'); escape != std::string_view::npos; escape = json_pointer.find('~', escape + 2)) {
++        if (escape + 1 >= json_pointer.size() || (json_pointer[escape + 1] != '0' && json_pointer[escape + 1] != '1')) { return INVALID_JSON_POINTER; }
++      }
++      return NO_SUCH_FIELD;
++    }
+   }
+ }
+ 
+@@ -83029,8 +83078,13 @@ simdjson_inline simdjson_result<value> value::at_pointer(std::string_view json_p
+       return (*this).get_array().at_pointer(json_pointer);
+     case json_type::object:
+       return (*this).get_object().at_pointer(json_pointer);
+-    default:
+-      return INVALID_JSON_POINTER;
++    default: {
++      if (json_pointer.empty() || json_pointer[0] != '/') { return INVALID_JSON_POINTER; }
++      for (size_t escape = json_pointer.find('~'); escape != std::string_view::npos; escape = json_pointer.find('~', escape + 2)) {
++        if (escape + 1 >= json_pointer.size() || (json_pointer[escape + 1] != '0' && json_pointer[escape + 1] != '1')) { return INVALID_JSON_POINTER; }
++      }
++      return NO_SUCH_FIELD;
++    }
+   }
+ }
+ 
+@@ -90978,8 +91032,13 @@ simdjson_inline simdjson_result<value> document::at_pointer(std::string_view jso
+       return (*this).get_array().at_pointer(json_pointer);
+     case json_type::object:
+       return (*this).get_object().at_pointer(json_pointer);
+-    default:
+-      return INVALID_JSON_POINTER;
++    default: {
++      if (json_pointer[0] != '/') { return INVALID_JSON_POINTER; }
++      for (size_t escape = json_pointer.find('~'); escape != std::string_view::npos; escape = json_pointer.find('~', escape + 2)) {
++        if (escape + 1 >= json_pointer.size() || (json_pointer[escape + 1] != '0' && json_pointer[escape + 1] != '1')) { return INVALID_JSON_POINTER; }
++      }
++      return NO_SUCH_FIELD;
++    }
+   }
+ }
+ 
+@@ -94295,8 +94354,13 @@ simdjson_inline simdjson_result<value> value::at_pointer(std::string_view json_p
+       return (*this).get_array().at_pointer(json_pointer);
+     case json_type::object:
+       return (*this).get_object().at_pointer(json_pointer);
+-    default:
+-      return INVALID_JSON_POINTER;
++    default: {
++      if (json_pointer.empty() || json_pointer[0] != '/') { return INVALID_JSON_POINTER; }
++      for (size_t escape = json_pointer.find('~'); escape != std::string_view::npos; escape = json_pointer.find('~', escape + 2)) {
++        if (escape + 1 >= json_pointer.size() || (json_pointer[escape + 1] != '0' && json_pointer[escape + 1] != '1')) { return INVALID_JSON_POINTER; }
++      }
++      return NO_SUCH_FIELD;
++    }
+   }
+ }
+ 
+@@ -101715,8 +101779,13 @@ simdjson_inline simdjson_result<value> document::at_pointer(std::string_view jso
+       return (*this).get_array().at_pointer(json_pointer);
+     case json_type::object:
+       return (*this).get_object().at_pointer(json_pointer);
+-    default:
+-      return INVALID_JSON_POINTER;
++    default: {
++      if (json_pointer[0] != '/') { return INVALID_JSON_POINTER; }
++      for (size_t escape = json_pointer.find('~'); escape != std::string_view::npos; escape = json_pointer.find('~', escape + 2)) {
++        if (escape + 1 >= json_pointer.size() || (json_pointer[escape + 1] != '0' && json_pointer[escape + 1] != '1')) { return INVALID_JSON_POINTER; }
++      }
++      return NO_SUCH_FIELD;
++    }
+   }
+ }
+ 
+@@ -105032,8 +105101,13 @@ simdjson_inline simdjson_result<value> value::at_pointer(std::string_view json_p
+       return (*this).get_array().at_pointer(json_pointer);
+     case json_type::object:
+       return (*this).get_object().at_pointer(json_pointer);
+-    default:
+-      return INVALID_JSON_POINTER;
++    default: {
++      if (json_pointer.empty() || json_pointer[0] != '/') { return INVALID_JSON_POINTER; }
++      for (size_t escape = json_pointer.find('~'); escape != std::string_view::npos; escape = json_pointer.find('~', escape + 2)) {
++        if (escape + 1 >= json_pointer.size() || (json_pointer[escape + 1] != '0' && json_pointer[escape + 1] != '1')) { return INVALID_JSON_POINTER; }
++      }
++      return NO_SUCH_FIELD;
++    }
+   }
+ }
+ 
+@@ -112465,8 +112539,13 @@ simdjson_inline simdjson_result<value> document::at_pointer(std::string_view jso
+       return (*this).get_array().at_pointer(json_pointer);
+     case json_type::object:
+       return (*this).get_object().at_pointer(json_pointer);
+-    default:
+-      return INVALID_JSON_POINTER;
++    default: {
++      if (json_pointer[0] != '/') { return INVALID_JSON_POINTER; }
++      for (size_t escape = json_pointer.find('~'); escape != std::string_view::npos; escape = json_pointer.find('~', escape + 2)) {
++        if (escape + 1 >= json_pointer.size() || (json_pointer[escape + 1] != '0' && json_pointer[escape + 1] != '1')) { return INVALID_JSON_POINTER; }
++      }
++      return NO_SUCH_FIELD;
++    }
+   }
+ }
+ 
+@@ -115782,8 +115861,13 @@ simdjson_inline simdjson_result<value> value::at_pointer(std::string_view json_p
+       return (*this).get_array().at_pointer(json_pointer);
+     case json_type::object:
+       return (*this).get_object().at_pointer(json_pointer);
+-    default:
+-      return INVALID_JSON_POINTER;
++    default: {
++      if (json_pointer.empty() || json_pointer[0] != '/') { return INVALID_JSON_POINTER; }
++      for (size_t escape = json_pointer.find('~'); escape != std::string_view::npos; escape = json_pointer.find('~', escape + 2)) {
++        if (escape + 1 >= json_pointer.size() || (json_pointer[escape + 1] != '0' && json_pointer[escape + 1] != '1')) { return INVALID_JSON_POINTER; }
++      }
++      return NO_SUCH_FIELD;
++    }
+   }
+ }
+ 

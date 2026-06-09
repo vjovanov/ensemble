@@ -1,0 +1,48 @@
+diff --git c/src/builtin.c i/src/builtin.c
+index 717a07528a..8aead7e4fd 100644
+--- c/src/builtin.c
++++ i/src/builtin.c
+@@ -1005,12 +1005,38 @@ static jv f_match(jq_state *jq, jv input, jv regex, jv modifiers, jv testmode) {
+         match = jv_object_set(match, jv_string("string"), jv_string(""));
+         jv captures = jv_array();
+         for (int i = 1; i < region->num_regs; ++i) {
+-          jv cap = jv_object();
+-          cap = jv_object_set(cap, jv_string("offset"), jv_number(idx));
+-          cap = jv_object_set(cap, jv_string("string"), jv_string(""));
+-          cap = jv_object_set(cap, jv_string("length"), jv_number(0));
++          jv cap;
++          // Empty capture.
++          if (region->beg[i] == region->end[i]) {
++            // Didn't match.
++            if (region->beg[i] == -1) {
++              cap = jv_object_set(jv_object(), jv_string("offset"), jv_number(-1));
++              cap = jv_object_set(cap, jv_string("string"), jv_null());
++            } else {
++              fr = input_string;
++              for (idx = 0; fr < input_string+region->beg[i]; idx++) {
++                fr += jvp_utf8_decode_length(*fr);
++              }
++              cap = jv_object_set(jv_object(), jv_string("offset"), jv_number(idx));
++              cap = jv_object_set(cap, jv_string("string"), jv_string(""));
++            }
++            cap = jv_object_set(cap, jv_string("length"), jv_number(0));
++            cap = jv_object_set(cap, jv_string("name"), jv_null());
++            captures = jv_array_append(captures, cap);
++            continue;
++          }
++          fr = input_string;
++          for (idx = len = 0; fr < input_string+region->end[i]; len++) {
++            if (fr == input_string+region->beg[i]) idx = len, len=0;
++            fr += jvp_utf8_decode_length(*fr);
++          }
++
++          unsigned long blen = region->end[i]-region->beg[i];
++          cap = jv_object_set(jv_object(), jv_string("offset"), jv_number(idx));
++          cap = jv_object_set(cap, jv_string("length"), jv_number(len));
++          cap = jv_object_set(cap, jv_string("string"), jv_string_sized(input_string+region->beg[i],blen));
+           cap = jv_object_set(cap, jv_string("name"), jv_null());
+-          captures = jv_array_append(captures, cap);
++          captures = jv_array_append(captures,cap);
+         }
+         onig_foreach_name(reg, f_match_name_iter, &captures);
+         match = jv_object_set(match, jv_string("captures"), captures);

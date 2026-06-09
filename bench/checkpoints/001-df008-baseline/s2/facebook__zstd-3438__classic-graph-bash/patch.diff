@@ -1,0 +1,84 @@
+diff --git c/lib/compress/zstd_compress.c i/lib/compress/zstd_compress.c
+index 3a48e7dcd4..61d86094b9 100644
+--- c/lib/compress/zstd_compress.c
++++ i/lib/compress/zstd_compress.c
+@@ -250,6 +250,18 @@ static ZSTD_paramSwitch_e ZSTD_resolveRowMatchFinderMode(ZSTD_paramSwitch_e mode
+     return mode;
+ }
+ 
++static ZSTD_compressionParameters ZSTD_capRowMatchFinderHashLog(ZSTD_compressionParameters cParams,
++                                                                 ZSTD_paramSwitch_e useRowMatchFinder) {
++    if (ZSTD_rowMatchFinderUsed(cParams.strategy, useRowMatchFinder)) {
++        /* Row matchfinder hashes add 8 tag bits and subtract at least 4 row bits.
++         * ZSTD_hashPtr() asserts that the resulting hashLog is <= 32.
++         */
++        U32 const maxRowHashLog = 28;
++        if (cParams.hashLog > maxRowHashLog) cParams.hashLog = maxRowHashLog;
++    }
++    return cParams;
++}
++
+ /* Returns block splitter usage (generally speaking, when using slower/stronger compression modes) */
+ static ZSTD_paramSwitch_e ZSTD_resolveBlockSplitterMode(ZSTD_paramSwitch_e mode,
+                                                         const ZSTD_compressionParameters* const cParams) {
+@@ -1466,9 +1478,12 @@ ZSTD_adjustCParams_internal(ZSTD_compressionParameters cPar,
+         cPar.windowLog = ZSTD_WINDOWLOG_ABSOLUTEMIN;  /* minimum wlog required for valid frame header */
+ 
+     if (mode == ZSTD_cpm_createCDict && ZSTD_CDictIndicesAreTagged(&cPar)) {
+-        U32 const maxShortCacheHashLog = 32 - ZSTD_SHORT_CACHE_TAG_BITS;
+-        if (cPar.hashLog > maxShortCacheHashLog) {
+-            cPar.hashLog = maxShortCacheHashLog;
++        U32 const maxShortCacheLog = 32 - ZSTD_SHORT_CACHE_TAG_BITS;
++        if (cPar.hashLog > maxShortCacheLog) {
++            cPar.hashLog = maxShortCacheLog;
++        }
++        if (cPar.chainLog > maxShortCacheLog) {
++            cPar.chainLog = maxShortCacheLog;
+         }
+     }
+ 
+@@ -1576,15 +1591,16 @@ static size_t ZSTD_estimateCCtxSize_usingCCtxParams_internal(
+         int useExternalMatchFinder,
+         size_t maxBlockSize)
+ {
+-    size_t const windowSize = (size_t) BOUNDED(1ULL, 1ULL << cParams->windowLog, pledgedSrcSize);
++    ZSTD_compressionParameters const cappedCParams = ZSTD_capRowMatchFinderHashLog(*cParams, useRowMatchFinder);
++    size_t const windowSize = (size_t) BOUNDED(1ULL, 1ULL << cappedCParams.windowLog, pledgedSrcSize);
+     size_t const blockSize = MIN(ZSTD_resolveMaxBlockSize(maxBlockSize), windowSize);
+-    size_t const maxNbSeq = ZSTD_maxNbSeq(blockSize, cParams->minMatch, useExternalMatchFinder);
++    size_t const maxNbSeq = ZSTD_maxNbSeq(blockSize, cappedCParams.minMatch, useExternalMatchFinder);
+     size_t const tokenSpace = ZSTD_cwksp_alloc_size(WILDCOPY_OVERLENGTH + blockSize)
+                             + ZSTD_cwksp_aligned_alloc_size(maxNbSeq * sizeof(seqDef))
+                             + 3 * ZSTD_cwksp_alloc_size(maxNbSeq * sizeof(BYTE));
+     size_t const entropySpace = ZSTD_cwksp_alloc_size(ENTROPY_WORKSPACE_SIZE);
+     size_t const blockStateSpace = 2 * ZSTD_cwksp_alloc_size(sizeof(ZSTD_compressedBlockState_t));
+-    size_t const matchStateSize = ZSTD_sizeof_matchState(cParams, useRowMatchFinder, /* enableDedicatedDictSearch */ 0, /* forCCtx */ 1);
++    size_t const matchStateSize = ZSTD_sizeof_matchState(&cappedCParams, useRowMatchFinder, /* enableDedicatedDictSearch */ 0, /* forCCtx */ 1);
+ 
+     size_t const ldmSpace = ZSTD_ldm_getTableSize(*ldmParams);
+     size_t const maxNbLdmSeq = ZSTD_ldm_getMaxNbSeq(*ldmParams, blockSize);
+@@ -1959,6 +1975,8 @@ static size_t ZSTD_resetCCtx_internal(ZSTD_CCtx* zc,
+      * and point params at the applied params.
+      */
+     zc->appliedParams = *params;
++    zc->appliedParams.cParams = ZSTD_capRowMatchFinderHashLog(zc->appliedParams.cParams,
++                                                              zc->appliedParams.useRowMatchFinder);
+     params = &zc->appliedParams;
+ 
+     assert(params->useRowMatchFinder != ZSTD_ps_auto);
+@@ -5264,6 +5282,7 @@ ZSTD_CDict* ZSTD_createCDict_advanced2(
+     DEBUGLOG(3, "ZSTD_createCDict_advanced2: DDS: %u", cctxParams.enableDedicatedDictSearch);
+     cctxParams.cParams = cParams;
+     cctxParams.useRowMatchFinder = ZSTD_resolveRowMatchFinderMode(cctxParams.useRowMatchFinder, &cParams);
++    cctxParams.cParams = ZSTD_capRowMatchFinderHashLog(cctxParams.cParams, cctxParams.useRowMatchFinder);
+ 
+     cdict = ZSTD_createCDict_advanced_internal(dictSize,
+                         dictLoadMethod, cctxParams.cParams,
+@@ -5940,6 +5959,7 @@ static size_t ZSTD_CCtx_init_compressStream2(ZSTD_CCtx* cctx,
+     params.useBlockSplitter = ZSTD_resolveBlockSplitterMode(params.useBlockSplitter, &params.cParams);
+     params.ldmParams.enableLdm = ZSTD_resolveEnableLdm(params.ldmParams.enableLdm, &params.cParams);
+     params.useRowMatchFinder = ZSTD_resolveRowMatchFinderMode(params.useRowMatchFinder, &params.cParams);
++    params.cParams = ZSTD_capRowMatchFinderHashLog(params.cParams, params.useRowMatchFinder);
+     params.validateSequences = ZSTD_resolveExternalSequenceValidation(params.validateSequences);
+     params.maxBlockSize = ZSTD_resolveMaxBlockSize(params.maxBlockSize);
+ 

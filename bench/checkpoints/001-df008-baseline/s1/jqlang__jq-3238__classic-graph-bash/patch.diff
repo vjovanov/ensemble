@@ -1,0 +1,26 @@
+diff --git c/src/builtin.c i/src/builtin.c
+index 717a07528a..f9ed23a336 100644
+--- c/src/builtin.c
++++ i/src/builtin.c
+@@ -1013,6 +1013,21 @@ static jv f_match(jq_state *jq, jv input, jv regex, jv modifiers, jv testmode) {
+           captures = jv_array_append(captures, cap);
+         }
+         onig_foreach_name(reg, f_match_name_iter, &captures);
++        for (int i = 1; i < region->num_regs; ++i) {
++          if (region->beg[i] != -1)
++            continue;
++          jv cap = jv_array_get(jv_copy(captures), i - 1);
++          jv name = jv_object_get(jv_copy(cap), jv_string("name"));
++          if (jv_get_kind(name) == JV_KIND_NULL) {
++            jv_free(name);
++            jv_free(cap);
++            continue;
++          }
++          jv_free(name);
++          cap = jv_object_set(cap, jv_string("offset"), jv_number(-1));
++          cap = jv_object_set(cap, jv_string("string"), jv_null());
++          captures = jv_array_set(captures, i - 1, cap);
++        }
+         match = jv_object_set(match, jv_string("captures"), captures);
+         result = jv_array_append(result, match);
+         // ensure '"qux" | match("(?=u)"; "g")' matches just once

@@ -1,0 +1,586 @@
+diff --git c/include/simdjson/dom/element-inl.h i/include/simdjson/dom/element-inl.h
+index 1f071da608..cceb13a24a 100644
+--- c/include/simdjson/dom/element-inl.h
++++ i/include/simdjson/dom/element-inl.h
+@@ -375,6 +375,17 @@ inline simdjson_result<element> element::operator[](const char *key) const noexc
+   return at_key(key);
+ }
+ 
++simdjson_inline error_code validate_json_pointer(std::string_view json_pointer) noexcept {
++  if (json_pointer.empty()) { return SUCCESS; }
++  if (json_pointer[0] != '/') { return INVALID_JSON_POINTER; }
++  for (size_t i = json_pointer.find('~'); i != std::string_view::npos; i = json_pointer.find('~', i + 1)) {
++    if (i + 1 == json_pointer.size() || (json_pointer[i + 1] != '0' && json_pointer[i + 1] != '1')) {
++      return INVALID_JSON_POINTER;
++    }
++  }
++  return SUCCESS;
++}
++
+ inline simdjson_result<element> element::at_pointer(std::string_view json_pointer) const noexcept {
+   SIMDJSON_DEVELOPMENT_ASSERT(tape.usable()); // https://github.com/simdjson/simdjson/issues/1914
+   switch (tape.tape_ref_type()) {
+@@ -383,8 +394,10 @@ inline simdjson_result<element> element::at_pointer(std::string_view json_pointe
+     case internal::tape_type::START_ARRAY:
+       return array(tape).at_pointer(json_pointer);
+     default: {
+-      if(!json_pointer.empty()) { // a non-empty string is invalid on an atom
+-        return INVALID_JSON_POINTER;
++      if(!json_pointer.empty()) { // a non-empty string does not resolve on an atom
++        error_code error = validate_json_pointer(json_pointer);
++        if (error) { return error; }
++        return NO_SUCH_FIELD;
+       }
+       // an empty string means that we return the current node
+       dom::element copy(*this);
+diff --git c/include/simdjson/generic/ondemand/base.h i/include/simdjson/generic/ondemand/base.h
+index 89bd0c01bb..dac4d97e3d 100644
+--- c/include/simdjson/generic/ondemand/base.h
++++ i/include/simdjson/generic/ondemand/base.h
+@@ -40,6 +40,17 @@ class token_iterator;
+ class value;
+ class value_iterator;
+ 
++simdjson_inline error_code validate_json_pointer(std::string_view json_pointer) noexcept {
++  if (json_pointer.empty()) { return SUCCESS; }
++  if (json_pointer[0] != '/') { return INVALID_JSON_POINTER; }
++  for (size_t i = json_pointer.find('~'); i != std::string_view::npos; i = json_pointer.find('~', i + 1)) {
++    if (i + 1 == json_pointer.size() || (json_pointer[i + 1] != '0' && json_pointer[i + 1] != '1')) {
++      return INVALID_JSON_POINTER;
++    }
++  }
++  return SUCCESS;
++}
++
+ } // namespace ondemand
+ } // namespace SIMDJSON_IMPLEMENTATION
+ } // namespace simdjson
+diff --git c/include/simdjson/generic/ondemand/document-inl.h i/include/simdjson/generic/ondemand/document-inl.h
+index 70072c42b1..7471321fca 100644
+--- c/include/simdjson/generic/ondemand/document-inl.h
++++ i/include/simdjson/generic/ondemand/document-inl.h
+@@ -311,8 +311,11 @@ simdjson_inline simdjson_result<value> document::at_pointer(std::string_view jso
+       return (*this).get_array().at_pointer(json_pointer);
+     case json_type::object:
+       return (*this).get_object().at_pointer(json_pointer);
+-    default:
+-      return INVALID_JSON_POINTER;
++    default: {
++      error_code error = validate_json_pointer(json_pointer);
++      if (error) { return error; }
++      return NO_SUCH_FIELD;
++    }
+   }
+ }
+ 
+diff --git c/include/simdjson/generic/ondemand/value-inl.h i/include/simdjson/generic/ondemand/value-inl.h
+index 41e02fa24e..9c2e616f5d 100644
+--- c/include/simdjson/generic/ondemand/value-inl.h
++++ i/include/simdjson/generic/ondemand/value-inl.h
+@@ -240,6 +240,9 @@ simdjson_inline int32_t value::current_depth() const noexcept{
+ }
+ 
+ simdjson_inline simdjson_result<value> value::at_pointer(std::string_view json_pointer) noexcept {
++  if (json_pointer.empty()) {
++    return value(iter);
++  }
+   json_type t;
+   SIMDJSON_TRY(type().get(t));
+   switch (t)
+@@ -248,8 +251,11 @@ simdjson_inline simdjson_result<value> value::at_pointer(std::string_view json_p
+       return (*this).get_array().at_pointer(json_pointer);
+     case json_type::object:
+       return (*this).get_object().at_pointer(json_pointer);
+-    default:
+-      return INVALID_JSON_POINTER;
++    default: {
++      error_code error = validate_json_pointer(json_pointer);
++      if (error) { return error; }
++      return NO_SUCH_FIELD;
++    }
+   }
+ }
+ 
+diff --git c/singleheader/simdjson.h i/singleheader/simdjson.h
+index 985ffe1144..2fbb9d538e 100644
+--- c/singleheader/simdjson.h
++++ i/singleheader/simdjson.h
+@@ -7440,6 +7440,17 @@ inline simdjson_result<element> element::operator[](const char *key) const noexc
+   return at_key(key);
+ }
+ 
++simdjson_inline error_code validate_json_pointer(std::string_view json_pointer) noexcept {
++  if (json_pointer.empty()) { return SUCCESS; }
++  if (json_pointer[0] != '/') { return INVALID_JSON_POINTER; }
++  for (size_t i = json_pointer.find('~'); i != std::string_view::npos; i = json_pointer.find('~', i + 1)) {
++    if (i + 1 == json_pointer.size() || (json_pointer[i + 1] != '0' && json_pointer[i + 1] != '1')) {
++      return INVALID_JSON_POINTER;
++    }
++  }
++  return SUCCESS;
++}
++
+ inline simdjson_result<element> element::at_pointer(std::string_view json_pointer) const noexcept {
+   SIMDJSON_DEVELOPMENT_ASSERT(tape.usable()); // https://github.com/simdjson/simdjson/issues/1914
+   switch (tape.tape_ref_type()) {
+@@ -7448,8 +7459,10 @@ inline simdjson_result<element> element::at_pointer(std::string_view json_pointe
+     case internal::tape_type::START_ARRAY:
+       return array(tape).at_pointer(json_pointer);
+     default: {
+-      if(!json_pointer.empty()) { // a non-empty string is invalid on an atom
+-        return INVALID_JSON_POINTER;
++      if(!json_pointer.empty()) { // a non-empty string does not resolve on an atom
++        error_code error = validate_json_pointer(json_pointer);
++        if (error) { return error; }
++        return NO_SUCH_FIELD;
+       }
+       // an empty string means that we return the current node
+       dom::element copy(*this);
+@@ -31391,6 +31404,17 @@ class token_iterator;
+ class value;
+ class value_iterator;
+ 
++simdjson_inline error_code validate_json_pointer(std::string_view json_pointer) noexcept {
++  if (json_pointer.empty()) { return SUCCESS; }
++  if (json_pointer[0] != '/') { return INVALID_JSON_POINTER; }
++  for (size_t i = json_pointer.find('~'); i != std::string_view::npos; i = json_pointer.find('~', i + 1)) {
++    if (i + 1 == json_pointer.size() || (json_pointer[i + 1] != '0' && json_pointer[i + 1] != '1')) {
++      return INVALID_JSON_POINTER;
++    }
++  }
++  return SUCCESS;
++}
++
+ } // namespace ondemand
+ } // namespace arm64
+ } // namespace simdjson
+@@ -36775,8 +36799,11 @@ simdjson_inline simdjson_result<value> document::at_pointer(std::string_view jso
+       return (*this).get_array().at_pointer(json_pointer);
+     case json_type::object:
+       return (*this).get_object().at_pointer(json_pointer);
+-    default:
+-      return INVALID_JSON_POINTER;
++    default: {
++      error_code error = validate_json_pointer(json_pointer);
++      if (error) { return error; }
++      return NO_SUCH_FIELD;
++    }
+   }
+ }
+ 
+@@ -40084,6 +40111,9 @@ simdjson_inline int32_t value::current_depth() const noexcept{
+ }
+ 
+ simdjson_inline simdjson_result<value> value::at_pointer(std::string_view json_pointer) noexcept {
++  if (json_pointer.empty()) {
++    return value(iter);
++  }
+   json_type t;
+   SIMDJSON_TRY(type().get(t));
+   switch (t)
+@@ -40092,8 +40122,11 @@ simdjson_inline simdjson_result<value> value::at_pointer(std::string_view json_p
+       return (*this).get_array().at_pointer(json_pointer);
+     case json_type::object:
+       return (*this).get_object().at_pointer(json_pointer);
+-    default:
+-      return INVALID_JSON_POINTER;
++    default: {
++      error_code error = validate_json_pointer(json_pointer);
++      if (error) { return error; }
++      return NO_SUCH_FIELD;
++    }
+   }
+ }
+ 
+@@ -41728,6 +41761,17 @@ class token_iterator;
+ class value;
+ class value_iterator;
+ 
++simdjson_inline error_code validate_json_pointer(std::string_view json_pointer) noexcept {
++  if (json_pointer.empty()) { return SUCCESS; }
++  if (json_pointer[0] != '/') { return INVALID_JSON_POINTER; }
++  for (size_t i = json_pointer.find('~'); i != std::string_view::npos; i = json_pointer.find('~', i + 1)) {
++    if (i + 1 == json_pointer.size() || (json_pointer[i + 1] != '0' && json_pointer[i + 1] != '1')) {
++      return INVALID_JSON_POINTER;
++    }
++  }
++  return SUCCESS;
++}
++
+ } // namespace ondemand
+ } // namespace fallback
+ } // namespace simdjson
+@@ -47112,8 +47156,11 @@ simdjson_inline simdjson_result<value> document::at_pointer(std::string_view jso
+       return (*this).get_array().at_pointer(json_pointer);
+     case json_type::object:
+       return (*this).get_object().at_pointer(json_pointer);
+-    default:
+-      return INVALID_JSON_POINTER;
++    default: {
++      error_code error = validate_json_pointer(json_pointer);
++      if (error) { return error; }
++      return NO_SUCH_FIELD;
++    }
+   }
+ }
+ 
+@@ -50421,6 +50468,9 @@ simdjson_inline int32_t value::current_depth() const noexcept{
+ }
+ 
+ simdjson_inline simdjson_result<value> value::at_pointer(std::string_view json_pointer) noexcept {
++  if (json_pointer.empty()) {
++    return value(iter);
++  }
+   json_type t;
+   SIMDJSON_TRY(type().get(t));
+   switch (t)
+@@ -50429,8 +50479,11 @@ simdjson_inline simdjson_result<value> value::at_pointer(std::string_view json_p
+       return (*this).get_array().at_pointer(json_pointer);
+     case json_type::object:
+       return (*this).get_object().at_pointer(json_pointer);
+-    default:
+-      return INVALID_JSON_POINTER;
++    default: {
++      error_code error = validate_json_pointer(json_pointer);
++      if (error) { return error; }
++      return NO_SUCH_FIELD;
++    }
+   }
+ }
+ 
+@@ -52557,6 +52610,17 @@ class token_iterator;
+ class value;
+ class value_iterator;
+ 
++simdjson_inline error_code validate_json_pointer(std::string_view json_pointer) noexcept {
++  if (json_pointer.empty()) { return SUCCESS; }
++  if (json_pointer[0] != '/') { return INVALID_JSON_POINTER; }
++  for (size_t i = json_pointer.find('~'); i != std::string_view::npos; i = json_pointer.find('~', i + 1)) {
++    if (i + 1 == json_pointer.size() || (json_pointer[i + 1] != '0' && json_pointer[i + 1] != '1')) {
++      return INVALID_JSON_POINTER;
++    }
++  }
++  return SUCCESS;
++}
++
+ } // namespace ondemand
+ } // namespace haswell
+ } // namespace simdjson
+@@ -57941,8 +58005,11 @@ simdjson_inline simdjson_result<value> document::at_pointer(std::string_view jso
+       return (*this).get_array().at_pointer(json_pointer);
+     case json_type::object:
+       return (*this).get_object().at_pointer(json_pointer);
+-    default:
+-      return INVALID_JSON_POINTER;
++    default: {
++      error_code error = validate_json_pointer(json_pointer);
++      if (error) { return error; }
++      return NO_SUCH_FIELD;
++    }
+   }
+ }
+ 
+@@ -61250,6 +61317,9 @@ simdjson_inline int32_t value::current_depth() const noexcept{
+ }
+ 
+ simdjson_inline simdjson_result<value> value::at_pointer(std::string_view json_pointer) noexcept {
++  if (json_pointer.empty()) {
++    return value(iter);
++  }
+   json_type t;
+   SIMDJSON_TRY(type().get(t));
+   switch (t)
+@@ -61258,8 +61328,11 @@ simdjson_inline simdjson_result<value> value::at_pointer(std::string_view json_p
+       return (*this).get_array().at_pointer(json_pointer);
+     case json_type::object:
+       return (*this).get_object().at_pointer(json_pointer);
+-    default:
+-      return INVALID_JSON_POINTER;
++    default: {
++      error_code error = validate_json_pointer(json_pointer);
++      if (error) { return error; }
++      return NO_SUCH_FIELD;
++    }
+   }
+ }
+ 
+@@ -63385,6 +63458,17 @@ class token_iterator;
+ class value;
+ class value_iterator;
+ 
++simdjson_inline error_code validate_json_pointer(std::string_view json_pointer) noexcept {
++  if (json_pointer.empty()) { return SUCCESS; }
++  if (json_pointer[0] != '/') { return INVALID_JSON_POINTER; }
++  for (size_t i = json_pointer.find('~'); i != std::string_view::npos; i = json_pointer.find('~', i + 1)) {
++    if (i + 1 == json_pointer.size() || (json_pointer[i + 1] != '0' && json_pointer[i + 1] != '1')) {
++      return INVALID_JSON_POINTER;
++    }
++  }
++  return SUCCESS;
++}
++
+ } // namespace ondemand
+ } // namespace icelake
+ } // namespace simdjson
+@@ -68769,8 +68853,11 @@ simdjson_inline simdjson_result<value> document::at_pointer(std::string_view jso
+       return (*this).get_array().at_pointer(json_pointer);
+     case json_type::object:
+       return (*this).get_object().at_pointer(json_pointer);
+-    default:
+-      return INVALID_JSON_POINTER;
++    default: {
++      error_code error = validate_json_pointer(json_pointer);
++      if (error) { return error; }
++      return NO_SUCH_FIELD;
++    }
+   }
+ }
+ 
+@@ -72078,6 +72165,9 @@ simdjson_inline int32_t value::current_depth() const noexcept{
+ }
+ 
+ simdjson_inline simdjson_result<value> value::at_pointer(std::string_view json_pointer) noexcept {
++  if (json_pointer.empty()) {
++    return value(iter);
++  }
+   json_type t;
+   SIMDJSON_TRY(type().get(t));
+   switch (t)
+@@ -72086,8 +72176,11 @@ simdjson_inline simdjson_result<value> value::at_pointer(std::string_view json_p
+       return (*this).get_array().at_pointer(json_pointer);
+     case json_type::object:
+       return (*this).get_object().at_pointer(json_pointer);
+-    default:
+-      return INVALID_JSON_POINTER;
++    default: {
++      error_code error = validate_json_pointer(json_pointer);
++      if (error) { return error; }
++      return NO_SUCH_FIELD;
++    }
+   }
+ }
+ 
+@@ -74328,6 +74421,17 @@ class token_iterator;
+ class value;
+ class value_iterator;
+ 
++simdjson_inline error_code validate_json_pointer(std::string_view json_pointer) noexcept {
++  if (json_pointer.empty()) { return SUCCESS; }
++  if (json_pointer[0] != '/') { return INVALID_JSON_POINTER; }
++  for (size_t i = json_pointer.find('~'); i != std::string_view::npos; i = json_pointer.find('~', i + 1)) {
++    if (i + 1 == json_pointer.size() || (json_pointer[i + 1] != '0' && json_pointer[i + 1] != '1')) {
++      return INVALID_JSON_POINTER;
++    }
++  }
++  return SUCCESS;
++}
++
+ } // namespace ondemand
+ } // namespace ppc64
+ } // namespace simdjson
+@@ -79712,8 +79816,11 @@ simdjson_inline simdjson_result<value> document::at_pointer(std::string_view jso
+       return (*this).get_array().at_pointer(json_pointer);
+     case json_type::object:
+       return (*this).get_object().at_pointer(json_pointer);
+-    default:
+-      return INVALID_JSON_POINTER;
++    default: {
++      error_code error = validate_json_pointer(json_pointer);
++      if (error) { return error; }
++      return NO_SUCH_FIELD;
++    }
+   }
+ }
+ 
+@@ -83021,6 +83128,9 @@ simdjson_inline int32_t value::current_depth() const noexcept{
+ }
+ 
+ simdjson_inline simdjson_result<value> value::at_pointer(std::string_view json_pointer) noexcept {
++  if (json_pointer.empty()) {
++    return value(iter);
++  }
+   json_type t;
+   SIMDJSON_TRY(type().get(t));
+   switch (t)
+@@ -83029,8 +83139,11 @@ simdjson_inline simdjson_result<value> value::at_pointer(std::string_view json_p
+       return (*this).get_array().at_pointer(json_pointer);
+     case json_type::object:
+       return (*this).get_object().at_pointer(json_pointer);
+-    default:
+-      return INVALID_JSON_POINTER;
++    default: {
++      error_code error = validate_json_pointer(json_pointer);
++      if (error) { return error; }
++      return NO_SUCH_FIELD;
++    }
+   }
+ }
+ 
+@@ -85594,6 +85707,17 @@ class token_iterator;
+ class value;
+ class value_iterator;
+ 
++simdjson_inline error_code validate_json_pointer(std::string_view json_pointer) noexcept {
++  if (json_pointer.empty()) { return SUCCESS; }
++  if (json_pointer[0] != '/') { return INVALID_JSON_POINTER; }
++  for (size_t i = json_pointer.find('~'); i != std::string_view::npos; i = json_pointer.find('~', i + 1)) {
++    if (i + 1 == json_pointer.size() || (json_pointer[i + 1] != '0' && json_pointer[i + 1] != '1')) {
++      return INVALID_JSON_POINTER;
++    }
++  }
++  return SUCCESS;
++}
++
+ } // namespace ondemand
+ } // namespace westmere
+ } // namespace simdjson
+@@ -90978,8 +91102,11 @@ simdjson_inline simdjson_result<value> document::at_pointer(std::string_view jso
+       return (*this).get_array().at_pointer(json_pointer);
+     case json_type::object:
+       return (*this).get_object().at_pointer(json_pointer);
+-    default:
+-      return INVALID_JSON_POINTER;
++    default: {
++      error_code error = validate_json_pointer(json_pointer);
++      if (error) { return error; }
++      return NO_SUCH_FIELD;
++    }
+   }
+ }
+ 
+@@ -94287,6 +94414,9 @@ simdjson_inline int32_t value::current_depth() const noexcept{
+ }
+ 
+ simdjson_inline simdjson_result<value> value::at_pointer(std::string_view json_pointer) noexcept {
++  if (json_pointer.empty()) {
++    return value(iter);
++  }
+   json_type t;
+   SIMDJSON_TRY(type().get(t));
+   switch (t)
+@@ -94295,8 +94425,11 @@ simdjson_inline simdjson_result<value> value::at_pointer(std::string_view json_p
+       return (*this).get_array().at_pointer(json_pointer);
+     case json_type::object:
+       return (*this).get_object().at_pointer(json_pointer);
+-    default:
+-      return INVALID_JSON_POINTER;
++    default: {
++      error_code error = validate_json_pointer(json_pointer);
++      if (error) { return error; }
++      return NO_SUCH_FIELD;
++    }
+   }
+ }
+ 
+@@ -96331,6 +96464,17 @@ class token_iterator;
+ class value;
+ class value_iterator;
+ 
++simdjson_inline error_code validate_json_pointer(std::string_view json_pointer) noexcept {
++  if (json_pointer.empty()) { return SUCCESS; }
++  if (json_pointer[0] != '/') { return INVALID_JSON_POINTER; }
++  for (size_t i = json_pointer.find('~'); i != std::string_view::npos; i = json_pointer.find('~', i + 1)) {
++    if (i + 1 == json_pointer.size() || (json_pointer[i + 1] != '0' && json_pointer[i + 1] != '1')) {
++      return INVALID_JSON_POINTER;
++    }
++  }
++  return SUCCESS;
++}
++
+ } // namespace ondemand
+ } // namespace lsx
+ } // namespace simdjson
+@@ -101715,8 +101859,11 @@ simdjson_inline simdjson_result<value> document::at_pointer(std::string_view jso
+       return (*this).get_array().at_pointer(json_pointer);
+     case json_type::object:
+       return (*this).get_object().at_pointer(json_pointer);
+-    default:
+-      return INVALID_JSON_POINTER;
++    default: {
++      error_code error = validate_json_pointer(json_pointer);
++      if (error) { return error; }
++      return NO_SUCH_FIELD;
++    }
+   }
+ }
+ 
+@@ -105024,6 +105171,9 @@ simdjson_inline int32_t value::current_depth() const noexcept{
+ }
+ 
+ simdjson_inline simdjson_result<value> value::at_pointer(std::string_view json_pointer) noexcept {
++  if (json_pointer.empty()) {
++    return value(iter);
++  }
+   json_type t;
+   SIMDJSON_TRY(type().get(t));
+   switch (t)
+@@ -105032,8 +105182,11 @@ simdjson_inline simdjson_result<value> value::at_pointer(std::string_view json_p
+       return (*this).get_array().at_pointer(json_pointer);
+     case json_type::object:
+       return (*this).get_object().at_pointer(json_pointer);
+-    default:
+-      return INVALID_JSON_POINTER;
++    default: {
++      error_code error = validate_json_pointer(json_pointer);
++      if (error) { return error; }
++      return NO_SUCH_FIELD;
++    }
+   }
+ }
+ 
+@@ -107081,6 +107234,17 @@ class token_iterator;
+ class value;
+ class value_iterator;
+ 
++simdjson_inline error_code validate_json_pointer(std::string_view json_pointer) noexcept {
++  if (json_pointer.empty()) { return SUCCESS; }
++  if (json_pointer[0] != '/') { return INVALID_JSON_POINTER; }
++  for (size_t i = json_pointer.find('~'); i != std::string_view::npos; i = json_pointer.find('~', i + 1)) {
++    if (i + 1 == json_pointer.size() || (json_pointer[i + 1] != '0' && json_pointer[i + 1] != '1')) {
++      return INVALID_JSON_POINTER;
++    }
++  }
++  return SUCCESS;
++}
++
+ } // namespace ondemand
+ } // namespace lasx
+ } // namespace simdjson
+@@ -112465,8 +112629,11 @@ simdjson_inline simdjson_result<value> document::at_pointer(std::string_view jso
+       return (*this).get_array().at_pointer(json_pointer);
+     case json_type::object:
+       return (*this).get_object().at_pointer(json_pointer);
+-    default:
+-      return INVALID_JSON_POINTER;
++    default: {
++      error_code error = validate_json_pointer(json_pointer);
++      if (error) { return error; }
++      return NO_SUCH_FIELD;
++    }
+   }
+ }
+ 
+@@ -115774,6 +115941,9 @@ simdjson_inline int32_t value::current_depth() const noexcept{
+ }
+ 
+ simdjson_inline simdjson_result<value> value::at_pointer(std::string_view json_pointer) noexcept {
++  if (json_pointer.empty()) {
++    return value(iter);
++  }
+   json_type t;
+   SIMDJSON_TRY(type().get(t));
+   switch (t)
+@@ -115782,8 +115952,11 @@ simdjson_inline simdjson_result<value> value::at_pointer(std::string_view json_p
+       return (*this).get_array().at_pointer(json_pointer);
+     case json_type::object:
+       return (*this).get_object().at_pointer(json_pointer);
+-    default:
+-      return INVALID_JSON_POINTER;
++    default: {
++      error_code error = validate_json_pointer(json_pointer);
++      if (error) { return error; }
++      return NO_SUCH_FIELD;
++    }
+   }
+ }
+ 

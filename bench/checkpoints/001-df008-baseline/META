@@ -1,0 +1,6 @@
+tag=base/001-df008-baseline
+commit=0aa305f88e595ce279f10e84719c01151883b872
+date=2026-06-09T21:34:08Z
+seeds=3
+arms=
+from=multiseed/base001

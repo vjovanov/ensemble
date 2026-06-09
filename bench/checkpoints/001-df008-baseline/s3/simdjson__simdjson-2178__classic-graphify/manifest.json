@@ -1,0 +1,18 @@
+{
+  "instance": "simdjson__simdjson-2178",
+  "arm": "classic-graphify",
+  "language": "cpp",
+  "commit": "0aa305f88e595ce279f10e84719c01151883b872",
+  "dirty": true,
+  "model": "oca/gpt-5.5",
+  "provider": "OCA",
+  "exploration": "classic",
+  "require_graph": false,
+  "bash_output_summary": false,
+  "explore_debug": "off",
+  "tool_calls": {
+    "lead": "session/*.jsonl",
+    "sidekick": null
+  },
+  "prompts_dir": "prompts/"
+}

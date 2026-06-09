@@ -1,0 +1,72 @@
+diff --git c/crates/nu-command/src/strings/detect_columns.rs i/crates/nu-command/src/strings/detect_columns.rs
+index 23858d9e49..249b01a312 100644
+--- c/crates/nu-command/src/strings/detect_columns.rs
++++ i/crates/nu-command/src/strings/detect_columns.rs
+@@ -159,6 +159,49 @@ struct Arguments {
+     config: Arc<Config>,
+ }
+ 
++fn collect_string_ignore_exit(input: PipelineData, config: &Config) -> Result<String, ShellError> {
++    match input {
++        PipelineData::ByteStream(stream, metadata) => {
++            let span = stream.span();
++
++            if !stream.type_().is_string_coercible() {
++                return Err(ShellError::TypeMismatch {
++                    err_message: "expected string, but got binary".into(),
++                    span,
++                });
++            }
++
++            match stream.into_child() {
++                Ok(child) => {
++                    let output = child.wait_with_output()?;
++                    let mut string =
++                        String::from_utf8(output.stdout.unwrap_or_default()).map_err(|err| {
++                            ShellError::NonUtf8Custom {
++                                span,
++                                msg: err.to_string(),
++                            }
++                        })?;
++                    trim_end_newline(&mut string);
++                    Ok(string)
++                }
++                Err(stream) => {
++                    PipelineData::ByteStream(stream, metadata).collect_string("", config)
++                }
++            }
++        }
++        input => input.collect_string("", config),
++    }
++}
++
++fn trim_end_newline(string: &mut String) {
++    if string.ends_with('\n') {
++        string.pop();
++        if string.ends_with('\r') {
++            string.pop();
++        }
++    }
++}
++
+ fn guess_width(
+     engine_state: &EngineState,
+     call: &Call,
+@@ -168,7 +211,7 @@ fn guess_width(
+     use super::guess_width::GuessWidth;
+     let input_span = input.span().unwrap_or(call.head);
+ 
+-    let mut input = input.collect_string("", &args.config)?;
++    let mut input = collect_string_ignore_exit(input, &args.config)?;
+     if let Some(rows) = args.num_rows_to_skip {
+         input = input.lines().skip(rows).map(|x| x.to_string()).join("\n");
+     }
+@@ -240,7 +283,7 @@ fn detect_columns(
+     args: Arguments,
+ ) -> Result<PipelineData, ShellError> {
+     let name_span = call.head;
+-    let input = input.collect_string("", &args.config)?;
++    let input = collect_string_ignore_exit(input, &args.config)?;
+ 
+     let input: Vec<_> = input
+         .lines()

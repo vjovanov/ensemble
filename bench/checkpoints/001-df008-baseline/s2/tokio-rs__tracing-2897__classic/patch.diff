@@ -1,0 +1,63 @@
+diff --git c/tracing-attributes/src/expand.rs i/tracing-attributes/src/expand.rs
+index a92ef58aee..1821a4984c 100644
+--- c/tracing-attributes/src/expand.rs
++++ i/tracing-attributes/src/expand.rs
+@@ -350,11 +350,18 @@ fn gen_block<B: ToTokens>(
+         }
+     );
+ 
++    let force_fn_once = quote!(
++        fn __tracing_attr_force_fn_once<T, F: tracing::__macro_support::FnOnce() -> T>(f: F) -> F {
++            f
++        }
++    );
++
+     match (err_event, ret_event) {
+         (Some(err_event), Some(ret_event)) => quote_spanned! {block.span()=>
+             #span
++            #force_fn_once
+             #[allow(clippy::redundant_closure_call)]
+-            match (move || #block)() {
++            match __tracing_attr_force_fn_once(move || #block)() {
+                 #[allow(clippy::unit_arg)]
+                 Ok(x) => {
+                     #ret_event;
+@@ -368,8 +375,9 @@ fn gen_block<B: ToTokens>(
+         },
+         (Some(err_event), None) => quote_spanned!(block.span()=>
+             #span
++            #force_fn_once
+             #[allow(clippy::redundant_closure_call)]
+-            match (move || #block)() {
++            match __tracing_attr_force_fn_once(move || #block)() {
+                 #[allow(clippy::unit_arg)]
+                 Ok(x) => Ok(x),
+                 Err(e) => {
+@@ -380,8 +388,9 @@ fn gen_block<B: ToTokens>(
+         ),
+         (None, Some(ret_event)) => quote_spanned!(block.span()=>
+             #span
++            #force_fn_once
+             #[allow(clippy::redundant_closure_call)]
+-            let x = (move || #block)();
++            let x = __tracing_attr_force_fn_once(move || #block)();
+             #ret_event;
+             x
+         ),
+diff --git c/tracing/src/lib.rs i/tracing/src/lib.rs
+index de08ec408f..76393deb5c 100644
+--- c/tracing/src/lib.rs
++++ i/tracing/src/lib.rs
+@@ -1002,10 +1002,10 @@ pub mod __macro_support {
+     use crate::{collect::Interest, Metadata};
+     use core::fmt;
+     use core::sync::atomic::{AtomicU8, Ordering};
+-    // Re-export the `core` functions that are used in macros. This allows
++    // Re-export the `core` items that are used in macros. This allows
+     // a crate to be named `core` and avoid name clashes.
+     // See here: https://github.com/tokio-rs/tracing/issues/2761
+-    pub use core::{concat, format_args, iter::Iterator, option::Option};
++    pub use core::{concat, format_args, iter::Iterator, ops::FnOnce, option::Option};
+ 
+     /// Callsite implementation used by macro-generated code.
+     ///

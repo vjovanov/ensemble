@@ -1,0 +1,18 @@
+{
+  "instance": "facebook__zstd-3438",
+  "arm": "classic-graphify",
+  "language": "c",
+  "commit": "613480e3651d4e59bb7ebc0d58b8ea336dcd3f15",
+  "dirty": true,
+  "model": "oca/gpt-5.5",
+  "provider": "OCA",
+  "exploration": "classic",
+  "require_graph": false,
+  "bash_output_summary": false,
+  "explore_debug": "off",
+  "tool_calls": {
+    "lead": "session/*.jsonl",
+    "sidekick": null
+  },
+  "prompts_dir": "prompts/"
+}

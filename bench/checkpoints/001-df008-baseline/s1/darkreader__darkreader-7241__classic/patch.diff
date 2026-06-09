@@ -1,0 +1,15 @@
+diff --git c/src/generators/utils/parse.ts i/src/generators/utils/parse.ts
+index dce4ad0ae2..cae224df66 100644
+--- c/src/generators/utils/parse.ts
++++ i/src/generators/utils/parse.ts
+@@ -142,8 +142,8 @@ export function indexSitesFixesConfig<T extends SiteProps>(text: string): SitePr
+     }
+ 
+     let recordStart = 0;
+-    // Delimiter between two blocks
+-    const delimiterRegex = /\s*={2,}\s*/gm;
++    // Delimiter between two blocks (a line containing only two or more "=" characters)
++    const delimiterRegex = /^[^\S\r\n]*={2,}[^\S\r\n]*\r?$/gm;
+     let delimiter: RegExpMatchArray;
+     let count = 0;
+     while ((delimiter = delimiterRegex.exec(text))) {

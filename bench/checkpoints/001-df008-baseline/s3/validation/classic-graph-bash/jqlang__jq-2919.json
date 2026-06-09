@@ -1,0 +1,8 @@
+{
+  "instance": "jqlang__jq-2919",
+  "arm": "classic-graph-bash",
+  "status": "resolved",
+  "resolved": true,
+  "updatedAt": "2026-06-09T20:30:44.578Z",
+  "report": "/home/vjovanov/p/ensemble/bench/results/classic-graph-bash/final_report.json"
+}

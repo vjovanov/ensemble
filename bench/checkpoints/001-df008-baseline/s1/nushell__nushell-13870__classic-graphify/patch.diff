@@ -1,0 +1,13 @@
+diff --git c/crates/nu-protocol/src/process/child.rs i/crates/nu-protocol/src/process/child.rs
+index 320427a819..85e240190f 100644
+--- c/crates/nu-protocol/src/process/child.rs
++++ i/crates/nu-protocol/src/process/child.rs
+@@ -182,7 +182,7 @@ impl ChildProcess {
+             Vec::new()
+         };
+ 
+-        self.exit_status.wait(self.span)?.check_ok(self.span)?;
++        self.exit_status.wait(self.span)?;
+ 
+         Ok(bytes)
+     }

@@ -1,0 +1,39 @@
+diff --git c/core/collection/timingwheel.go i/core/collection/timingwheel.go
+index 327b176482..b8d1290013 100644
+--- c/core/collection/timingwheel.go
++++ i/core/collection/timingwheel.go
+@@ -69,11 +69,20 @@ func NewTimingWheel(interval time.Duration, numSlots int, execute Execute) (*Tim
+ 			interval, numSlots, execute)
+ 	}
+ 
+-	return newTimingWheelWithClock(interval, numSlots, execute, timex.NewTicker(interval))
++	return NewTimingWheelWithClock(interval, numSlots, execute, timex.NewTicker(interval))
+ }
+ 
+-func newTimingWheelWithClock(interval time.Duration, numSlots int, execute Execute,
++// NewTimingWheelWithClock returns a TimingWheel with the given ticker.
++func NewTimingWheelWithClock(interval time.Duration, numSlots int, execute Execute,
+ 	ticker timex.Ticker) (*TimingWheel, error) {
++	if interval <= 0 || numSlots <= 0 || execute == nil {
++		return nil, fmt.Errorf("interval: %v, slots: %d, execute: %p",
++			interval, numSlots, execute)
++	}
++	if ticker == nil {
++		return nil, errors.New("ticker is nil")
++	}
++
+ 	tw := &TimingWheel{
+ 		interval:      interval,
+ 		ticker:        ticker,
+@@ -95,6 +104,11 @@ func newTimingWheelWithClock(interval time.Duration, numSlots int, execute Execu
+ 	return tw, nil
+ }
+ 
++func newTimingWheelWithClock(interval time.Duration, numSlots int, execute Execute,
++	ticker timex.Ticker) (*TimingWheel, error) {
++	return NewTimingWheelWithClock(interval, numSlots, execute, ticker)
++}
++
+ // Drain drains all items and executes them.
+ func (tw *TimingWheel) Drain(fn func(key, value interface{})) error {
+ 	select {

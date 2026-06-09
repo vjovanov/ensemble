@@ -1,0 +1,117 @@
+diff --git c/crates/nu-protocol/src/pipeline/byte_stream.rs i/crates/nu-protocol/src/pipeline/byte_stream.rs
+index 6811b7b89b..5dcd883563 100644
+--- c/crates/nu-protocol/src/pipeline/byte_stream.rs
++++ i/crates/nu-protocol/src/pipeline/byte_stream.rs
+@@ -485,6 +485,29 @@ impl ByteStream {
+         }
+     }
+ 
++    /// Collect all the bytes of the [`ByteStream`] into a [`Vec<u8>`], but don't fail for a
++    /// non-zero child process exit code.
++    ///
++    /// This is used by internal commands that consume stdout from an external command earlier in
++    /// the pipeline. In that position, the external command's exit code should not abort the
++    /// pipeline, but the child still has to be waited on.
++    pub fn into_bytes_ignore_exit_code(self) -> Result<Vec<u8>, ShellError> {
++        // todo!() ctrlc
++        match self.stream {
++            ByteStreamSource::Read(mut read) => {
++                let mut buf = Vec::new();
++                read.read_to_end(&mut buf).err_span(self.span)?;
++                Ok(buf)
++            }
++            ByteStreamSource::File(mut file) => {
++                let mut buf = Vec::new();
++                file.read_to_end(&mut buf).err_span(self.span)?;
++                Ok(buf)
++            }
++            ByteStreamSource::Child(child) => child.into_bytes_ignore_exit_code(),
++        }
++    }
++
+     /// Collect the stream into a `String` in-memory. This can only succeed if the data contained is
+     /// valid UTF-8.
+     ///
+@@ -494,10 +517,23 @@ impl ByteStream {
+     /// If the [type](.type_()) is specified as `Binary`, this operation always fails, even if the
+     /// data would have been valid UTF-8.
+     pub fn into_string(self) -> Result<String, ShellError> {
++        self.into_string_with(|stream| stream.into_bytes())
++    }
++
++    /// Collect the stream into a `String` in-memory, but don't fail for a non-zero child process
++    /// exit code. See [`ByteStream::into_bytes_ignore_exit_code`].
++    pub fn into_string_ignore_exit_code(self) -> Result<String, ShellError> {
++        self.into_string_with(|stream| stream.into_bytes_ignore_exit_code())
++    }
++
++    fn into_string_with(
++        self,
++        into_bytes: impl FnOnce(Self) -> Result<Vec<u8>, ShellError>,
++    ) -> Result<String, ShellError> {
+         let span = self.span;
+         if self.type_.is_string_coercible() {
+             let trim = self.stream.is_external();
+-            let bytes = self.into_bytes()?;
++            let bytes = into_bytes(self)?;
+             let mut string = String::from_utf8(bytes).map_err(|err| ShellError::NonUtf8Custom {
+                 span,
+                 msg: err.to_string(),
+diff --git c/crates/nu-protocol/src/pipeline/pipeline_data.rs i/crates/nu-protocol/src/pipeline/pipeline_data.rs
+index da0fea3213..5a5ab7c10b 100644
+--- c/crates/nu-protocol/src/pipeline/pipeline_data.rs
++++ i/crates/nu-protocol/src/pipeline/pipeline_data.rs
+@@ -288,7 +288,7 @@ impl PipelineData {
+             PipelineData::Empty => Ok(String::new()),
+             PipelineData::Value(value, ..) => Ok(value.to_expanded_string(separator, config)),
+             PipelineData::ListStream(stream, ..) => Ok(stream.into_string(separator, config)),
+-            PipelineData::ByteStream(stream, ..) => stream.into_string(),
++            PipelineData::ByteStream(stream, ..) => stream.into_string_ignore_exit_code(),
+         }
+     }
+ 
+@@ -313,7 +313,7 @@ impl PipelineData {
+             }),
+             PipelineData::ByteStream(stream, metadata) => {
+                 let span = stream.span();
+-                Ok((stream.into_string()?, span, metadata))
++                Ok((stream.into_string_ignore_exit_code()?, span, metadata))
+             }
+         }
+     }
+diff --git c/crates/nu-protocol/src/process/child.rs i/crates/nu-protocol/src/process/child.rs
+index 320427a819..91bbdc9213 100644
+--- c/crates/nu-protocol/src/process/child.rs
++++ i/crates/nu-protocol/src/process/child.rs
+@@ -167,7 +167,18 @@ impl ChildProcess {
+         self.span
+     }
+ 
+-    pub fn into_bytes(mut self) -> Result<Vec<u8>, ShellError> {
++    pub fn into_bytes(self) -> Result<Vec<u8>, ShellError> {
++        let span = self.span;
++        let (bytes, exit_status) = self.into_bytes_with_exit_status()?;
++        exit_status.check_ok(span)?;
++        Ok(bytes)
++    }
++
++    pub fn into_bytes_ignore_exit_code(self) -> Result<Vec<u8>, ShellError> {
++        self.into_bytes_with_exit_status().map(|(bytes, _)| bytes)
++    }
++
++    fn into_bytes_with_exit_status(mut self) -> Result<(Vec<u8>, ExitStatus), ShellError> {
+         if self.stderr.is_some() {
+             debug_assert!(false, "stderr should not exist");
+             return Err(ShellError::IOErrorSpanned {
+@@ -182,9 +193,9 @@ impl ChildProcess {
+             Vec::new()
+         };
+ 
+-        self.exit_status.wait(self.span)?.check_ok(self.span)?;
++        let exit_status = self.exit_status.wait(self.span)?;
+ 
+-        Ok(bytes)
++        Ok((bytes, exit_status))
+     }
+ 
+     pub fn wait(mut self) -> Result<(), ShellError> {

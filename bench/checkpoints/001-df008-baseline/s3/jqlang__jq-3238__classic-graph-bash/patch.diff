@@ -1,0 +1,62 @@
+diff --git c/src/builtin.c i/src/builtin.c
+index 717a07528a..69b59879c0 100644
+--- c/src/builtin.c
++++ i/src/builtin.c
+@@ -880,19 +880,31 @@ static jv f_group_by_impl(jq_state *jq, jv input, jv keys) {
+ }
+ 
+ #ifdef HAVE_LIBONIG
++struct f_match_name_iter_arg {
++  jv captures;
++  OnigRegion *region;
++};
++
+ static int f_match_name_iter(const UChar* name, const UChar *name_end, int ngroups,
+     int *groups, regex_t *reg, void *arg) {
+-  jv captures = *(jv*)arg;
++  struct f_match_name_iter_arg *iter_arg = arg;
++  jv captures = iter_arg->captures;
+   for (int i = 0; i < ngroups; ++i) {
+-    jv cap = jv_array_get(jv_copy(captures),groups[i]-1);
++    int group = groups[i];
++    jv cap = jv_array_get(jv_copy(captures), group - 1);
+     if (jv_get_kind(cap) == JV_KIND_OBJECT) {
+       cap = jv_object_set(cap, jv_string("name"), jv_string_sized((const char*)name, name_end-name));
+-      captures = jv_array_set(captures,groups[i]-1,cap);
++      if (iter_arg->region && iter_arg->region->beg[group] == -1) {
++        cap = jv_object_set(cap, jv_string("offset"), jv_number(-1));
++        cap = jv_object_set(cap, jv_string("string"), jv_null());
++        cap = jv_object_set(cap, jv_string("length"), jv_number(0));
++      }
++      captures = jv_array_set(captures, group - 1, cap);
+     } else {
+       jv_free(cap);
+     }
+   }
+-  *(jv *)arg = captures;
++  iter_arg->captures = captures;
+   return 0;
+ }
+ 
+@@ -1012,7 +1024,9 @@ static jv f_match(jq_state *jq, jv input, jv regex, jv modifiers, jv testmode) {
+           cap = jv_object_set(cap, jv_string("name"), jv_null());
+           captures = jv_array_append(captures, cap);
+         }
+-        onig_foreach_name(reg, f_match_name_iter, &captures);
++        struct f_match_name_iter_arg arg = {captures, region};
++        onig_foreach_name(reg, f_match_name_iter, &arg);
++        captures = arg.captures;
+         match = jv_object_set(match, jv_string("captures"), captures);
+         result = jv_array_append(result, match);
+         // ensure '"qux" | match("(?=u)"; "g")' matches just once
+@@ -1069,7 +1083,9 @@ static jv f_match(jq_state *jq, jv input, jv regex, jv modifiers, jv testmode) {
+         cap = jv_object_set(cap, jv_string("name"), jv_null());
+         captures = jv_array_append(captures,cap);
+       }
+-      onig_foreach_name(reg,f_match_name_iter,&captures);
++      struct f_match_name_iter_arg arg = {captures, region};
++      onig_foreach_name(reg, f_match_name_iter, &arg);
++      captures = arg.captures;
+       match = jv_object_set(match, jv_string("captures"), captures);
+       result = jv_array_append(result, match);
+       start = (const UChar*)(input_string+region->end[0]);

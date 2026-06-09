@@ -1,0 +1,18 @@
+{
+  "instance": "nushell__nushell-13870",
+  "arm": "classic-graph-bash",
+  "language": "rust",
+  "commit": "007123f32ff453318fa8e9fd77f46d2f366fa6ae",
+  "dirty": true,
+  "model": "oca/gpt-5.5",
+  "provider": "OCA",
+  "exploration": "sidekick",
+  "require_graph": true,
+  "bash_output_summary": true,
+  "explore_debug": "full",
+  "tool_calls": {
+    "lead": "session/*.jsonl",
+    "sidekick": "explore-debug.jsonl"
+  },
+  "prompts_dir": "prompts/"
+}
