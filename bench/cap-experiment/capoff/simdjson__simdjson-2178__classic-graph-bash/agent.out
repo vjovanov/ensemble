@@ -1,0 +1,13 @@
+Implemented the fix in place.
+
+Changed JSON Pointer traversal so that when a syntactically valid pointer tries to continue past a scalar/non-container value, it now returns `NO_SUCH_FIELD` instead of `INVALID_JSON_POINTER`, while preserving `INVALID_JSON_POINTER` for malformed pointer syntax.
+
+Updated:
+- `include/simdjson/dom/element-inl.h`
+- `include/simdjson/generic/ondemand/document-inl.h`
+- `include/simdjson/generic/ondemand/value-inl.h`
+- `singleheader/simdjson.h`
+
+Also verified with targeted compile/run checks for DOM, On Demand, and singleheader builds, including:
+- `/document/key4/sub` → `NO_SUCH_FIELD`
+- malformed pointer syntax like `/document/key4/~2` → `INVALID_JSON_POINTER`

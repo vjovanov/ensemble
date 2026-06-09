@@ -1,0 +1,1 @@
+{"nodes": [{"id": "home_vjovanov_p_ensemble_bench_work_elastic_logstash_17021_classic_graph_logstash_core_lib_logstash_event_rb", "label": "event.rb", "file_type": "code", "source_file": "logstash-core/lib/logstash/event.rb", "source_location": "L1"}], "edges": [], "raw_calls": []}

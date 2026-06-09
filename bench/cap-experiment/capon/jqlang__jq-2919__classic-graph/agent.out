@@ -1,0 +1,46 @@
+Implemented the minimal fix in `src/main.c`.
+
+### Change made
+- `--` now stops option parsing even when it appears before the jq program.
+- If option parsing has been stopped and no program has been seen yet, the next argument is treated as the jq program.
+- Removed the previous immediate usage error for `--` before the program.
+
+### Verified
+Built with:
+
+```sh
+./configure --disable-docs --disable-valgrind --without-oniguruma
+make -j2
+```
+
+Confirmed new expected behavior:
+
+```sh
+./jq --null-input --args -- '$ARGS' foo bar baz --zorch
+```
+
+outputs:
+
+```json
+{
+  "positional": [
+    "foo",
+    "bar",
+    "baz",
+    "--zorch"
+  ],
+  "named": {}
+}
+```
+
+Confirmed existing behavior remains:
+
+```sh
+./jq --null-input --args '$ARGS' foo bar baz --zorch
+```
+
+still errors with:
+
+```text
+./jq: Unknown option --zorch
+```

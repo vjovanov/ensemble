@@ -1,0 +1,12 @@
+Implemented the minimal source change in:
+
+- `core/collection/timingwheel.go`
+
+Changes made:
+- Exported `newTimingWheelWithClock` as `NewTimingWheelWithClock`.
+- Updated `NewTimingWheel` to call the exported constructor.
+- Added an exported Go doc comment.
+- Kept a small unexported wrapper `newTimingWheelWithClock` delegating to the exported function so existing in-package tests/usages continue to compile without modifying test files.
+
+Verification note:
+- Could not run `gofmt` or `go test` because the environment does not have Go installed (`go`/`gofmt: command not found`).

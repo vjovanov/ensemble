@@ -1,0 +1,9 @@
+Implemented the minimal source change in `core/collection/timingwheel.go`:
+
+- Exposed `NewTimingWheelWithClock(...)`.
+- Updated `NewTimingWheel(...)` to call the exported constructor.
+- Kept a small unexported `newTimingWheelWithClock(...)` wrapper for internal/backward compatibility with existing package tests.
+
+Validation:
+- `git diff --check` passed.
+- Could not run Go tests because `go` is not installed in this environment (`go: command not found`).

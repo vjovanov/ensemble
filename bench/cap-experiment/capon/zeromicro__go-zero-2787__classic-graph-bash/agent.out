@@ -1,0 +1,27 @@
+Implemented the minimal source change in:
+
+- `core/collection/timingwheel.go`
+
+Changes made:
+
+- Added exported constructor:
+
+```go
+NewTimingWheelWithClock(...)
+```
+
+- Kept the existing unexported `newTimingWheelWithClock(...)` to preserve internal/test compatibility.
+- Updated `NewTimingWheel(...)` to delegate through the exported constructor after preserving its existing validation behavior.
+- Added validation for a nil ticker in the exported constructor.
+
+Verification attempted:
+
+- `gofmt -w core/collection/timingwheel.go && go test ./core/collection`
+- `go test ./core/collection`
+
+Both could not run because `gofmt` / `go` are not installed in this environment:
+
+```text
+gofmt: command not found
+go: command not found
+```

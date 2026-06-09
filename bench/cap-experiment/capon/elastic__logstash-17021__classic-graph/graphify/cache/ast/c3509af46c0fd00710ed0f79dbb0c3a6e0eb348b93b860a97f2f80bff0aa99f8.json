@@ -1,0 +1,1 @@
+{"nodes": [{"id": "home_vjovanov_p_ensemble_bench_work_elastic_logstash_17021_classic_graph_x_pack_spec_license_checker_license_reader_spec_rb", "label": "license_reader_spec.rb", "file_type": "code", "source_file": "x-pack/spec/license_checker/license_reader_spec.rb", "source_location": "L1"}], "edges": [], "raw_calls": []}

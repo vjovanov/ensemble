@@ -1,0 +1,12 @@
+Implemented the minimal fix in:
+
+- `clap_builder/src/parser/parser.rs`
+
+Change made:
+- `did_you_mean_error` no longer mutates the `ArgMatcher` to mark a suggested argument as command-line provided when `ignore_errors(true)` is enabled.
+- This prevents ignored “did you mean” errors like `--ig` from blocking default insertion for `--ignore-immutable`.
+
+Verification run:
+- `cargo test -p clap_builder --lib parser:: --quiet`
+- Reproduced the reported case with a temporary local project depending on this checkout; both assertions now pass.
+- `cargo fmt --all --check` passed.

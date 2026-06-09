@@ -1,6 +1,6 @@
 # DF-004-explore-injected-content-cap: Cap the content `explore` injects into the caller
 
-**Status: Proposed — under discussion, pending experiment (§RM-001-bash-sidekick.3 item 6).**
+**Status: Mixed — static 24 KB cap is not adoptable as-is; higher-cap follow-up queued (§6).**
 
 Open question: how to stop a single large `explore` return from dominating `cacheRead`.
 Explore evidence is **persistent** — it stays in the caller's transcript and replays on every
@@ -45,9 +45,25 @@ content, which then replays into `cacheRead` for the rest of the run.
 - **Gate explore on task size** (for go-zero) — can't be known upfront; deferred. go-zero's
   overhead is ~$0.05, far below simdjson's blowup.
 
-## 5. Decision / next step
+## 5. Static 24 KB result
 
-Not decided. Implement the cap (§RM-001-bash-sidekick.3 item 6), re-run simdjson-2178 and
-go-zero-2787 (and a healthy graph instance to check for regressions), track `cacheRead` and total
-explore bytes injected. Adopt if it cuts the simdjson blowup without degrading the graph wins;
-record the outcome here.
+The 24 KB cap cut the worst simdjson cost but introduced a correctness regression: simdjson-2178
+resolved with the uncapped graph-bash run and failed under the cap. The static cap is therefore
+not adoptable as-is: it is cheaper, but it does not preserve graph-bash correctness.
+
+## 6. Higher-cap follow-up
+
+Before implementing adaptive deep-context escalation, run a no-code A/B with larger fixed caps
+(`PI_EXPLORE_MAX_RESULT_BYTES=65536` and `131072`) on the regression/control set:
+simdjson-2178, go-zero-2787, clap-5873, zstd-3438, jq-2919, logstash-17021, nushell-13870,
+and svelte-15115.
+
+Adopt neither value from this run directly. Use it only to decide whether the lost simdjson context
+is recoverable by a modest cap increase, and whether any healthy graph-bash wins become materially
+more expensive. If a higher fixed cap recovers correctness without broad cost regressions, the next
+design should be adaptive escalation: default to the 24 KB cap, but allow targeted deeper context
+only when the cheap path is insufficient.
+
+## 7. Decision / next step
+
+Not decided. Run §6 and record the outcome here before changing the production behavior.

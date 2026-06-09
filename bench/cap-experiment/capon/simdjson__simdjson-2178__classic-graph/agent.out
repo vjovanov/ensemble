@@ -1,0 +1,17 @@
+Implemented the fix for JSON Pointer overshooting into scalar values.
+
+Changed behavior:
+- Valid JSON Pointer syntax that cannot be resolved because traversal reaches a scalar now returns `NO_SUCH_FIELD`.
+- Invalid JSON Pointer syntax still returns `INVALID_JSON_POINTER`.
+
+Updated files:
+- `include/simdjson/dom/element-inl.h`
+- `include/simdjson/generic/ondemand/value-inl.h`
+- `include/simdjson/generic/ondemand/document-inl.h`
+- `singleheader/simdjson.h`
+
+Verification performed:
+- Compiled and ran a targeted DOM + ondemand reproduction:
+  - `/document/key4/sub` now returns `NO_SUCH_FIELD`
+  - `document/key4/sub` still returns `INVALID_JSON_POINTER`
+- Ran `git diff --check` successfully.

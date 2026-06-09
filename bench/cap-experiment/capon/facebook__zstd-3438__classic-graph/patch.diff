@@ -1,0 +1,90 @@
+diff --git c/lib/compress/zstd_compress.c i/lib/compress/zstd_compress.c
+index 3a48e7dcd4..d843d08939 100644
+--- c/lib/compress/zstd_compress.c
++++ i/lib/compress/zstd_compress.c
+@@ -231,6 +231,11 @@ static int ZSTD_rowMatchFinderUsed(const ZSTD_strategy strategy, const ZSTD_para
+     return ZSTD_rowMatchFinderSupported(strategy) && (mode == ZSTD_ps_enable);
+ }
+ 
++/* Row matchfinder hashes hashLog - rowLog bits, then adds 8 tag bits into a U32 hash.
++ * Since rowLog is at least 4, hashLog must be capped at 32 - 8 + 4 = 28.
++ */
++#define ZSTD_ROW_HASHLOG_MAX 28
++
+ /* Returns row matchfinder usage given an initial mode and cParams */
+ static ZSTD_paramSwitch_e ZSTD_resolveRowMatchFinderMode(ZSTD_paramSwitch_e mode,
+                                                          const ZSTD_compressionParameters* const cParams) {
+@@ -250,6 +255,16 @@ static ZSTD_paramSwitch_e ZSTD_resolveRowMatchFinderMode(ZSTD_paramSwitch_e mode
+     return mode;
+ }
+ 
++static void ZSTD_limitHashLogForRowMatchFinder(ZSTD_compressionParameters* cParams,
++                                               ZSTD_paramSwitch_e useRowMatchFinder)
++{
++    assert(useRowMatchFinder != ZSTD_ps_auto);
++    if (ZSTD_rowMatchFinderUsed(cParams->strategy, useRowMatchFinder)
++        && cParams->hashLog > ZSTD_ROW_HASHLOG_MAX) {
++        cParams->hashLog = ZSTD_ROW_HASHLOG_MAX;
++    }
++}
++
+ /* Returns block splitter usage (generally speaking, when using slower/stronger compression modes) */
+ static ZSTD_paramSwitch_e ZSTD_resolveBlockSplitterMode(ZSTD_paramSwitch_e mode,
+                                                         const ZSTD_compressionParameters* const cParams) {
+@@ -319,7 +334,8 @@ static ZSTD_CCtx_params ZSTD_makeCCtxParamsFromCParams(
+         assert(cctxParams.ldmParams.hashRateLog < 32);
+     }
+     cctxParams.useBlockSplitter = ZSTD_resolveBlockSplitterMode(cctxParams.useBlockSplitter, &cParams);
+-    cctxParams.useRowMatchFinder = ZSTD_resolveRowMatchFinderMode(cctxParams.useRowMatchFinder, &cParams);
++    cctxParams.useRowMatchFinder = ZSTD_resolveRowMatchFinderMode(cctxParams.useRowMatchFinder, &cctxParams.cParams);
++    ZSTD_limitHashLogForRowMatchFinder(&cctxParams.cParams, cctxParams.useRowMatchFinder);
+     cctxParams.validateSequences = ZSTD_resolveExternalSequenceValidation(cctxParams.validateSequences);
+     cctxParams.maxBlockSize = ZSTD_resolveMaxBlockSize(cctxParams.maxBlockSize);
+     assert(!ZSTD_checkCParams(cParams));
+@@ -383,7 +399,8 @@ ZSTD_CCtxParams_init_internal(ZSTD_CCtx_params* cctxParams,
+      * But, set it for tracing anyway.
+      */
+     cctxParams->compressionLevel = compressionLevel;
+-    cctxParams->useRowMatchFinder = ZSTD_resolveRowMatchFinderMode(cctxParams->useRowMatchFinder, &params->cParams);
++    cctxParams->useRowMatchFinder = ZSTD_resolveRowMatchFinderMode(cctxParams->useRowMatchFinder, &cctxParams->cParams);
++    ZSTD_limitHashLogForRowMatchFinder(&cctxParams->cParams, cctxParams->useRowMatchFinder);
+     cctxParams->useBlockSplitter = ZSTD_resolveBlockSplitterMode(cctxParams->useBlockSplitter, &params->cParams);
+     cctxParams->ldmParams.enableLdm = ZSTD_resolveEnableLdm(cctxParams->ldmParams.enableLdm, &params->cParams);
+     cctxParams->validateSequences = ZSTD_resolveExternalSequenceValidation(cctxParams->validateSequences);
+@@ -1466,9 +1483,12 @@ ZSTD_adjustCParams_internal(ZSTD_compressionParameters cPar,
+         cPar.windowLog = ZSTD_WINDOWLOG_ABSOLUTEMIN;  /* minimum wlog required for valid frame header */
+ 
+     if (mode == ZSTD_cpm_createCDict && ZSTD_CDictIndicesAreTagged(&cPar)) {
+-        U32 const maxShortCacheHashLog = 32 - ZSTD_SHORT_CACHE_TAG_BITS;
+-        if (cPar.hashLog > maxShortCacheHashLog) {
+-            cPar.hashLog = maxShortCacheHashLog;
++        U32 const maxShortCacheTableLog = 32 - ZSTD_SHORT_CACHE_TAG_BITS;
++        if (cPar.hashLog > maxShortCacheTableLog) {
++            cPar.hashLog = maxShortCacheTableLog;
++        }
++        if (cPar.chainLog > maxShortCacheTableLog) {
++            cPar.chainLog = maxShortCacheTableLog;
+         }
+     }
+ 
+@@ -1513,7 +1533,11 @@ ZSTD_compressionParameters ZSTD_getCParamsFromCCtxParams(
+     ZSTD_overrideCParams(&cParams, &CCtxParams->cParams);
+     assert(!ZSTD_checkCParams(cParams));
+     /* srcSizeHint == 0 means 0 */
+-    return ZSTD_adjustCParams_internal(cParams, srcSizeHint, dictSize, mode);
++    cParams = ZSTD_adjustCParams_internal(cParams, srcSizeHint, dictSize, mode);
++    {   ZSTD_paramSwitch_e const useRowMatchFinder = ZSTD_resolveRowMatchFinderMode(CCtxParams->useRowMatchFinder, &cParams);
++        ZSTD_limitHashLogForRowMatchFinder(&cParams, useRowMatchFinder);
++    }
++    return cParams;
+ }
+ 
+ static size_t
+@@ -1962,6 +1986,7 @@ static size_t ZSTD_resetCCtx_internal(ZSTD_CCtx* zc,
+     params = &zc->appliedParams;
+ 
+     assert(params->useRowMatchFinder != ZSTD_ps_auto);
++    ZSTD_limitHashLogForRowMatchFinder(&zc->appliedParams.cParams, params->useRowMatchFinder);
+     assert(params->useBlockSplitter != ZSTD_ps_auto);
+     assert(params->ldmParams.enableLdm != ZSTD_ps_auto);
+     assert(params->maxBlockSize != 0);

@@ -1,0 +1,32 @@
+diff --git c/src/main.c i/src/main.c
+index 6d857c3671..98853417bd 100644
+--- c/src/main.c
++++ i/src/main.c
+@@ -354,7 +354,9 @@ int main(int argc, char* argv[]) {
+   jv lib_search_paths = jv_null();
+   for (int i=1; i<argc; i++, short_opts = 0) {
+     if (args_done) {
+-      if (further_args_are_strings) {
++      if (!program) {
++        program = argv[i];
++      } else if (further_args_are_strings) {
+         ARGS = jv_array_append(ARGS, jv_string(argv[i]));
+       } else if (further_args_are_json) {
+         jv v =  jv_parse(argv[i]);
+@@ -368,7 +370,6 @@ int main(int argc, char* argv[]) {
+         nfiles++;
+       }
+     } else if (!strcmp(argv[i], "--")) {
+-      if (!program) usage(2, 1);
+       args_done = 1;
+     } else if (!isoptish(argv[i])) {
+       if (program) {
+@@ -663,6 +664,8 @@ int main(int argc, char* argv[]) {
+   else
+     jq_set_attr(jq, jv_string("VERSION_DIR"), jv_string_fmt("%.*s-master", (int)(strchr(JQ_VERSION, '-') - JQ_VERSION), JQ_VERSION));
+ 
++  if (args_done && !program) usage(2, 1);
++
+ #ifdef USE_ISATTY
+   if (!program && (!isatty(STDOUT_FILENO) || !isatty(STDIN_FILENO)))
+     program = ".";

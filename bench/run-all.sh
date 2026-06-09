@@ -369,4 +369,7 @@ else
   ( cd "$BENCH_DIR" && INSTANCES="${INSTANCE_LIST[*]}" ARMS="${RESULT_ARM_LIST[*]}" node collect.mjs ) \
     || log "collect failed; check $RESULTS_DIR and eval reports"
   log "results csv: $RESULTS_DIR/results.csv"
+  # Reclaim docker disk (orphaned volumes + dangling images) so chained/repeated runs
+  # don't fill /home. Safe: prune skips objects attached to running containers.
+  "$BENCH_DIR/reclaim-docker.sh" 2>/dev/null || true
 fi

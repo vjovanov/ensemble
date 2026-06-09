@@ -1,0 +1,19 @@
+Implemented the fix in:
+
+- `clap_builder/src/parser/parser.rs`
+
+### What changed
+When `ignore_errors(true)` is set, `did_you_mean_error` no longer mutates the `ArgMatcher` by marking the suggested argument as `ValueSource::CommandLine`.
+
+Previously, a partial typo like `--ig` would trigger the suggestion machinery for `--ignore-immutable`, which inserted `ignore_immutable` into matches as if it came from the command line. Since defaults are skipped for already-present args, the default `false` was never applied.
+
+Now, that usage-string-only mutation is skipped while errors are being ignored, allowing defaults to be filled normally.
+
+### Verification
+Ran:
+
+- `cargo test -p clap_builder`
+- `cargo fmt --check`
+- `git diff --check`
+
+All passed.

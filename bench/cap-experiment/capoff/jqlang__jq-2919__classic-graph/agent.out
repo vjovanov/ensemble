@@ -1,0 +1,12 @@
+Implemented the minimal fix in `src/main.c`.
+
+What changed:
+- `--` now stops option parsing even when it appears before the jq program.
+- The next argument after `--` is treated as the jq program if no program has been seen yet.
+- A bare trailing `--` still errors instead of falling through to the implicit `.` program behavior.
+
+Verified with:
+- `make -j2`
+- `./jq --null-input --args -- '$ARGS' foo bar baz --zorch`
+- Confirmed existing behavior remains: `./jq --null-input --args '$ARGS' foo bar baz --zorch` still reports unknown option.
+- Confirmed bare `./jq -n --` still exits with usage/error.

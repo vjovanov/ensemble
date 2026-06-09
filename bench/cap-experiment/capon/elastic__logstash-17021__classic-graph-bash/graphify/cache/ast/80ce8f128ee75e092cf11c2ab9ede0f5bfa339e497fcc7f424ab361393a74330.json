@@ -1,0 +1,1 @@
+{"nodes": [{"id": "home_vjovanov_p_ensemble_bench_work_elastic_logstash_17021_classic_graph_bash_qa_scripts_windows_acceptance_logstash_release_default_plugins_ps1", "label": "logstash_release_default_plugins.ps1", "file_type": "code", "source_file": "qa/scripts/windows/acceptance/logstash_release_default_plugins.ps1", "source_location": "L1"}], "edges": [], "raw_calls": []}

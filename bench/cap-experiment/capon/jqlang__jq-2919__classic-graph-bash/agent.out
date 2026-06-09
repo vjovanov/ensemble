@@ -1,0 +1,26 @@
+Implemented the minimal fix in `src/main.c`.
+
+Summary:
+- Added an `options_done` flag for `--`.
+- `--` now stops option parsing even when it appears before the jq program.
+- If `--` appears after the program, existing separator behavior is preserved.
+
+Verified:
+- Built successfully with `--with-oniguruma=no`.
+- Confirmed the new behavior:
+
+```sh
+./jq --null-input --args -- '$ARGS' foo bar baz --zorch
+```
+
+produces the expected `$ARGS` output including `"--zorch"`.
+
+- Confirmed existing behavior remains:
+
+```sh
+./jq --null-input --args '$ARGS' foo bar baz --zorch
+```
+
+still reports unknown option `--zorch`.
+
+- Ran `make check` successfully.

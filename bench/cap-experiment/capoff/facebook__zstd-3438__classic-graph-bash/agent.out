@@ -1,0 +1,11 @@
+Implemented the minimal fix in `lib/compress/zstd_compress.c`.
+
+Changes:
+- Caps row-based matchfinder `hashLog` to `28` bits.
+- Extends short-cache CDict cParam adjustment to cap `chainLog` the same way `hashLog` was capped (`32 - ZSTD_SHORT_CACHE_TAG_BITS`, i.e. 24 bits).
+
+Verification:
+- Built successfully with debug assertions enabled:
+  - `make -j2 zstd DEBUGLEVEL=2`
+- Confirmed the reported style of repro no longer asserts/hangs on bounded input:
+  - `head -c 1048576 /dev/zero | ./zstd -q -o /dev/null -7 --zstd=hlog=29`

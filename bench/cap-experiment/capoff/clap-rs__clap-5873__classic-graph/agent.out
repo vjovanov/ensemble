@@ -1,0 +1,19 @@
+Implemented the fix in place.
+
+Changed:
+- `clap_builder/src/parser/arg_matcher.rs`
+  - Added `Clone` to `ArgMatcher`.
+
+- `clap_builder/src/parser/parser.rs`
+  - Updated `Parser::did_you_mean_error` so the suggested argument is added only to a cloned matcher for usage rendering.
+  - This prevents the real parse matcher from being polluted when `ignore_errors(true)` suppresses the error, allowing defaults to be applied correctly.
+
+Verified with:
+
+```bash
+cargo test -p clap --test builder ignore_errors
+cargo test -p clap --test builder did_you_mean --features suggestions,error-context
+cargo fmt --check
+```
+
+All passed.

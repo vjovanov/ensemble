@@ -1,0 +1,67 @@
+diff --git c/logstash-core/src/main/java/org/logstash/common/BufferedTokenizerExt.java i/logstash-core/src/main/java/org/logstash/common/BufferedTokenizerExt.java
+index be1c64d235..26f4e3b51a 100644
+--- c/logstash-core/src/main/java/org/logstash/common/BufferedTokenizerExt.java
++++ i/logstash-core/src/main/java/org/logstash/common/BufferedTokenizerExt.java
+@@ -20,6 +20,9 @@
+ 
+ package org.logstash.common;
+ 
++import java.util.ArrayList;
++import java.util.List;
++
+ import org.jruby.Ruby;
+ import org.jruby.RubyArray;
+ import org.jruby.RubyClass;
+@@ -39,7 +42,9 @@ public class BufferedTokenizerExt extends RubyObject {
+     private static final RubyString NEW_LINE = (RubyString) RubyUtil.RUBY.newString("\n").
+                                                                 freeze(RubyUtil.RUBY.getCurrentContext());
+ 
+-    private @SuppressWarnings("rawtypes") RubyArray input = RubyUtil.RUBY.newArray();
++    // Keep Ruby string fragments as IRubyObjects; RubyArray.add/addAll conversions can alter
++    // encodings.
++    private final List<IRubyObject> input = new ArrayList<>();
+     private RubyString delimiter = NEW_LINE;
+     private int sizeLimit;
+     private boolean hasSizeLimit;
+@@ -88,14 +93,14 @@ public class BufferedTokenizerExt extends RubyObject {
+             }
+             this.inputSize = inputSize + entitiesSize;
+         }
+-        input.append(entities.shift(context));
++        input.add(entities.shift(context));
+         if (entities.isEmpty()) {
+             return RubyUtil.RUBY.newArray();
+         }
+-        entities.unshift(input.join(context));
++        entities.unshift(joinInput(context));
+         input.clear();
+-        input.append(entities.pop(context));
+-        inputSize = ((RubyString) input.first()).size();
++        input.add(entities.pop(context));
++        inputSize = ((RubyString) input.get(0)).size();
+         return entities;
+     }
+ 
+@@ -108,12 +113,21 @@ public class BufferedTokenizerExt extends RubyObject {
+      */
+     @JRubyMethod
+     public IRubyObject flush(final ThreadContext context) {
+-        final IRubyObject buffer = input.join(context);
++        final IRubyObject buffer = joinInput(context);
+         input.clear();
+         inputSize = 0;
+         return buffer;
+     }
+ 
++    @SuppressWarnings("rawtypes")
++    private IRubyObject joinInput(final ThreadContext context) {
++        final RubyArray parts = RubyUtil.RUBY.newArray(input.size());
++        for (final IRubyObject part : input) {
++            parts.append(part);
++        }
++        return parts.join(context);
++    }
++
+     @JRubyMethod(name = "empty?")
+     public IRubyObject isEmpty(final ThreadContext context) {
+         return RubyUtil.RUBY.newBoolean(input.isEmpty() && (inputSize == 0));

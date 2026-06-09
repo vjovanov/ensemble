@@ -1,0 +1,78 @@
+diff --git c/lib/compress/zstd_compress.c i/lib/compress/zstd_compress.c
+index 3a48e7dcd4..94087180c9 100644
+--- c/lib/compress/zstd_compress.c
++++ i/lib/compress/zstd_compress.c
+@@ -231,6 +231,18 @@ static int ZSTD_rowMatchFinderUsed(const ZSTD_strategy strategy, const ZSTD_para
+     return ZSTD_rowMatchFinderSupported(strategy) && (mode == ZSTD_ps_enable);
+ }
+ 
++#define ZSTD_ROW_HASH_MAX_HASHLOG 28 /* 24-bit row hash + 4-bit minimum row size */
++
++static void ZSTD_capRowHashLog(ZSTD_compressionParameters* cParams,
++                               ZSTD_paramSwitch_e useRowMatchFinder)
++{
++    assert(useRowMatchFinder != ZSTD_ps_auto);
++    if (ZSTD_rowMatchFinderUsed(cParams->strategy, useRowMatchFinder)
++        && cParams->hashLog > ZSTD_ROW_HASH_MAX_HASHLOG) {
++        cParams->hashLog = ZSTD_ROW_HASH_MAX_HASHLOG;
++    }
++}
++
+ /* Returns row matchfinder usage given an initial mode and cParams */
+ static ZSTD_paramSwitch_e ZSTD_resolveRowMatchFinderMode(ZSTD_paramSwitch_e mode,
+                                                          const ZSTD_compressionParameters* const cParams) {
+@@ -1466,9 +1478,12 @@ ZSTD_adjustCParams_internal(ZSTD_compressionParameters cPar,
+         cPar.windowLog = ZSTD_WINDOWLOG_ABSOLUTEMIN;  /* minimum wlog required for valid frame header */
+ 
+     if (mode == ZSTD_cpm_createCDict && ZSTD_CDictIndicesAreTagged(&cPar)) {
+-        U32 const maxShortCacheHashLog = 32 - ZSTD_SHORT_CACHE_TAG_BITS;
+-        if (cPar.hashLog > maxShortCacheHashLog) {
+-            cPar.hashLog = maxShortCacheHashLog;
++        U32 const maxShortCacheLog = 32 - ZSTD_SHORT_CACHE_TAG_BITS;
++        if (cPar.hashLog > maxShortCacheLog) {
++            cPar.hashLog = maxShortCacheLog;
++        }
++        if (cPar.chainLog > maxShortCacheLog) {
++            cPar.chainLog = maxShortCacheLog;
+         }
+     }
+ 
+@@ -1513,7 +1528,9 @@ ZSTD_compressionParameters ZSTD_getCParamsFromCCtxParams(
+     ZSTD_overrideCParams(&cParams, &CCtxParams->cParams);
+     assert(!ZSTD_checkCParams(cParams));
+     /* srcSizeHint == 0 means 0 */
+-    return ZSTD_adjustCParams_internal(cParams, srcSizeHint, dictSize, mode);
++    cParams = ZSTD_adjustCParams_internal(cParams, srcSizeHint, dictSize, mode);
++    ZSTD_capRowHashLog(&cParams, ZSTD_resolveRowMatchFinderMode(CCtxParams->useRowMatchFinder, &cParams));
++    return cParams;
+ }
+ 
+ static size_t
+@@ -1965,6 +1982,8 @@ static size_t ZSTD_resetCCtx_internal(ZSTD_CCtx* zc,
+     assert(params->useBlockSplitter != ZSTD_ps_auto);
+     assert(params->ldmParams.enableLdm != ZSTD_ps_auto);
+     assert(params->maxBlockSize != 0);
++    ZSTD_capRowHashLog(&zc->appliedParams.cParams, params->useRowMatchFinder);
++
+     if (params->ldmParams.enableLdm == ZSTD_ps_enable) {
+         /* Adjust long distance matching parameters */
+         ZSTD_ldm_adjustParameters(&zc->appliedParams.ldmParams, &params->cParams);
+@@ -5262,8 +5281,9 @@ ZSTD_CDict* ZSTD_createCDict_advanced2(
+     }
+ 
+     DEBUGLOG(3, "ZSTD_createCDict_advanced2: DDS: %u", cctxParams.enableDedicatedDictSearch);
+-    cctxParams.cParams = cParams;
+     cctxParams.useRowMatchFinder = ZSTD_resolveRowMatchFinderMode(cctxParams.useRowMatchFinder, &cParams);
++    ZSTD_capRowHashLog(&cParams, cctxParams.useRowMatchFinder);
++    cctxParams.cParams = cParams;
+ 
+     cdict = ZSTD_createCDict_advanced_internal(dictSize,
+                         dictLoadMethod, cctxParams.cParams,
+@@ -5337,6 +5357,7 @@ const ZSTD_CDict* ZSTD_initStaticCDict(
+                                  ZSTD_compressionParameters cParams)
+ {
+     ZSTD_paramSwitch_e const useRowMatchFinder = ZSTD_resolveRowMatchFinderMode(ZSTD_ps_auto, &cParams);
++    ZSTD_capRowHashLog(&cParams, useRowMatchFinder);
+     /* enableDedicatedDictSearch == 1 ensures matchstate is not too small in case this CDict will be used for DDS + row hash */
+     size_t const matchStateSize = ZSTD_sizeof_matchState(&cParams, useRowMatchFinder, /* enableDedicatedDictSearch */ 1, /* forCCtx */ 0);
+     size_t const neededSize = ZSTD_cwksp_alloc_size(sizeof(ZSTD_CDict))

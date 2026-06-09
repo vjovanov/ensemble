@@ -1,0 +1,14 @@
+Implemented minimal source fix in `lib/compress/zstd_compress.c`.
+
+Changes made:
+- Added a row-matchfinder hashLog cap at `28` (`32 - 8 tag bits + min rowLog 4`).
+- Applied the row cap when resolving/using row matchfinder params, including context reset safety.
+- Extended short-cache CDict parameter adjustment to cap both:
+  - `hashLog`
+  - `chainLog`
+  at `32 - ZSTD_SHORT_CACHE_TAG_BITS`.
+
+Verification:
+- Built successfully with `make -j2`.
+- Ran targeted reproduction successfully:
+  - `programs/zstd -q -o /dev/null -7 --zstd=hlog=29` on bounded input.

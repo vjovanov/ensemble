@@ -1,0 +1,17 @@
+Implemented the source change in:
+
+- `logstash-core/src/main/java/org/logstash/common/BufferedTokenizerExt.java`
+
+What changed:
+- Centralized buffered RubyString insertion through `appendToInput(...)`.
+- The helper explicitly uses `RubyArray.append(IRubyObject)` and documents why Java collection methods such as `add`/`addAll` must not be used: they can route `RubyString` values through Java string conversion and alter byte encoding.
+
+Verification:
+- Ran `git diff --check` successfully.
+- Attempted `./gradlew :logstash-core:compileJava --quiet`, but the build fails before compiling project code due to the local Java/Groovy incompatibility:
+
+```text
+Unsupported class file major version 69
+```
+
+No test files were modified.

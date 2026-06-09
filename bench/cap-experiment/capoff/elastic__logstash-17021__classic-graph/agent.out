@@ -1,0 +1,12 @@
+Implemented the fix in:
+
+- `logstash-core/src/main/java/org/logstash/common/BufferedTokenizerExt.java`
+
+What changed:
+- The tokenizer’s internal `input` buffer now stores fragments in a Java `List<IRubyObject>` instead of a `RubyArray`.
+- When joining buffered fragments, it builds a temporary `RubyArray` using `append(...)`, avoiding `RubyArray.add(...)` / `addAll(...)` conversion paths that can alter string encodings.
+- Added a small comment documenting why the buffer avoids those RubyArray Java collection APIs.
+
+Validation:
+- `git diff --check` passes.
+- Attempted Gradle compilation/tests, but the local build is blocked before project compilation by `buildSrc:compileGroovy` failing with `Unsupported class file major version 69`, unrelated to this source change.

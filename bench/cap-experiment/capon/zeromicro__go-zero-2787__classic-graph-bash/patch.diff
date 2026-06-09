@@ -1,0 +1,24 @@
+diff --git c/core/collection/timingwheel.go i/core/collection/timingwheel.go
+index 327b176482..f785d93dbe 100644
+--- c/core/collection/timingwheel.go
++++ i/core/collection/timingwheel.go
+@@ -69,7 +69,18 @@ func NewTimingWheel(interval time.Duration, numSlots int, execute Execute) (*Tim
+ 			interval, numSlots, execute)
+ 	}
+ 
+-	return newTimingWheelWithClock(interval, numSlots, execute, timex.NewTicker(interval))
++	return NewTimingWheelWithClock(interval, numSlots, execute, timex.NewTicker(interval))
++}
++
++// NewTimingWheelWithClock returns a TimingWheel with given ticker.
++func NewTimingWheelWithClock(interval time.Duration, numSlots int, execute Execute,
++	ticker timex.Ticker) (*TimingWheel, error) {
++	if interval <= 0 || numSlots <= 0 || execute == nil || ticker == nil {
++		return nil, fmt.Errorf("interval: %v, slots: %d, execute: %p",
++			interval, numSlots, execute)
++	}
++
++	return newTimingWheelWithClock(interval, numSlots, execute, ticker)
+ }
+ 
+ func newTimingWheelWithClock(interval time.Duration, numSlots int, execute Execute,

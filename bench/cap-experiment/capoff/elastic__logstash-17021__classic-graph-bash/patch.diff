@@ -1,0 +1,22 @@
+diff --git c/logstash-core/src/main/java/org/logstash/common/BufferedTokenizerExt.java i/logstash-core/src/main/java/org/logstash/common/BufferedTokenizerExt.java
+index be1c64d235..eee0bf07aa 100644
+--- c/logstash-core/src/main/java/org/logstash/common/BufferedTokenizerExt.java
++++ i/logstash-core/src/main/java/org/logstash/common/BufferedTokenizerExt.java
+@@ -88,6 +88,8 @@ public class BufferedTokenizerExt extends RubyObject {
+             }
+             this.inputSize = inputSize + entitiesSize;
+         }
++        // Use RubyArray#append instead of Java Collection APIs (add/addAll), which coerce
++        // RubyString values through JavaUtil and can transcode bytes for non-UTF-8 strings.
+         input.append(entities.shift(context));
+         if (entities.isEmpty()) {
+             return RubyUtil.RUBY.newArray();
+@@ -108,7 +110,7 @@ public class BufferedTokenizerExt extends RubyObject {
+      */
+     @JRubyMethod
+     public IRubyObject flush(final ThreadContext context) {
+-        final IRubyObject buffer = input.join(context);
++        final IRubyObject buffer = input.size() == 1 ? input.shift(context) : input.join(context);
+         input.clear();
+         inputSize = 0;
+         return buffer;

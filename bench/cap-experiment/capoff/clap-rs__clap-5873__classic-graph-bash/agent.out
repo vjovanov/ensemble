@@ -1,0 +1,13 @@
+Implemented the fix in:
+
+- `clap_builder/src/parser/parser.rs`
+
+Change made:
+- `Parser::did_you_mean_error` no longer mutates the active `ArgMatcher` to build suggestion-specific usage when `ignore_errors(true)` is set.
+- This prevents a “did you mean” suggestion like `--ig` → `--ignore-immutable` from marking the suggested argument as `CommandLine`, allowing defaults to be applied correctly when the error is ignored.
+
+Verification run:
+
+- `cargo test -p clap_builder --lib` ✅
+- Reproduced the provided scenario in a temporary crate against the local checkout ✅
+- `cargo fmt --check` ✅

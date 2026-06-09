@@ -1,0 +1,12 @@
+Implemented the fix in `lib/compress/zstd_compress.c`.
+
+Changes made:
+- Caps `hashLog` at `28` when the row-based matchfinder is/will be used.
+- Caps both `hashLog` and `chainLog` at `32 - ZSTD_SHORT_CACHE_TAG_BITS` for short-cache CDict matchfinders.
+- Threads row-matchfinder mode into `ZSTD_adjustCParams_internal()` so the cap respects explicit row matchfinder settings.
+- Applies the row hash cap to the dedicated dictionary search path as well.
+
+Verification run:
+- `make -j2 zstd`
+- `head -c 1048576 /dev/zero | programs/zstd -q -o /dev/null -7 --zstd=hlog=29`
+- `git diff --check`

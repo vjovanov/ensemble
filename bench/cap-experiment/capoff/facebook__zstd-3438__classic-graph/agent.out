@@ -1,0 +1,14 @@
+Implemented the minimal source fix in `lib/compress/zstd_compress.c`.
+
+Changes made:
+- Capped row-based matchfinder `hashLog` at `28`.
+- Extended short-cache CDict parameter adjustment to cap `chainLog` the same way `hashLog` was already capped.
+- Ensured row `hashLog` capping is applied for normal CCtx params and CDict initialization paths.
+
+Verification run:
+- `make -j2 zstd-release`
+- `make -j2 zstd DEBUGLEVEL=2`
+- Reproduced the reported path with debug build:
+  - `./zstd -q -o /dev/null -7 /tmp/zstd-input --zstd=hlog=29`
+
+All completed successfully.

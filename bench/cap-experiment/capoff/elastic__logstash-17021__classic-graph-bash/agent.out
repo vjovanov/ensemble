@@ -1,0 +1,11 @@
+Implemented the minimal source update in:
+
+- `logstash-core/src/main/java/org/logstash/common/BufferedTokenizerExt.java`
+
+Changes made:
+- Preserves the single buffered `RubyString` directly during `flush` by shifting it instead of always using `RubyArray#join`, avoiding unnecessary string reconstruction/conversion.
+- Added an inline note documenting why `RubyArray#append` must be used instead of Java collection APIs like `add`/`addAll`, which can transcode `RubyString` values.
+
+Validation:
+- `git diff --check` passed.
+- Attempted Gradle compilation, but the build currently fails in `buildSrc:compileGroovy` with `Unsupported class file major version 69`, which appears to be an environment/toolchain issue unrelated to this change.

@@ -1,0 +1,12 @@
+Implemented the fix in `src/main.c`.
+
+Change summary:
+- `--` now stops option parsing even when the jq program has not been seen yet.
+- If `--` appears before the program, the next argument is treated as the jq program.
+- Remaining arguments are then treated as positional strings / JSON args / input files according to existing `--args` / `--jsonargs` behavior.
+
+Verified with:
+- `./jq --null-input --args -- '$ARGS' foo bar baz --zorch`
+- `./jq --null-input --args '$ARGS' foo bar baz --zorch`
+- Existing mixed `--args` / `--jsonargs` behavior
+- `make check` passed.

@@ -1,0 +1,18 @@
+Implemented the fix in:
+
+- `logstash-core/src/main/java/org/logstash/common/BufferedTokenizerExt.java`
+
+Summary:
+- Replaced the tokenizer’s internal buffer from a `RubyArray` to a `RubyString`.
+- Removed buffer accumulation via `RubyArray#join`, avoiding JRuby Java-to-Ruby conversion paths that can re-encode strings.
+- Added an empty-split guard so empty payloads remain handled correctly.
+- `flush` now returns the buffered `RubyString` directly and resets the internal buffer with a new empty Ruby string.
+
+Verification performed:
+- Compiled `BufferedTokenizerExt.java` directly with `javac`.
+- Ran small Java reproductions confirming:
+  - `"\xA3".force_encoding("ISO8859-1")` flushes as `[-93]`, encoding `ISO-8859-1`.
+  - Split-across-calls data preserves bytes/encoding.
+  - Existing tokenizer behaviors like `"foo\n"`, `"foo" + "bar\n"`, multiple tokens, and empty input behave as expected.
+
+Note: full Gradle execution was blocked by the environment’s buildSrc/Groovy class-version issue, unrelated to this source change.

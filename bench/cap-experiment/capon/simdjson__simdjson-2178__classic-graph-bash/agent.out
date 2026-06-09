@@ -1,0 +1,18 @@
+Implemented the JSON Pointer overshoot fix.
+
+Changed behavior:
+- Valid JSON Pointer syntax that continues into a scalar now returns `NO_SUCH_FIELD` instead of `INVALID_JSON_POINTER`.
+- Invalid pointer syntax, e.g. missing leading `/`, still returns `INVALID_JSON_POINTER`.
+
+Files changed:
+- `include/simdjson/dom/element-inl.h`
+- `include/simdjson/generic/ondemand/document-inl.h`
+- `include/simdjson/generic/ondemand/value-inl.h`
+- `singleheader/simdjson.h`
+
+Verified with a small compile/run check covering:
+- DOM `.at_pointer("/document/key4/sub")` → `NO_SUCH_FIELD`
+- On Demand `.at_pointer("/document/key4/sub")` → `NO_SUCH_FIELD`
+- Invalid syntax `.at_pointer("document/key4/sub")` → `INVALID_JSON_POINTER`
+
+No test files were modified.
