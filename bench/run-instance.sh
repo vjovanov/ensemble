@@ -134,6 +134,7 @@ echo "graphify-out/" >> "$ARM_SRC/.git/info/exclude"
 # --- 3. Arm-specific exploration setup --------------------------------------
 EXPLORATION="sidekick"
 declare -a ENVV=()
+declare -a SKILL_ARGS=()   # extra pi flags (e.g. --skill) for arms that load a skill
 # Trace the explore sidekick's own tool calls (graph_query/explain/fetch,
 # caller_context, …) to a per-run JSONL. "full" includes payload previews.
 # Lets us see whether/how the sidekick reads the parent via caller_context.
@@ -182,6 +183,24 @@ case "$ARM" in
     EXPLORATION="classic"
     rm -rf "$ARM_SRC/graphify-out"
     ENVV=("GRAPHIFY_COMMAND=$BENCH_DIR/no-graphify" "PI_BASH_OUTPUT_SUMMARY=0")
+    ;;
+  classic-graphify)
+    # classic exploration (NO pi explore sidekick) + graphify's OWN shipped skill (skill.md):
+    # the lead drives graphify directly via bash. Build the graph IN-TREE so the lead's
+    # `graphify query` finds graphify-out/ in cwd; it is git-excluded above, so it never enters
+    # the patch. A/B vs classic-graph (same graph, sidekick vs. skill). §FS-001-ensemble-explore.
+    command -v "$GRAPHIFY" >/dev/null || die "graphify not on PATH (required for $ARM)"
+    [ -f "$GRAPHIFY_SKILL" ] || die "graphify skill not found: $GRAPHIFY_SKILL (set GRAPHIFY_SKILL)"
+    EXPLORATION="classic"
+    log "building graphify graph (in-tree graphify-out/)…"
+    GRAPH_ARTIFACT_DIR="$ARM_SRC/graphify-out"
+    rm -rf "$GRAPH_ARTIFACT_DIR"
+    ( cd "$ARM_SRC" && GRAPHIFY_OUT="$GRAPH_ARTIFACT_DIR" "$GRAPHIFY" update "$ARM_SRC" >/dev/null 2>"$OUT/graphify.log" ) \
+      || log "graphify update returned nonzero (continuing)"
+    [ -f "$GRAPH_ARTIFACT_DIR/graph.json" ] || log "WARN: no graph.json produced for $LANG"
+    cp -r "$GRAPH_ARTIFACT_DIR" "$OUT/graphify" 2>/dev/null || true   # snapshot for audit
+    SKILL_ARGS=(--skill "$GRAPHIFY_SKILL")
+    ENVV=("PI_BASH_OUTPUT_SUMMARY=0")
     ;;
   codex)
     # Reference arm: OpenAI Codex CLI (cdx), not pi. No graphify, no pi env.
@@ -232,6 +251,9 @@ if [ "$ARM" = "classic" ] || [ "$ARM" = "classic-bash" ] || [ "$ARM" = "codex" ]
   mkdir -p "$OUT/prompts"
   if [ "$ARM" = "codex" ]; then
     printf 'codex arm (reference): OpenAI Codex CLI (cdx exec) run on the same task prompt and base commit.\nUses Codex'\''s own agent on the same model (gpt-5.5/oca) at reasoning effort=medium (matched to classic), not pi.\nFor orientation per GRUND-002; resolved verdict only.\n' > "$OUT/prompts/NOTE.txt"
+  elif [ "$ARM" = "classic-graphify" ]; then
+    printf 'classic-graphify arm: classic exploration (NO pi explore sidekick) + graphify'\''s OWN shipped skill\n(%s). Lead drives graphify directly via bash against the in-tree graphify-out/ graph.\nBase pi system prompt pinned by commit %s. A/B vs classic-graph (same graph, sidekick vs. skill).\n' "$GRAPHIFY_SKILL" "$COMMIT" > "$OUT/prompts/NOTE.txt"
+    cp "$GRAPHIFY_SKILL" "$OUT/prompts/graphify-skill.md" 2>/dev/null || true
   elif [ "$ARM" = "classic-bash" ]; then
     printf 'classic-bash arm: classic exploration with the bash sidekick enabled. Uses the base pi system prompt (pinned by\ncommit %s) plus read/grep/find/ls tools. No explore sidekick prompt.\n' "$COMMIT" > "$OUT/prompts/NOTE.txt"
   else
@@ -277,6 +299,7 @@ else
         -p "$PROMPT" \
         "${MODEL_ARGS[@]}" \
         --exploration "$EXPLORATION" \
+        ${SKILL_ARGS[@]+"${SKILL_ARGS[@]}"} \
         --no-context-files \
         --session-dir "$SESSION_DIR" \
       ) >"$OUT/agent.out" 2>"$OUT/agent.err" &

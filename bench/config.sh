@@ -37,6 +37,8 @@ fi
 # classic-bash        : --exploration classic + bash sidekick output digest
 # classic-graph       : --exploration sidekick + graph prebuilt + PI_REQUIRE_GRAPH=1 (enforced)
 # classic-graph-bash  : same strict graph setup + bash sidekick output digest
+# classic-graphify    : --exploration classic + graphify's OWN shipped skill (skill.md); the lead drives
+#                       graphify directly via bash (no pi explore sidekick). A/B vs classic-graph.
 # ensemble-strict     : legacy alias for classic-graph
 # graph-bash          : legacy alias for classic-graph-bash
 # (sidekick-fs — filesystem results presented as explore/graph results — dropped: it muddies
@@ -67,6 +69,9 @@ mkdir -p "$WORK_DIR" "$RAW_DIR" "$RAW_HISTORY_DIR" "$PATCH_DIR" "$INST_DIR" "$RE
 : "${AGENT_TIMEOUT:=1200}"          # seconds per agent run (wall-clock guard)
 : "${MAX_REPO_MB:=400}"             # refuse to clone repos bigger than this (FORCE=1 overrides)
 : "${GRAPHIFY:=graphify}"           # graphify binary (must be on PATH for strict arm)
+# graphify's own shipped skill (skill.md), for the classic-graphify arm. Defaults to the bundled
+# copy in the installed graphifyy package; override if installed elsewhere.
+: "${GRAPHIFY_SKILL:=$HOME/.local/share/uv/tools/graphifyy/lib/python3.11/site-packages/graphify/skill.md}"
 : "${DRY_RUN:=0}"                   # 1 = skip the paid agent call; exercise plumbing only
 : "${NO_CLASSIC:=0}"                # 1 = remove classic from ARMS
 : "${REUSE_CLASSIC:=0}"             # 1 = skip classic agent runs but keep classic in reports
