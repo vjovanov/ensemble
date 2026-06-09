@@ -1,0 +1,14 @@
+Implemented the minimal fix for JSON Pointer overshooting scalar values.
+
+Changed behavior:
+- Valid JSON Pointer syntax that continues past a scalar now returns `NO_SUCH_FIELD`.
+- Invalid JSON Pointer syntax still returns `INVALID_JSON_POINTER`.
+
+Updated files:
+- `include/simdjson/dom/element-inl.h`
+- `include/simdjson/generic/ondemand/document-inl.h`
+- `include/simdjson/generic/ondemand/value-inl.h`
+
+Validated with small DOM and ondemand repro programs:
+- `/document/key4/sub` now returns `NO_SUCH_FIELD`
+- `/document/key4/~2` still returns `INVALID_JSON_POINTER`

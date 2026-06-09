@@ -1,0 +1,1 @@
+{"nodes": [{"id": "home_vjovanov_p_ensemble_bench_work_elastic_logstash_17021_classic_graph_bash_qa_docker_spec_oss_image_spec_rb", "label": "image_spec.rb", "file_type": "code", "source_file": "qa/docker/spec/oss/image_spec.rb", "source_location": "L1"}], "edges": [], "raw_calls": []}

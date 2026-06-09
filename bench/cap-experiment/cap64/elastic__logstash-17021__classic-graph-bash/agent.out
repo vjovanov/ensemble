@@ -1,0 +1,18 @@
+Implemented the minimal source-side update in:
+
+- `logstash-core/src/main/java/org/logstash/common/BufferedTokenizerExt.java`
+
+The tokenizer’s buffering path already avoids `RubyArray.add/addAll` and uses `append` with existing `IRubyObject`/`RubyString` instances, which preserves byte content and encoding. I added an explicit note at the buffering point to guard against reintroducing the problematic Java collection path that caused JRuby to convert strings through Java `String` and rewrite bytes/encoding.
+
+Verification attempted:
+
+- `./gradlew :logstash-core:compileJava`
+- `./gradlew :logstash-core:test --tests org.logstash.common.BufferedTokenizerExtTest`
+
+Both were blocked before project compilation by the local Gradle/buildSrc Groovy failure:
+
+```text
+Unsupported class file major version 69
+```
+
+No test files were modified.

@@ -1,0 +1,36 @@
+diff --git c/logstash-core/src/main/java/org/logstash/common/BufferedTokenizerExt.java i/logstash-core/src/main/java/org/logstash/common/BufferedTokenizerExt.java
+index be1c64d235..69eedde44a 100644
+--- c/logstash-core/src/main/java/org/logstash/common/BufferedTokenizerExt.java
++++ i/logstash-core/src/main/java/org/logstash/common/BufferedTokenizerExt.java
+@@ -45,6 +45,15 @@ public class BufferedTokenizerExt extends RubyObject {
+     private boolean hasSizeLimit;
+     private int inputSize;
+ 
++    /**
++     * Append Ruby values through the RubyArray API that accepts IRubyObject directly.
++     * The java.util Collection APIs ({@code add}/{@code addAll}) convert values via
++     * JavaUtil and can transcode RubyString bytes instead of preserving their encoding.
++     */
++    private void appendToInput(final IRubyObject fragment) {
++        input.append(fragment);
++    }
++
+     public BufferedTokenizerExt(final Ruby runtime, final RubyClass metaClass) {
+         super(runtime, metaClass);
+     }
+@@ -88,13 +97,13 @@ public class BufferedTokenizerExt extends RubyObject {
+             }
+             this.inputSize = inputSize + entitiesSize;
+         }
+-        input.append(entities.shift(context));
++        appendToInput(entities.shift(context));
+         if (entities.isEmpty()) {
+             return RubyUtil.RUBY.newArray();
+         }
+         entities.unshift(input.join(context));
+         input.clear();
+-        input.append(entities.pop(context));
++        appendToInput(entities.pop(context));
+         inputSize = ((RubyString) input.first()).size();
+         return entities;
+     }

@@ -1,0 +1,18 @@
+Implemented the minimal source change in:
+
+- `logstash-core/src/main/java/org/logstash/common/BufferedTokenizerExt.java`
+
+What changed:
+- Routed buffered fragment insertion through a dedicated `appendToInput(IRubyObject)` helper.
+- Documented why `RubyArray` Java collection APIs like `add`/`addAll` must not be used here: they can convert `RubyString` values through `JavaUtil` and transcode bytes/encoding.
+- Updated the two buffer insertion sites to use this encoding-preserving path.
+
+Validation:
+- Attempted `./gradlew :logstash-core:compileJava` and targeted test execution.
+- Build could not start because `buildSrc:compileGroovy` fails in this environment with:
+
+```text
+Unsupported class file major version 69
+```
+
+This appears to be a local JDK/Groovy compatibility issue before project compilation begins, not a failure from the modified source.

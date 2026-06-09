@@ -1,0 +1,15 @@
+Implemented the fix in:
+
+- `crates/nu-command/src/strings/detect_columns.rs`
+
+What changed:
+- `detect columns` and `detect columns --guess` now collect external `ByteStream` input from child process stdout without treating the child’s non-zero exit status as a Nushell error.
+- This keeps behavior consistent with other internal pipeline consumers like `lines` when the external command is not the final pipeline command.
+- Preserved string/binary validation and newline trimming behavior.
+
+Verification run:
+- `cargo fmt --check`
+- `cargo check -p nu-command`
+- Reproduced the issue command:
+  - `"1\n2" | grep -E "[[:alpha:]]" | detect columns`
+  - Now exits successfully with no output instead of `NonZeroExitCode`.

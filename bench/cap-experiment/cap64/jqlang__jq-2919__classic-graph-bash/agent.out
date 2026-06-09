@@ -1,0 +1,11 @@
+Implemented the fix in `src/main.c`.
+
+Change summary:
+- Added an `options_done` flag to distinguish `--` before the jq program from `--` after the program.
+- When `--` appears before the program, jq now stops parsing options, treats the next argument as the jq program, and treats remaining arguments according to `--args` / `--jsonargs` / input-file behavior.
+- Existing behavior for options after the program remains unchanged unless `--` is used to terminate option parsing.
+
+Verified:
+- `./jq --null-input --args -- '$ARGS' foo bar baz --zorch` now succeeds and includes `--zorch` as positional data.
+- `./jq --null-input --args '$ARGS' foo bar baz --zorch` still fails with `Unknown option --zorch`.
+- `NO_VALGRIND=1 tests/shtest` passes.

@@ -1,0 +1,53 @@
+diff --git c/crates/nu-command/src/strings/detect_columns.rs i/crates/nu-command/src/strings/detect_columns.rs
+index 23858d9e49..ed56d915cf 100644
+--- c/crates/nu-command/src/strings/detect_columns.rs
++++ i/crates/nu-command/src/strings/detect_columns.rs
+@@ -240,13 +240,7 @@ fn detect_columns(
+     args: Arguments,
+ ) -> Result<PipelineData, ShellError> {
+     let name_span = call.head;
+-    let input = input.collect_string("", &args.config)?;
+-
+-    let input: Vec<_> = input
+-        .lines()
+-        .skip(args.num_rows_to_skip.unwrap_or_default())
+-        .map(|x| x.to_string())
+-        .collect();
++    let input = collect_input_lines(input, &args)?;
+ 
+     let mut input = input.into_iter();
+     let headers = input.next();
+@@ -325,6 +319,33 @@ fn detect_columns(
+     }
+ }
+ 
++fn collect_input_lines(input: PipelineData, args: &Arguments) -> Result<Vec<String>, ShellError> {
++    let skip = args.num_rows_to_skip.unwrap_or_default();
++
++    match input {
++        PipelineData::ByteStream(stream, ..) => {
++            if !stream.type_().is_string_coercible() {
++                return Err(ShellError::TypeMismatch {
++                    err_message: "expected string, but got binary".into(),
++                    span: stream.span(),
++                });
++            }
++
++            let Some(lines) = stream.lines() else {
++                return Ok(Vec::new());
++            };
++
++            lines.skip(skip).collect()
++        }
++        input => Ok(input
++            .collect_string("", &args.config)?
++            .lines()
++            .skip(skip)
++            .map(|line| line.to_string())
++            .collect()),
++    }
++}
++
+ pub fn find_columns(input: &str) -> Vec<Spanned<String>> {
+     let mut chars = input.char_indices().peekable();
+     let mut output = vec![];

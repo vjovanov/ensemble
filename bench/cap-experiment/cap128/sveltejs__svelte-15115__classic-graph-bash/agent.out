@@ -1,0 +1,18 @@
+Implemented the minimal source fix.
+
+Changed:
+
+- `packages/svelte/src/compiler/phases/3-transform/client/visitors/ConstTag.js`
+- `packages/svelte/src/compiler/phases/3-transform/server/visitors/ConstTag.js`
+
+What changed:
+
+- `{@const b = $derived(expr)}` now transforms using `expr` directly as the const tag’s derived value.
+- `{@const b = $derived.by(fn)}` now transforms using `fn` as the derived function.
+- Server-side transform similarly strips the rune wrapper and evaluates `$derived.by` by calling the provided function.
+
+Verification:
+
+- `node --check` passed for both edited files.
+- `git diff --check` passed.
+- Full package check could not run because dependencies are not installed in this workspace (`tsc`/`zimmerframe` missing).

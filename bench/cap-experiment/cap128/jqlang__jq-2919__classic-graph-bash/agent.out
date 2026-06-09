@@ -1,0 +1,11 @@
+Implemented the minimal fix in `src/main.c`.
+
+What changed:
+- Added an `options_done` state for `--` before the jq program.
+- When `--` appears before the program, jq now stops option parsing and treats the next argument as the program.
+- After that, remaining arguments are treated as positional args/files according to existing `--args` / `--jsonargs` behavior.
+- Preserved existing bare `jq --` usage behavior.
+
+Verification:
+- `make src/main.o` passes.
+- Full `make` could not complete because this checkout’s `modules/oniguruma` submodule/build target is unavailable: `No rule to make target 'all'`.

@@ -1,0 +1,20 @@
+Implemented the minimal fix in:
+
+- `crates/nu-command/src/strings/detect_columns.rs`
+
+Change summary:
+- `detect columns` now consumes `ByteStream` input line-by-line instead of using `collect_string()`.
+- This matches `lines` behavior for upstream external commands in a pipeline: a non-zero exit from a non-final external command no longer incorrectly surfaces as an error in `detect columns`.
+- Binary stream type mismatch behavior is preserved.
+
+Verified with:
+
+```bash
+cargo fmt --check
+cargo check -p nu
+cargo run -q -p nu -- -n -c '"1\n2" | grep -E "[[:alpha:]]" | detect columns'
+cargo run -q -p nu -- -n -c '"1\n2" | grep -E "[[:alpha:]]"'
+cargo run -q -p nu -- -n -c '"1\n2" | grep -E "[[:alpha:]]" | lines'
+```
+
+The direct external command still errors with exit code 1, while the `detect columns` pipeline now completes without surfacing that non-final external exit code.

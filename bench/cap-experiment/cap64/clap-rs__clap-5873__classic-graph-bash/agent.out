@@ -1,0 +1,14 @@
+Implemented the fix in place.
+
+Changed:
+- `clap_builder/src/parser/parser.rs`
+  - `did_you_mean_error` now builds suggestion-specific usage from a cloned `ArgMatcher` instead of mutating the real matcher.
+  - This prevents ignored “unknown argument with suggestion” errors like `--ig` from marking `ignore_immutable` as `CommandLine`.
+
+- `clap_builder/src/parser/arg_matcher.rs`
+  - Added `Clone` derive for `ArgMatcher` so parser error formatting can safely work on a copy.
+
+Verified with:
+- `cargo check -p clap_builder`
+- A temporary reproduction matching the issue
+- `cargo test -p clap_builder --lib`

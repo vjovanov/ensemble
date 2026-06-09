@@ -1,0 +1,15 @@
+Implemented the minimal fix in:
+
+- `clap_builder/src/parser/parser.rs`
+
+Change made:
+- `Parser::did_you_mean_error` no longer mutates the real `ArgMatcher` just to build the “did you mean” usage string.
+- Instead, it adds the suggested argument ID directly to the temporary `used` list for usage rendering.
+- This prevents `ignore_errors(true)` from returning matches where a suggested-but-not-actually-present argument is marked as `CommandLine`, allowing defaults to be filled normally.
+
+Verification run:
+
+- `cargo test -p clap_builder --lib`
+- `cargo test -p clap --features derive --lib`
+- Reproduced the issue with a temporary crate using the provided example; both assertions now pass.
+- `cargo fmt --all --check`

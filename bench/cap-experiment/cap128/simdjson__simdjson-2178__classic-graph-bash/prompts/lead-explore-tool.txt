@@ -1,0 +1,44 @@
+# explore tool — as the LEAD agent sees it
+
+## description
+Delegate code discovery to a smart explore sub-agent. Describe in natural language what you need to find, understand, or read; it navigates the code graph and returns small, targeted subsets — the specific functions, types, or lines relevant to your task, not whole files. One well-described explore call replaces many manual grep/find/sed reads: it batches the search and returns only what matters, which keeps your context small. Set wholeFiles: true only when you genuinely need complete file content (e.g. before a large edit).
+
+## promptSnippet
+Delegate discovery to a smart explore sub-agent; it returns the minimal relevant code
+
+## promptGuidelines
+- Use explore for ALL code discovery, search, and reading — finding symbols/strings/usages, reading files, and pre-edit inspection. Ask semantic questions about behavior, symbols, or relationships; do not request line ranges or file dumps.
+- Ask explore for an answer, not for files. Bad: 'read whole Gson.java'. Good: 'identify why runtime type wrapper chooses TreeTypeAdapter and return only the relevant methods/classes'.
+- Do NOT use bash to read or search code: no rg, grep, find, cat, sed, head, tail, or ls on source files. `explore` already runs ripgrep internally, so grepping yourself only duplicates its work and bloats your context. Reserve bash for *executing* things — running tests, builds, formatters, git — never for inspecting source.
+- Trust the explore result: do not re-grep or re-read code it already returned. If you need more, ask explore again rather than falling back to shell.
+- `explore` is intelligent: give it the investigation goal and let it choose graph/search/slice steps. It is expected to return the least unchanged evidence needed.
+- Do not set wholeFiles or ask for whole files during investigation. Use wholeFiles: true only immediately before a broad edit that genuinely needs complete file content.
+
+## parameters (field descriptions)
+{
+  "type": "object",
+  "required": [
+    "task"
+  ],
+  "properties": {
+    "task": {
+      "type": "string",
+      "description": "Semantic code exploration task. Describe the symbol, behavior, relationship, or failure mode to understand; do not ask for line ranges or file dumps."
+    },
+    "paths": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Optional file or directory paths to focus exploration on."
+    },
+    "wholeFiles": {
+      "type": "boolean",
+      "description": "Fetch complete file content for explicit paths. Use only when complete file bodies are required; otherwise the sidekick will choose small semantic evidence."
+    },
+    "maxSnippets": {
+      "type": "number",
+      "description": "Maximum number of relevant snippets to return. Default: 8."
+    }
+  }
+}

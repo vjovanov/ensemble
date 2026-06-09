@@ -1,0 +1,11 @@
+Implemented the minimal fix in `lib/compress/zstd_compress.c`.
+
+Changes:
+- Caps `hashLog` at `28` for row-based matchfinder-capable strategies.
+- Caps both `hashLog` and `chainLog` at `32 - ZSTD_SHORT_CACHE_TAG_BITS` for tagged short-cache CDict indices.
+
+Verification run:
+- `make -j2 zstd`
+- `make -j2 check`
+- `make -j2 DEBUGLEVEL=2 zstd`
+- Debug CLI repro with `--zstd=hlog=29` completed successfully.

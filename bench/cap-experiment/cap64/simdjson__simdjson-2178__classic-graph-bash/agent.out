@@ -1,0 +1,17 @@
+Implemented the JSON Pointer overshoot error fix.
+
+Changed behavior:
+- When a valid JSON Pointer continues into a scalar/non-container value, it now returns `NO_SUCH_FIELD` instead of `INVALID_JSON_POINTER`.
+- Clearly invalid pointer syntax still returns `INVALID_JSON_POINTER` where this path is detected, including bad `~` escapes like `~2`.
+
+Updated files:
+- `include/simdjson/dom/element-inl.h`
+- `include/simdjson/generic/ondemand/document-inl.h`
+- `include/simdjson/generic/ondemand/value-inl.h`
+- `singleheader/simdjson.h`
+
+Verified with an ad-hoc C++ compile/run covering:
+- DOM `.at_pointer("/document/key4/sub")` → `NO_SUCH_FIELD`
+- On Demand `.at_pointer("/document/key4/sub")` → `NO_SUCH_FIELD`
+- Invalid pointer syntax still → `INVALID_JSON_POINTER`
+- `git diff --check` passes.

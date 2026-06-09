@@ -199,7 +199,10 @@ case "$ARM" in
       || log "graphify update returned nonzero (continuing)"
     [ -f "$GRAPH_ARTIFACT_DIR/graph.json" ] || log "WARN: no graph.json produced for $LANG"
     cp -r "$GRAPH_ARTIFACT_DIR" "$OUT/graphify" 2>/dev/null || true   # snapshot for audit
-    SKILL_ARGS=(--skill "$GRAPHIFY_SKILL")
+    # Hard directive: the passive skill is ignored (lead never reads it / runs graphify), so
+    # explicitly require graphify-first navigation. Measures graphify's best case; A/B vs classic.
+    GRAPHIFY_NUDGE='This repository has a prebuilt graphify knowledge graph at graphify-out/graph.json. You MUST use the graphify CLI to locate relevant code (definitions, callers, call paths) BEFORE reading files or editing: run `graphify explain "<symbol>"`, `graphify query "<text>"`, and `graphify path "A" "B"` via bash (they default to --graph graphify-out/graph.json). See the graphify skill for usage. Use ripgrep/read only when graphify cannot answer the question.'
+    SKILL_ARGS=(--skill "$GRAPHIFY_SKILL" --append-system-prompt "$GRAPHIFY_NUDGE")
     ENVV=("PI_BASH_OUTPUT_SUMMARY=0")
     ;;
   codex)

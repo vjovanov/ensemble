@@ -1,0 +1,18 @@
+{
+  "instance": "zeromicro__go-zero-2787",
+  "arm": "classic-graph-bash",
+  "language": "go",
+  "commit": "613480e3651d4e59bb7ebc0d58b8ea336dcd3f15",
+  "dirty": true,
+  "model": "oca/gpt-5.5",
+  "provider": "OCA",
+  "exploration": "sidekick",
+  "require_graph": true,
+  "bash_output_summary": true,
+  "explore_debug": "full",
+  "tool_calls": {
+    "lead": "session/*.jsonl",
+    "sidekick": "explore-debug.jsonl"
+  },
+  "prompts_dir": "prompts/"
+}

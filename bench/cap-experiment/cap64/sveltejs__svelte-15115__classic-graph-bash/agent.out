@@ -1,0 +1,14 @@
+Implemented the fix in place.
+
+Changed:
+- `packages/svelte/src/compiler/phases/3-transform/client/visitors/ConstTag.js`
+- `packages/svelte/src/compiler/phases/3-transform/server/visitors/ConstTag.js`
+
+What changed:
+- `{@const ... = $derived(...)}` now unwraps the `$derived` argument during transform instead of leaving an uncompiled `$derived` call in generated code.
+- `{@const ... = $derived.by(...)}` now passes/calls the derived function appropriately for client and server output.
+- Destructured `{@const}` cases are handled as well.
+
+Verification:
+- Ran syntax checks on both modified files with `node --check`.
+- Attempted a targeted compiler smoke test and `pnpm check`, but dependencies are not installed in this workspace (`ERR_MODULE_NOT_FOUND` for packages like `zimmerframe` / `acorn`).
