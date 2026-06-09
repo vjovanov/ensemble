@@ -2,6 +2,9 @@ Planned milestones and sequencing. Each item is an `RM-` declaration; cite as `�
 
 # RM-001-bash-sidekick: Delegate read-only exploration and compile/test to a cheap sidekick
 
+This milestone is the work toward §GOAL-001-ensemble-beats-pi-and-references (>2× cheaper, >2× faster
+than baseline pi; more correct than Codex and Claude Code).
+
 The expensive lead model spends roughly half its turns on read-only bash
 (`rg`/`sed`/`cat`) and on build/test runs (`cargo`/`mvn`/`go test`). Because cached
 conversation replay (`cacheRead`) dominates cost — 89–96% of all tokens in the
