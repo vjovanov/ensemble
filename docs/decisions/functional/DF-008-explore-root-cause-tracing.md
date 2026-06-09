@@ -1,7 +1,7 @@
 # DF-008-explore-root-cause-tracing: The explore sidekick must trace symptom → root cause, not return the first symptom site
 
-**Status: Under test.** Grounded per §REQ-001-decision-log; addresses the correctness regression in
-§DF-007-lead-driven-graphify-skill / the uncapped-rerun; relates to §FS-001-ensemble-explore.
+**Status: Worked (misdirection class).** Grounded per §REQ-001-decision-log; addresses the correctness
+regression in §DF-007-lead-driven-graphify-skill / the uncapped-rerun; relates to §FS-001-ensemble-explore.
 
 ## 1. Problem (the dominant graph-bash correctness regression)
 
@@ -31,6 +31,12 @@ locates, it does not author the fix (§DA-002-compile-test-fix-sidekick.2).
 
 Re-run the 3 regressions (uncapped, current code). Pass criteria: nushell now traces to
 `process/child.rs` (not `detect_columns.rs`) and the set returns toward 11/11 without raising cost on
-the healthy instances (§REQ-003-strictly-better-than-baseline). Record the outcome here. Note: 2 of 3
-(simdjson, jq-3238) are right-file/wrong-fix — likely seed variance this won't fully fix; a multi-seed
-check separates code from seed.
+the healthy instances (§REQ-003-strictly-better-than-baseline).
+
+**Result (uncapped, current code, conc=5):** 8/11 → **9/11**. **nushell RESOLVED** and now touches
+`nu-protocol/.../process/child.rs` + `run_external.rs` (the root cause), **not** `detect_columns.rs`
+(the symptom) — the misdirection is fixed exactly as designed. Real-fix cost −17% / −35% tok (ALL),
+−19% non-C/C++, no regression on the healthy instances. **simdjson and jq-3238 remain unresolved** —
+they are the right-file/wrong-fix class (not misdirection), so DF-008 correctly does not address them;
+that is fix-quality/seed variance and needs a separate lever (verification depth or multi-seed
+confirmation), tracked next.
