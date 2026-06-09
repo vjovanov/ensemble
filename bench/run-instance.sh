@@ -247,7 +247,7 @@ node -e '
     prompts_dir: "prompts/",
   },null,2)+"\n");
 ' "$OUT" "$COMMIT" "$DIRTY" "$MODEL" "${PROVIDER:-}" "$ARM" "$ID" "$LANG" "$EXPLORATION" "$REQUIRE_GRAPH" "$DBG" "$BASH_OUTPUT_SUMMARY"
-if [ "$ARM" = "classic" ] || [ "$ARM" = "classic-bash" ] || [ "$ARM" = "codex" ]; then
+if [ "$ARM" = "classic" ] || [ "$ARM" = "classic-bash" ] || [ "$ARM" = "codex" ] || [ "$ARM" = "classic-graphify" ]; then
   mkdir -p "$OUT/prompts"
   if [ "$ARM" = "codex" ]; then
     printf 'codex arm (reference): OpenAI Codex CLI (cdx exec) run on the same task prompt and base commit.\nUses Codex'\''s own agent on the same model (gpt-5.5/oca) at reasoning effort=medium (matched to classic), not pi.\nFor orientation per GRUND-002; resolved verdict only.\n' > "$OUT/prompts/NOTE.txt"
