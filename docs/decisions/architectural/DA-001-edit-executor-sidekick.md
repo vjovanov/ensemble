@@ -1,6 +1,7 @@
 # DA-001-edit-executor-sidekick: The sidekick applies lead-authored edits; the whole file never reaches the lead
 
-**Status: Proposed — sequenced after §DF-004-explore-injected-content-cap.6.**
+**Status: Proposed — sequenced after §DF-004-explore-injected-content-cap.6. Now folded into the
+green-loop role of §DA-002-compile-test-fix-sidekick (edit application is that role's Mode A floor).**
 
 The DF-004 cacheRead blow-up happens because the **lead** pulls whole file content into its
 **persistent** transcript "to edit," and that replays into `cacheRead` for the rest of the run.

@@ -104,6 +104,18 @@ can distinguish a true digest from local compaction.
    lead-authored edits and return only a diff, so the whole file never enters the lead's persistent
    transcript — preserving correctness where the cap could not. Architecture and savings estimate:
    §DA-001-edit-executor-sidekick.
+8. **Compile/test turn-removing delegation** — the biggest-least-win analysis found build/test runs
+   are ~half the lead's turns and 52% of graph-bash `cacheRead`, and *grow* on hard tasks (tokio
+   8→15 build/test turns, +4%; logstash 11→17, +29%). Today's digest compacts the output but the run
+   is still a lead turn. Move the run off the lead (verdict-only, lead does not re-run): §DF-005-compile-test-turn-delegation.
+9. **Explore give-up guard + substitute-don't-supplement** — score explore-only/empty-patch runs as
+   regressions (nushell-13870), require verify-before-conclude, and stop explore being appended to a
+   full bash+edit loop (tokio +14 round-trips): §DF-006-explore-giveup-and-supplement-guard.
+10. **Compile-test-fix sidekick** — merge the edit-executor (item 7) and compile/test delegation
+    (item 8) into one role that owns the build→test→apply green-loop, with a fix-authority dial
+    (apply+compile-fix → bounded → full green-loop) and a model-tier dial (~24B → ~120B). The
+    load-bearing lever for the 50% target; gated by un-gameable hidden-f2p grading:
+    §DA-002-compile-test-fix-sidekick.
 
 ## 4. Non-goals
 

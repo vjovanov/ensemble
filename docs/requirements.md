@@ -58,6 +58,14 @@ be reported alongside the count and analysis of these regressions.
 Out of scope for the comparison (they measure task difficulty, not the candidate). Report
 the count, but they do not enter savings or regression analysis.
 
+## 4. Cheap-give-up is a regression, not a saving
+
+A run that gathers explore evidence and then concludes without acting — **0 edits, 0 test
+runs, empty patch, unresolved** — is the cheap-give-up failure (nushell-13870: graph-bash
+empty patch at $0.14 vs classic's 114-line fix at $1.04). Its low cost MUST be scored as a
+correctness regression per §2, never as a saving. The empty-patch / explore-only signature is
+the detection rule; see §DF-006-explore-giveup-and-supplement-guard.
+
 # REQ-003-strictly-better-than-baseline: A modification ships only if it strictly dominates classic
 
 A modification (the candidate, e.g. `classic-graph-bash`) is adopted **only if it is

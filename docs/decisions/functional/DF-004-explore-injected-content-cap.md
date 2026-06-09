@@ -67,3 +67,23 @@ only when the cheap path is insufficient.
 ## 7. Decision / next step
 
 Not decided. Run §6 and record the outcome here before changing the production behavior.
+
+## 8. Injection cost on the resolved-by-both set (biggest least-win analysis)
+
+Measured on benchmarks-20, graph-bash, the explore-injection `cacheRead` (cumulative injected
+tokens replayed across remaining turns) tracks the per-instance cost regression almost linearly:
+
+| instance (resolved by both) | Δcost vs classic | explore injected |
+|---|---|---|
+| clap-5873 | **+42%** | 62 KB / 5 calls |
+| jq-2919 | **+28%** | 17 KB (small instance) |
+| tracing-2897 | **+11%** | 17 KB |
+| zstd-3438 | −3% (break-even) | **95 KB** |
+| serde-2798 | −6% (unresolved) | 67 KB, edit:13 |
+
+Across the 8 resolved-by-both instances, explore-injection `cacheRead` = **$0.47 (13% of graph-bash
+cost)**. Removing it moves resolved-by-both from **−24% → −34%** vs classic. This is the lever that
+§DA-001-edit-executor-sidekick (editing-pull subset — serde edit:13, clap whole-file) and a higher
+cap (§6) target. Note: on these medium instances `cacheRead` is only ~31% of *cost* (input 43%,
+output 26%) — `cacheRead` dominates *token count*, not *cost*, except on the large high-turn
+instances (simdjson/tokio/serde).
