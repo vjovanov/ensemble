@@ -183,6 +183,12 @@ case "$ARM" in
     rm -rf "$ARM_SRC/graphify-out"
     ENVV=("GRAPHIFY_COMMAND=$BENCH_DIR/no-graphify" "PI_BASH_OUTPUT_SUMMARY=0")
     ;;
+  codex)
+    # Reference arm: OpenAI Codex CLI (cdx), not pi. No graphify, no pi env.
+    EXPLORATION="codex"
+    rm -rf "$ARM_SRC/graphify-out"
+    ENVV=()
+    ;;
   *) die "unknown arm: $ARM" ;;
 esac
 
@@ -222,9 +228,11 @@ node -e '
     prompts_dir: "prompts/",
   },null,2)+"\n");
 ' "$OUT" "$COMMIT" "$DIRTY" "$MODEL" "${PROVIDER:-}" "$ARM" "$ID" "$LANG" "$EXPLORATION" "$REQUIRE_GRAPH" "$DBG" "$BASH_OUTPUT_SUMMARY"
-if [ "$ARM" = "classic" ] || [ "$ARM" = "classic-bash" ]; then
+if [ "$ARM" = "classic" ] || [ "$ARM" = "classic-bash" ] || [ "$ARM" = "codex" ]; then
   mkdir -p "$OUT/prompts"
-  if [ "$ARM" = "classic-bash" ]; then
+  if [ "$ARM" = "codex" ]; then
+    printf 'codex arm (reference): OpenAI Codex CLI (cdx exec) run on the same task prompt and base commit.\nUses Codex'\''s own agent on the same model (gpt-5.5/oca) at reasoning effort=medium (matched to classic), not pi.\nFor orientation per GRUND-002; resolved verdict only.\n' > "$OUT/prompts/NOTE.txt"
+  elif [ "$ARM" = "classic-bash" ]; then
     printf 'classic-bash arm: classic exploration with the bash sidekick enabled. Uses the base pi system prompt (pinned by\ncommit %s) plus read/grep/find/ls tools. No explore sidekick prompt.\n' "$COMMIT" > "$OUT/prompts/NOTE.txt"
   else
     printf 'classic arm: classic exploration with bash sidekick disabled. Uses the base pi system prompt (pinned by\ncommit %s) plus read/grep/find/ls tools. No explore sidekick prompt.\n' "$COMMIT" > "$OUT/prompts/NOTE.txt"
@@ -240,29 +248,40 @@ if [ "$DRY_RUN" = "1" ]; then
   log "DRY_RUN=1 -> skipping paid agent call"
 else
   log "running agent (timeout ${AGENT_TIMEOUT}s)…"
-  MODEL_ARGS=(--model "$MODEL")
-  [ -n "${PROVIDER:-}" ] && MODEL_ARGS=(--provider "$PROVIDER" --model "$MODEL")
-  if [ "$GRAPHIFY_WATCH_ENABLED" = "1" ]; then
-    log "starting graphify watch…"
-    setsid bash -c 'cd "$1" && exec env GRAPHIFY_OUT="$2" "$3" watch "$1"' \
-      bash "$ARM_SRC" "$GRAPH_ARTIFACT_DIR" "$GRAPHIFY" \
-      >"$OUT/graphify-watch.log" 2>&1 &
-    GRAPHIFY_WATCH_PID=$!
-    sleep 1
-    if ! kill -0 "$GRAPHIFY_WATCH_PID" >/dev/null 2>&1; then
-      log "graphify watch failed to start; see $OUT/graphify-watch.log"
-      die "graphify watch is required for ensemble-strict"
+  if [ "$ARM" = "codex" ]; then
+    command -v cdx >/dev/null || die "cdx (Codex CLI) not on PATH"
+    # cdx already passes --dangerously-bypass-approvals-and-sandbox; edits land in ARM_SRC.
+    # Match the pi classic arm's reasoning level (gpt-5.5 thinkingLevel=medium); Codex's
+    # config default is "high". Same model (gpt-5.5/oca), so this aligns model + effort.
+    ( cd "$ARM_SRC" && timeout "${AGENT_TIMEOUT}s" \
+        cdx exec -C "$ARM_SRC" -c model_reasoning_effort="medium" "$PROMPT" \
+      ) >"$OUT/agent.out" 2>"$OUT/agent.err" &
+    AGENT_PID=$!
+  else
+    MODEL_ARGS=(--model "$MODEL")
+    [ -n "${PROVIDER:-}" ] && MODEL_ARGS=(--provider "$PROVIDER" --model "$MODEL")
+    if [ "$GRAPHIFY_WATCH_ENABLED" = "1" ]; then
+      log "starting graphify watch…"
+      setsid bash -c 'cd "$1" && exec env GRAPHIFY_OUT="$2" "$3" watch "$1"' \
+        bash "$ARM_SRC" "$GRAPH_ARTIFACT_DIR" "$GRAPHIFY" \
+        >"$OUT/graphify-watch.log" 2>&1 &
+      GRAPHIFY_WATCH_PID=$!
+      sleep 1
+      if ! kill -0 "$GRAPHIFY_WATCH_PID" >/dev/null 2>&1; then
+        log "graphify watch failed to start; see $OUT/graphify-watch.log"
+        die "graphify watch is required for ensemble-strict"
+      fi
     fi
+    ( cd "$ARM_SRC" && env "${ENVV[@]}" timeout "${AGENT_TIMEOUT}s" \
+        "$TSX" --tsconfig "$REPO_ROOT/tsconfig.json" "$REPO_ROOT/packages/coding-agent/src/cli.ts" \
+        -p "$PROMPT" \
+        "${MODEL_ARGS[@]}" \
+        --exploration "$EXPLORATION" \
+        --no-context-files \
+        --session-dir "$SESSION_DIR" \
+      ) >"$OUT/agent.out" 2>"$OUT/agent.err" &
+    AGENT_PID=$!
   fi
-  ( cd "$ARM_SRC" && env "${ENVV[@]}" timeout "${AGENT_TIMEOUT}s" \
-      "$TSX" --tsconfig "$REPO_ROOT/tsconfig.json" "$REPO_ROOT/packages/coding-agent/src/cli.ts" \
-      -p "$PROMPT" \
-      "${MODEL_ARGS[@]}" \
-      --exploration "$EXPLORATION" \
-      --no-context-files \
-      --session-dir "$SESSION_DIR" \
-    ) >"$OUT/agent.out" 2>"$OUT/agent.err" &
-  AGENT_PID=$!
   if wait "$AGENT_PID"; then
     AGENT_PID=""
   else
@@ -275,6 +294,11 @@ fi
 
 # --- 6. Extract the model patch ---------------------------------------------
 PATCH="$OUT/patch.diff"
+if [ "$ARM" = "codex" ]; then
+  # Codex may commit its own changes, so diff against the base sha to capture both
+  # committed and working-tree edits.
+  ( cd "$ARM_SRC" && git diff "$SHA" --no-color -- . ':(exclude)graphify-out' ) > "$PATCH" 2>/dev/null || true
+else
 (
   cd "$ARM_SRC"
   # The agent may run git commands itself. Keep graphify artifacts out even if
@@ -284,6 +308,7 @@ PATCH="$OUT/patch.diff"
   git reset --quiet -- graphify-out >/dev/null 2>&1 || true
   git diff --cached --no-color
 ) > "$PATCH" 2>/dev/null || true
+fi
 PATCH_BYTES=$(wc -c < "$PATCH" | tr -d ' ')
 log "patch: $PATCH_BYTES bytes -> $PATCH"
 

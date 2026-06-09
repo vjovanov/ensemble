@@ -124,8 +124,24 @@ for arm in "${ARM_LIST[@]}"; do
   ensure_eval_prereqs
   archive_existing_arm_report "$arm"
   log "evaluating arm=$arm (config: $cfg)"
+  # Watchdog: a hung test grade (e.g. an infinite-loop test like mockito#3424) would
+  # otherwise stall the whole eval for hours. Kill any mswebench grade container older
+  # than EVAL_CONTAINER_MAX_S (default 30m) so the harness records it failed and moves on
+  # — i.e. benchmarks that get stuck auto-remove themselves instead of blocking.
+  ( while sleep 120; do
+      now=$(date +%s)
+      for c in $(docker ps --format '{{.ID}} {{.Image}}' 2>/dev/null | awk '$2 ~ /^mswebench\// {print $1}'); do
+        st=$(docker inspect -f '{{.State.StartedAt}}' "$c" 2>/dev/null) || continue
+        age=$(( now - $(date -d "$st" +%s 2>/dev/null || echo "$now") ))
+        if [ "$age" -gt "${EVAL_CONTAINER_MAX_S:-1800}" ]; then
+          log "watchdog: killing hung grade container $c (${age}s > ${EVAL_CONTAINER_MAX_S:-1800}s)"
+          docker kill "$c" >/dev/null 2>&1 || true
+        fi
+      done
+    done ) & _wd=$!
   python -m multi_swe_bench.harness.run_evaluation --config "$cfg" \
     || log "harness returned nonzero for $arm (check $out/logs)"
+  kill "$_wd" 2>/dev/null || true
   log "report: $out/final_report.json"
   persist_arm_validation "$arm"
 done
