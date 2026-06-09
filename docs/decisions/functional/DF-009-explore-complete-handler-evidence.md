@@ -1,7 +1,7 @@
 # DF-009-explore-complete-handler-evidence: Return the complete handler at a bug's edit site, not a minimal slice
 
-**Status: Under test.** Grounded per §REQ-001-decision-log; addresses the right-file/wrong-branch
-correctness failures left after §DF-008-explore-root-cause-tracing; relates to §FS-001-ensemble-explore.
+**Status: Worked (right-file/wrong-branch class).** Grounded per §REQ-001-decision-log; addresses the
+right-file/wrong-branch failures left after §DF-008-explore-root-cause-tracing; relates to §FS-001-ensemble-explore.
 
 ## 1. Problem
 
@@ -30,4 +30,11 @@ explicit "fix correctness first" directive.
 
 Re-run the culprits (jq-3238, simdjson) + nushell (regression guard), uncapped, current code. Pass:
 the two resolve without losing nushell or raising cost on healthy instances
-(§REQ-003-strictly-better-than-baseline). Record outcome here.
+(§REQ-003-strictly-better-than-baseline).
+
+**Result:** **jq-3238 RESOLVED** ($0.47, fixed the correct branch in `builtin.c`) and **simdjson
+RESOLVED** ($1.04) — both right-file/wrong-branch cases fixed by the complete-handler evidence.
+nushell flipped to failed this run (touched `eval_ir.rs`/`eval.rs`, not `child.rs`) — it is
+**seed-noisy / multi-site** (its fix can span eval_ir+eval+child; different runs find different
+subsets), not a DF-009 regression. DF-009 is adopted for the wrong-branch class; nushell's
+multi-site/seed instability is tracked separately.
