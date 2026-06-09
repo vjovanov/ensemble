@@ -142,3 +142,22 @@ When a change alters sidekick behavior, re-run the benches it could affect — t
 its language and command/file profile (§4) — and confirm no correctness regression before
 adopting. This extends §REQ-003-strictly-better-than-baseline from one baseline to the
 related set: a change that fixes one bench but breaks a sibling is not adopted.
+
+## 6. The canonical baseline is immutable; experiments must not clobber `raw/`
+
+`raw/` and `results.csv` are a **live working area** — every run overwrites the per-(instance,arm)
+bundle. So a sweep that re-runs a subset (e.g. the cap A/B re-ran 8 `classic-graph-bash` instances at
+64/128 KB) leaves `raw/` a *palimpsest*: one instance at cap128 next to others at default, and
+`collect.mjs` then builds a `results.csv` that is not a single consistent run. This actually happened
+and produced inverted numbers (clap "+156%" was a cap128 run; the canonical was −23%).
+
+Rules:
+- The headline benchmark run is snapshotted to an **immutable** dir (`raw-canonical/`) and is the
+  source of truth for published numbers; `raw/` is never trusted for a headline without checking it
+  against the snapshot.
+- An experiment that re-runs a subset must **restore** the affected `raw/` bundles afterward (or run
+  off its own snapshot dir), so `raw/`/`results.csv` always reflect one consistent run.
+- Cross-arm integrity: a comparison is only valid when **all arms were run at the same commit**.
+  Mixing a fresh arm with a stale baseline (the `classic` drift behind the `classic-graphify` −19%,
+  §DF-007-lead-driven-graphify-skill.5) understates/overstates savings — re-run the baseline arm at the
+  same commit before claiming a delta.

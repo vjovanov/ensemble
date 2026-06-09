@@ -64,9 +64,23 @@ more expensive. If a higher fixed cap recovers correctness without broad cost re
 design should be adaptive escalation: default to the 24 KB cap, but allow targeted deeper context
 only when the cheap path is insufficient.
 
-## 7. Decision / next step
+## 7. Decision / next step (DF-004.6 result)
 
-Not decided. Run §6 and record the outcome here before changing the production behavior.
+**Ran.** Higher caps on the sweep set, simdjson the anchor (it failed at the 24 KB cap):
+
+| cap | simdjson resolved | simdjson cost |
+|---|---|---|
+| uncapped | ✓ | $1.15 |
+| 24 KB | ✗ (lost the fix) | $0.37 |
+| 64 KB | ✓ (recovered) | **$1.64** |
+| 128 KB | ✓ (recovered) | $1.33 |
+
+**Verdict: no fixed cap is adoptable.** 24 KB is cheap but breaks correctness; 64/128 KB recover the
+fix but cost **more than no cap at all** ($1.64/$1.33 > $1.15) — the cap gives no cost win while
+preserving correctness. Other instances are seed-noisy (nushell fails 64/128 KB; svelte flips). This
+confirms the failure is **content-loss, not size**, so the fix is the edit-executor / green-loop
+(§DA-001-edit-executor-sidekick, §DA-002-compile-test-fix-sidekick), not a static cap. Close DF-004 as
+**not adopted**; production keeps the default and the lever moves to DA-002.
 
 ## 8. Injection cost on the resolved-by-both set (biggest least-win analysis)
 
