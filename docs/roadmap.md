@@ -99,6 +99,11 @@ can distinguish a true digest from local compaction.
    (env `PI_EXPLORE_MAX_RESULT_BYTES`) that keeps fitted evidence and points the lead to `read` for
    full content, then re-run the worst graph-bash cases. Discussion and benchmark:
    §DF-004-explore-injected-content-cap.
+7. **Edit-executor sidekick** (sequenced after the §DF-004-explore-injected-content-cap.6 higher-cap
+   A/B). Instead of capping/truncating the content the lead pulls to edit, have the sidekick *apply*
+   lead-authored edits and return only a diff, so the whole file never enters the lead's persistent
+   transcript — preserving correctness where the cap could not. Architecture and savings estimate:
+   §DA-001-edit-executor-sidekick.
 
 ## 4. Non-goals
 

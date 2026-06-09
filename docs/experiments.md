@@ -5,6 +5,7 @@ What we tried and what worked. One row per experiment, newest first. Maintained 
 
 | date | experiment | arms · instances | outcome | decision |
 |---|---|---|---|---|
+| — (queued) | **edit-executor sidekick** (sidekick applies lead-authored edits; whole file never reaches the lead) | classic-graph-bash · simdjson + multi-site edit instances | **queued** (after DF-004.6) | §DA-001-edit-executor-sidekick |
 | 2026-06-09 | **higher explore injected-content caps** (`PI_EXPLORE_MAX_RESULT_BYTES=64KB/128KB`) | classic-graph-bash · simdjson/go-zero/clap/zstd/jq-2919/logstash/nushell/svelte | **running** | §DF-004-explore-injected-content-cap.6 |
 | 2026-06-08 | **graph-bash vs classic correctness** (the headline) | 4 arms · benchmarks-20 | **worked** — graph-bash 11/20 ⊇ classic 8/20, +3 unique wins, 0 regressions; cheaper on resolved-by-both (−10%$/−20%tok, −32%/−47% ex-C-family) | (pending DF: graph-bash strictly dominates classic) |
 | 2026-06-08 | **explore injected-content cap** (24 KB, `PI_EXPLORE_MAX_RESULT_BYTES`) | classic-graph, classic-graph-bash · cap A/B on simdjson/zstd/jq/go-zero/clap/logstash | **mixed/failed** — simdjson cacheRead −86% / $1.15→$0.37 but **simdjson FAILED to resolve under the cap** (was resolved without it); no-op elsewhere | §DF-004-explore-injected-content-cap (not adoptable as-is; needs editing→`read` split or higher cap, ≥3 seeds) |
