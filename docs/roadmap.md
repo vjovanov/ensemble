@@ -84,6 +84,19 @@ can distinguish a true digest from local compaction.
 3. Run the sidekick on a dedicated cheap model (a ~24B explore/verify model). Today
    `runSidekick` and the bash digest use the caller's model (`context.model`); a separate,
    cheaper model is the precondition for the economics above.
+
+   **It is also a ~2× wall-clock win, not just a cost lever.** Wall-clock breakdown of graph-bash
+   on the resolved-by-both set (8 instances, 3,513s total, from session timestamps):
+   - explore sidekick **61%** (2,127s) — *currently runs on gpt-5.5*, the dominant time sink;
+   - lead model turns 37% (1,291s) — stays on gpt-5.5 (the speed floor, per Amdahl);
+   - build/test execution 3% (90s) and read-only bash ~0% — model-independent.
+
+   The 61% is mostly sidekick *generation* across its locate→resolve→structure turns. A 24B at
+   ~1k tok/s vs gpt-5.5's ~30–80 tok/s (~15–30× per token) cuts that to ~420s → total ~1,800s
+   (**≈ −49%, ~2× faster**), bounded below by the lead's 37%. Caveats: assumes the 24B is served
+   near 1k tok/s (a weak local GPU won't reach it), and each lead↔sidekick round-trip adds fixed
+   latency the token math omits. For §DA-002-compile-test-fix-sidekick the build/test share grows,
+   but those runs are sidekick-side — off the lead's critical path, so they don't raise the floor.
 4. Add the compile/test bash digest path (landed: bash returns verdict/root-cause digests
    when model context is available, while preserving raw logs for audit) — §2.3.
 5. **Next experiment — width-preserving compaction of broad successful output.** Successful
