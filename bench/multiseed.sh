@@ -5,12 +5,13 @@
 set -uo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")"
 NAME="${1:?usage: multiseed.sh <run-name> --instances ... --arms ...}"; shift
-INSTS=""; ARMS_IN=""; K=3; CONC=5
+INSTS=""; ARMS_IN=""; K=3; CONC=5; REUSE_ARMS=""
 while [ $# -gt 0 ]; do case "$1" in
   --instances) INSTS="${2//,/ }"; shift 2;;
   --arms) ARMS_IN="${2//,/ }"; shift 2;;
   --seeds) K="$2"; shift 2;;
   --conc) CONC="$2"; shift 2;;
+  --reuse) REUSE_ARMS=" ${2//,/ } "; shift 2;;  # arms whose existing raw/ counts as seed 1 (must be current code)
   *) echo "unknown arg: $1"; exit 1;;
 esac; done
 [ -n "$INSTS" ] && [ -n "$ARMS_IN" ] || { echo "need --instances and --arms"; exit 1; }
@@ -24,10 +25,15 @@ for k in $(seq 1 "$K"); do
   log "=== seed $k/$K ($NAME) ==="
   running=0
   for id in $INSTS; do for arm in $ARMS_IN; do
+    # seed 1 for a --reuse arm: keep the existing raw/ run (it IS a seed); still graded + snapshot below.
+    if [ "$k" = "1" ] && [[ "$REUSE_ARMS" == *" $arm "* ]] && [ -f "raw/${id}__${arm}/patch.jsonl" ]; then
+      continue
+    fi
     ./run-instance.sh "instances/${id}.json" "$arm" >"graphify-all-logs/MS-${NAME}-s${k}-${id}__${arm}.log" 2>&1 &
     running=$((running+1)); [ "$running" -ge "$CONC" ] && { wait -n; running=$((running-1)); }
   done; done
   wait
+  [ "$k" = "1" ] && [ -n "$REUSE_ARMS" ] && log "seed 1 reused existing raw for arms:$REUSE_ARMS"
   INST_PATHS=""; for id in $INSTS; do INST_PATHS+="instances/${id}.json "; done
   INSTANCES="$INST_PATHS" ARMS="$ARMS_IN" ./eval/run-eval.sh >>"$LOG" 2>&1 || log "grade nonzero (seed $k)"
   for id in $INSTS; do for arm in $ARMS_IN; do

@@ -178,6 +178,15 @@ is **multi-seed**: run each (instance, arm) K times (default K=3). Report **pass
 K = capability) and the resolved-rate; cost = mean over the resolved seeds. This is *cheaper long-run*
 because it stops us chasing seed noise with prompt tweaks (the DF-008/DF-009 loop). `bench/multiseed.sh`.
 
+**Reuse and don't-redo, to keep multi-seed cheap:**
+- **Count existing runs as a seed.** An arm's existing `raw/` run (at the *current* code) counts as seed 1;
+  multi-seed then only adds K−1 fresh seeds (`multiseed.sh --reuse <arms>`, per-arm — a stale-code run must
+  not be reused, e.g. the DF-009 graph-bash run cannot seed a DF-008 base).
+- **Don't re-run `classic`.** `classic` is code-invariant to the explore/bash changes (no explore sidekick,
+  no digest), so it is multi-seeded **once** in the base and **reused** by every experiment — never re-run.
+- **Arms tracked at multi-seed:** `classic` (baseline, once), `classic-graph-bash` (sidekick candidate),
+  `classic-graphify` (lead-skill candidate). Experiments run only the candidate arm(s) they touch.
+
 ## 1. A base checkpoint = code tag + frozen multi-seed results
 
 A base is a blessed commit with frozen **multi-seed** results: git tag `base/NNN-slug` (plus a moving
