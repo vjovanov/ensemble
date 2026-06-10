@@ -70,7 +70,7 @@ const totals = ARMS.map((a, i) => ({
 
 if (TABLE) {
   let out = `#### Cost on the ${W} benchmarks classic resolves — $ per run (averaged over an arm's seeds)\n\n`;
-  out += `| arm | resolved | input $ | cached $ | output $ | **avg $/bench** | **total $** | Δ vs classic |\n|---|---|---|---|---|---|---|---|\n`;
+  out += `| arm | resolved | input $ | cached $ | output $ | **avg $/run** | **total $** | Δ vs classic |\n|---|---|---|---|---|---|---|---|\n`;
   ARMS.forEach((a, i) => {
     const t = totals[i], d = i === 0 ? "—" : `${((t.cost - totals[0].cost) / totals[0].cost * 100).toFixed(1)}%`;
     out += `| ${a.label}${a.ref ? " *(ref)*" : ""} | ${t.n}/${W} | $${t.in$.toFixed(2)} | $${t.cr$.toFixed(2)} | $${t.out$.toFixed(2)} | **$${(t.cost / W).toFixed(2)}** | **$${t.cost.toFixed(2)}** | ${d} |\n`;
@@ -128,7 +128,7 @@ function summaryBars({ file, title, sub, mode }) {
     s += `<text x="${cx(i)}" y="${(y(total(i)) - 22).toFixed(1)}" text-anchor="middle" font-size="17" font-weight="700" fill="${a.color}">$${total(i).toFixed(2)}</text>`
       + `<text x="${cx(i)}" y="${(y(total(i)) - 8).toFixed(1)}" text-anchor="middle" font-size="10" fill="#666">${dlt}</text>`
       + `<text x="${cx(i)}" y="${H - B + 24}" text-anchor="middle" font-size="12" font-weight="600" fill="${a.color}">${esc(a.label)}${a.ref ? " (ref)" : ""}</text>`
-      + `<text x="${cx(i)}" y="${H - B + 40}" text-anchor="middle" font-size="10" fill="#888">avg $${(total(i) / W).toFixed(2)}/bench · solved ${t.n}/${W}</text>`;
+      + `<text x="${cx(i)}" y="${H - B + 40}" text-anchor="middle" font-size="10" fill="#888">avg $${(total(i) / W).toFixed(2)}/run · solved ${t.n}/${W}</text>`;
   });
   writeFileSync(file, s + `</svg>\n`);
 }
@@ -148,7 +148,7 @@ function perBench({ file, title, sub }) {
   ARMS.forEach((a, i) => {
     const avg = "$" + (totals[i].cost / (W || 1)).toFixed(2), tot = "$" + totals[i].cost.toFixed(2);
     const col = i % 2, lx = Lm + col * 350, ly = 56 + ((i - col) / 2) * 17;
-    s += `<rect x="${lx}" y="${ly - 9}" width="12" height="12" fill="${a.color}"/><text x="${lx + 17}" y="${ly + 1}" font-size="11" fill="#333">${esc(a.label)} — avg ${avg}/bench · total ${tot}</text>`;
+    s += `<rect x="${lx}" y="${ly - 9}" width="12" height="12" fill="${a.color}"/><text x="${lx + 17}" y="${ly + 1}" font-size="11" fill="#333">${esc(a.label)} — avg ${avg}/run · total ${tot}</text>`;
   });
   for (let t = 0; t <= xticks; t++) { const v = xmax * t / xticks, xx = x(v); s += `<line x1="${xx.toFixed(1)}" y1="${T - 6}" x2="${xx.toFixed(1)}" y2="${H - 14}" stroke="#eee"/><text x="${xx.toFixed(1)}" y="${T - 10}" text-anchor="middle" font-size="10" fill="#999">$${v.toFixed(1)}</text>`; }
   rows.forEach((r, ri) => {
