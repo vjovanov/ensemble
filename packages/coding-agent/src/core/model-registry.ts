@@ -36,6 +36,7 @@ import {
 	isCommandConfigValue,
 	isConfigValueConfigured,
 	isLegacyEnvVarNameConfigValue,
+	resolveConfigValue,
 	resolveConfigValueOrThrow,
 	resolveConfigValueUncached,
 	resolveHeadersOrThrow,
@@ -656,7 +657,9 @@ export class ModelRegistry {
 				const api = modelDef.api ?? providerConfig.api ?? builtInDefaults?.api;
 				if (!api) continue;
 
-				const baseUrl = modelDef.baseUrl ?? providerConfig.baseUrl ?? builtInDefaults?.baseUrl;
+				const baseUrlRaw = modelDef.baseUrl ?? providerConfig.baseUrl ?? builtInDefaults?.baseUrl;
+				if (!baseUrlRaw) continue;
+				const baseUrl = resolveConfigValue(baseUrlRaw) ?? baseUrlRaw;
 				if (!baseUrl) continue;
 
 				const compat = mergeCompat(providerConfig.compat, modelDef.compat);
