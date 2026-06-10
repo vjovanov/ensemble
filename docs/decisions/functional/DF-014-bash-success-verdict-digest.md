@@ -1,8 +1,8 @@
 # DF-014-bash-success-verdict-digest: Digest successful broad build/test output to a verdict; capture the raw out-of-band
 
-**Status: Proposed — experiment off base/001.** Grounded per §REQ-001-decision-log; revises
-§DF-001-bash-sidekick-failure-only-digest for build/test commands; relates to §RM-001-bash-sidekick.2.3,
-§REQ-005-research-checkpoints.
+**Status: Adopted as a no-regression safety net (minor lever).** Grounded per §REQ-001-decision-log;
+revises §DF-001-bash-sidekick-failure-only-digest for build/test commands; relates to
+§RM-001-bash-sidekick.2.3, §REQ-005-research-checkpoints.
 
 ## 1. Problem
 
@@ -31,6 +31,13 @@ Two changes:
 ## 3. Validation
 
 Scoped multi-seed off `base/001` on build-heavy instances (jq-3238 autoconf/make, simdjson cmake,
-zstd-3438 make, tracing-2897/clap-5873 cargo) × 3 seeds, vs the frozen base. Pass: **no correctness
-regression** (the lead must not start re-running builds because it distrusts the verdict —
-§REQ-003-strictly-better-than-baseline) and **lower cost** on the build-heavy instances. Record here.
+zstd-3438 make, tracing-2897/clap-5873 cargo) × 3 seeds, vs the frozen base.
+
+**Result:** **no correctness regression** (clap/zstd/tracing 3/3→3/3, simdjson 1/3→2/3, jq-3238 0/3→0/3
+— the lead does not distrust the verdict and thrash). But **cost-neutral this run, and the digest never
+fired** (no debug log written). Cause: the lead **redirects build output to files** itself
+(`make >log && echo make-ok || tail`), so the bash result is already small — there is nothing broad to
+digest. The 50 KB flood only occurs on *unredirected* broad builds, which are **intermittent**. So
+DF-014 is a correct **safety net** for that case but a **minor lever** — consistent with the bash
+sidekick being ~$0.33/7% (vs explore $1.76/36%) in the savings analysis (`bench/lib/sidekick-savings.mjs`).
+**Adopted** (no-regression, cheap) but the savings focus moves to the explore sidekick.
