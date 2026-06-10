@@ -5,6 +5,21 @@ What we tried and what worked. One row per experiment, newest first. Maintained 
 
 | date | experiment | arms · instances | outcome | decision |
 |---|---|---|---|---|
+| 2026-06-11 | **base/002 per-run reframe + codex** | classic/graphify/graph-bash/codex · 24 classic-wins, 2-seed | **analyzed** — $/run on classic's wins: graph-bash **$8.55 (−22%)**, classic $10.91, graphify $13.33 (+22%), codex(ref) **$18.63 (+71%, 20/24)**. graph-bash **23/24** (regresses logstash-17021). Breakdown: `bash:read` ~58% of classic; graph-bash swaps it for `explore/graph`; **build/test is tiny (~$0.4/run) everywhere** | README §Latest results, §DF-015 |
+| 2026-06-11 | **graph-bash cost-regression root-cause (traces)** | graph-bash · simdjson-2178, jq-3238 | **analyzed** — on tight C/C++ files the sidekick returns **BFS node-name dumps when the lead asks for SOURCE**; lead retries **9–13×** (~7KB each) + still falls back to bash → cacheRead **2.35× classic**. Noise nodes: vendored `jsoncppdist`, `tests/`, generated `parser.c` | §DF-015-explore-return-source-on-code-intent |
+| — (NEXT, only active) | **explore: return source on code-intent + noise-node exclusion** | exp off base/002-30 · simdjson-2178 + jq-3238 + controls (clap/tracing/go-zero) × 3 seeds | **proposed** — the single focused experiment | §DF-015-explore-return-source-on-code-intent |
+
+**Reprioritization (2026-06-11), given base/002 per-run data.** New data changes the picture, so we run
+**§DF-015 as the only active experiment** and reclassify the rest:
+- **§DA-002 compile-test-fix sidekick — SHELVED.** Its premise ("build/test turns inflate cost", "the 50%
+  lever") is **falsified**: the per-benchmark breakdown puts `build/test` at ~$0.37–0.56/run for every arm
+  (the lead redirects build output to files). Cost is dominated by **explore/graph replay**, not build/test.
+- **§DF-005 compile/test turn-removing delegation — SHELVED** (same reason).
+- **§DF-013 graphify amalgamation-awareness — FOLDED into §DF-015** (lever #2: noise-node exclusion).
+- **§DF-010 case-set surfacing / §DF-011 shared-chokepoint / §DF-012 hermetic verify — DEFERRED to a
+  correctness track.** They target the *subset-fix* correctness problem (relevant to the lone regression
+  logstash-17021), not the cost regression DF-015 attacks. Revisit after DF-015.
+- **§DF-006 give-up guard, §DA-001 edit-executor — remain queued**, lower priority than DF-015.
 | 2026-06-10 | **sidekick savings analysis** (ideal input+cached savings of explore/bash/compile-fix from classic) | classic · 11 passing | **analyzed** — explore |---|---|---|---|---|
 .76/36% (mostly cacheRead) is the lever; bash $0.33, compile-fix similar; graph-trim is the explore multiplier | [docs/analysis/sidekick-savings.md] |
 | 2026-06-10 | **bash success-verdict digest** (digest broad successful build/test output; out-of-band raw capture) | classic-graph-bash · 5 build-heavy × 3 seeds vs base/001 | **adopted (minor)** — no regression; cost-neutral & digest never fired (lead redirects build output itself, so nothing broad to digest). Safety net for unredirected floods; bash lever is ~$0.33 vs explore $1.76 | §DF-014-bash-success-verdict-digest |
