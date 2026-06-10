@@ -6,65 +6,87 @@ same agent + model on the same [Multi-SWE-bench](https://github.com/multi-swe-be
 instances under different benchmark arms and grades the patches with the
 official Docker eval harness.
 
-## Latest results — benchmarks-20 (oca/gpt-5.5)
+## Latest results — base/002 seed 1 (oca/gpt-5.5)
 
 **What we're doing.** The expensive lead model spends roughly half its turns on read-only
-exploration (grep/read) and on build/test runs. We move that work onto a cheap sidekick —
-graph-based code discovery (`explore`) plus bash verdict digests — to cut lead-model cost
-**without losing correctness**. The candidate arm is `classic-graph-bash` (graph + bash
-combined); `classic` is the pre-ensemble baseline. We count **only real fixes** (patches that
-pass the Docker eval, `resolved=1`) and require the candidate to be **strictly better** than
-the baseline: resolve a superset of classic's instances and cost no more on the fixes both
-make (methodology: `docs/requirements.md` §REQ-002, §REQ-003).
+exploration (grep/read) and on build/test runs. We try to move that work onto a cheap sidekick
+to cut lead-model cost **without losing correctness**. Three arms: `classic` (pre-ensemble
+baseline, raw bash), `classic-graphify` (lead drives the graphify graph itself via a hard
+directive), `classic-graph-bash` (graph-backed `explore` + bash verdict digests on a cheap
+sidekick). We count **only real fixes** (patches that pass the Docker eval, `resolved=1`) and
+ask the candidate to be **strictly better** than classic: resolve a superset and cost no more
+on the fixes both make (methodology: `docs/requirements.md` §REQ-002, §REQ-003).
 
-**Result: `classic-graph-bash` resolves 11/20 vs `classic`'s 8/20** — a superset (every
-classic fix, plus 3 unique wins: `nushell`, `ponyc-4593`, `jq-2840`), **zero regressions** —
-and is cheaper on the fixes both make: resolved-by-both **−10% cost / −20% tokens** (or
-**−32% / −47%** excluding the two C-family losers `simdjson`/`jq-2919`). Every instance
-graph-bash resolved:
-
-| instance | classic (tok / $) | graph-bash (tok / $) | |
-|---|---|---|---|
-| clap-5873 | 199,138 / $0.26 | 142,921 / $0.20 | both |
-| tracing-2897 | 834,799 / $0.95 | 209,256 / $0.38 | both |
-| go-zero-2787 | 99,388 / $0.23 | 144,713 / $0.28 | both |
-| simdjson-2178 | 451,378 / $0.72 | 982,210 / $1.15 | both |
-| svelte-15115 | 488,804 / $0.57 | 163,540 / $0.33 | both |
-| darkreader-7241 | 80,302 / $0.18 | 23,192 / $0.09 | both |
-| zstd-3438 | 1,007,996 / $0.97 | 765,198 / $0.88 | both |
-| jq-2919 | 144,221 / $0.22 | 202,397 / $0.40 | both |
-| nushell-13870 | 1,023,608 / $0.95 ✗ | 914,978 / $1.12 | unique win |
-| ponyc-4593 | 282,007 / $0.67 ✗ | 188,896 / $0.39 | unique win |
-| jq-2840 | 655,314 / $0.72 ✗ | 412,973 / $0.52 | unique win |
-
-`✗` = classic failed to resolve (its spend wasted). **Caveats:** single seed (n=1);
-per-instance cost is noisy (`simdjson`, `jq-2919` are genuine losses, both C-family — the
-known graphify-on-C/C++ weakness); the five cap-set rows' graph-bash cost is provisional
-pending a clean re-pull.
-
-## Cost & tokens per benchmark — `classic` vs `classic-graphify` vs `classic-graph-bash`
-
-Per-benchmark lead-model spend across the three arms, restricted to **successful instances**
-(resolved by at least one arm; all three arms ran each). One row per benchmark, three bars (one
-per arm). A **solid** bar means that arm passed the instance, **hollow** means it failed or
-isn't graded yet. The dashed vertical line is each arm's **mean over the instances it passed**;
-the legend shows that mean and **how many it resolved** (`n=`). Regenerate with
+**Set:** 30 balanced instances, **seed 1** of the in-progress multi-seed `base/002`. Resolved:
+`classic` **22/30**, `classic-graphify` **25/30**, `classic-graph-bash` **24/30**; 25 instances
+resolved by ≥1 arm. The plots are per-benchmark — one row each, a bar per arm (mean cost), a dot
+per individual run; **only the arms that passed a benchmark are drawn**. The dashed line is each
+arm's mean over its own passes, labelled with how many it resolved. Regenerate with
 `node lib/plot-results.mjs`.
 
 ![Cost per benchmark](plots/cost.svg)
 
-**Cost.** Mean success cost per arm: `classic` **$0.459** (n=21), `classic-graphify` **$0.491**
-(n=22), `classic-graph-bash` **$0.333** (n=22). On the big spenders (zstd-3438, dayjs, ponyc,
-grpc-go) graph-bash's green bar is consistently the shortest; lead-driven graphify is the
-longest on most rows (its "always build the graph" directive), tracking or exceeding the raw
-baseline rather than beating it.
+**Cost** — mean over each arm's passes: `classic` **$0.411**, `classic-graphify` **$0.580**
+(**+41%**), `classic-graph-bash` **$0.323** (**−21%**). graph-bash is the shortest bar on almost
+every row; lead-driven graphify is the longest on most (its "always build the graph" directive
+inflates context), so on a balanced pool it is *not* cheaper than the raw baseline.
 
 ![Token cost per benchmark, input + cached](plots/tokens.svg)
 
-**Tokens scaled by price** (input ×$5/Mtok solid, cached ×$0.5/Mtok faded). Mean input+cached
-per arm: `classic` **$0.331**, `classic-graphify` **$0.351**, `classic-graph-bash` **$0.232**.
-graph-bash cuts both legs on nearly every benchmark, which is where its cost lead comes from.
-(Remaining gap to the cost plot is output tokens at $30/Mtok, excluded here.)
+**Tokens scaled by price** (input ×$5/Mtok solid, cached ×$0.5/Mtok faded). Mean input+cached:
+`classic` **$0.283**, `classic-graphify` **$0.424**, `classic-graph-bash` **$0.217**. graph-bash
+cuts both legs on nearly every benchmark, which is where its cost lead comes from. (Remaining gap
+to the cost plot is output tokens at $30/Mtok, excluded here.)
+
+![Cost on classic's wins only](plots/cost-vs-classic.svg)
+
+**Strict-domination view — on the 22 benchmarks `classic` resolves:** both candidates also
+resolve **all 22** (zero regressions), and `classic-graph-bash` solves them at **−25% cost**
+while `classic-graphify` costs **+31%**. So graph-bash strictly dominates classic here (same
+fixes + 2 more, cheaper); graphify is the most *correct* arm (25/30) but the most expensive.
+
+#### Successful instances (resolved by ≥1 arm) — cost per arm ($, "—" = arm did not resolve it)
+
+| benchmark | classic | classic-graphify | classic-graph-bash |
+|---|---|---|---|
+| dayjs-2399 | $1.040 | $1.238 | $0.410 |
+| zstd-3438 | $0.898 | $1.692 | $0.627 |
+| core-11694 | $0.893 | $0.654 | $0.145 |
+| simdjson-2178 | — | $1.075 | $0.583 |
+| ponyc-4593 | — | $0.784 | $0.406 |
+| logstash-17021 | — | $0.768 | — |
+| grpc-go-3351 | $0.490 | $0.471 | $0.387 |
+| grpc-go-3258 | $0.480 | $0.759 | $0.419 |
+| fd-1394 | $0.469 | $0.451 | $0.084 |
+| clap-5873 | $0.462 | $0.546 | $0.450 |
+| core-11761 | $0.450 | $0.500 | $0.367 |
+| jq-3238 | $0.444 | $0.498 | $0.877 |
+| tracing-2897 | $0.433 | $0.551 | $0.268 |
+| dayjs-2532 | $0.397 | $0.815 | $0.408 |
+| bytes-732 | $0.355 | $0.379 | $0.289 |
+| github-readme-stats-2844 | $0.316 | $0.479 | $0.276 |
+| core-11680 | $0.315 | $0.378 | $0.328 |
+| jq-2919 | $0.312 | $0.563 | $0.333 |
+| core-11813 | $0.222 | $0.258 | $0.111 |
+| zstd-3942 | $0.219 | $0.239 | $0.194 |
+| bat-3189 | $0.212 | $0.220 | $0.083 |
+| go-zero-2787 | $0.211 | $0.238 | $0.046 |
+| darkreader-7241 | $0.185 | $0.488 | $0.406 |
+| rayon-986 | $0.122 | $0.192 | $0.161 |
+| express-5555 | $0.115 | $0.267 | $0.102 |
+| **mean over passes** | **$0.411** (n=22) | **$0.580** (n=25) | **$0.323** (n=24) |
+
+#### On classic's wins only (the 22 benchmarks classic resolved)
+
+| arm | also resolved | mean cost on its wins | Δ vs classic |
+|---|---|---|---|
+| classic | 22/22 | $0.411 | — |
+| classic-graphify | 22/22 | $0.540 | +31.3% |
+| classic-graph-bash | 22/22 | $0.308 | **−25.1%** |
+
+**Caveats:** seed 1 of an in-progress 2-seed run (`resolved` is pass@1 so far; per-instance cost
+is noisy). The historical single-seed benchmarks-20 milestone (graph-bash 11/20 ⊇ classic 8/20)
+is recorded in `docs/experiments.md`.
 
 ## Benchmark Arms
 

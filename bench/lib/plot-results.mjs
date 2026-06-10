@@ -1,11 +1,12 @@
-// Generate two per-benchmark SVG plots comparing the three arms we track.
-//   plots/cost.svg   — one row per benchmark; three bars (classic / graphify / graph-bash) = cost (USD).
-//   plots/tokens.svg — one row per benchmark; three bars split into input (solid) + cached (faded),
-//                      each token count scaled by its price ($/Mtok) into the dollars it contributes.
-// Dashed vertical line per arm = that arm's mean across benchmarks. Apples-to-apples over the
-// instances all three arms ran. Pure SVG, no deps.
-// Prices (lead model): input $5/Mtok, cacheRead $0.5/Mtok. Output excluded (small).
-// Usage: node lib/plot-results.mjs
+// Per-benchmark comparison of the three arms we track. Two views:
+//   plots/cost.svg, plots/tokens.svg          — instances resolved by >=1 arm
+//   plots/cost-vs-classic.svg                 — only benchmarks where `classic` succeeded
+// Only the arms that PASSED a given benchmark are drawn (failed/ungraded arms are omitted).
+// Bar = mean over available runs; a dot marks every individual run (multi-seed -> several dots).
+// Token bars split input (solid ×$5/Mtok) + cached (faded ×$0.5/Mtok). Dashed vertical line =
+// each arm's mean over its passes in that view, labelled with how many it resolved.
+// Usage: node lib/plot-results.mjs            -> write the SVGs
+//        node lib/plot-results.mjs --table    -> print the markdown tables
 import { readFileSync, existsSync, readdirSync, writeFileSync, mkdirSync } from "node:fs";
 
 const ARMS = [
@@ -14,112 +15,133 @@ const ARMS = [
   { key: "classic-graph-bash", label: "classic-graph-bash", color: "#54A24B" },
 ];
 const IN_PRICE = 5e-6, CR_PRICE = 0.5e-6;
+const TABLE = process.argv.includes("--table");
 
-const allIds = [...new Set(readdirSync("raw").map((d) => {
-  for (const a of ARMS) if (d.endsWith("__" + a.key)) return d.slice(0, -(a.key.length + 2));
-  return null;
-}).filter(Boolean))];
-const M = (id, a) => { const p = `raw/${id}__${a}/metrics.json`; return existsSync(p) ? JSON.parse(readFileSync(p, "utf8")) : null; };
-const R = (id, a) => { const p = `results/validation/${a}/${id}.json`; if (!existsSync(p)) return null; const v = JSON.parse(readFileSync(p, "utf8")); return v.resolved === true ? true : v.status === "unknown" ? null : false; };
-let ids = allIds.filter((id) => ARMS.every((a) => M(id, a.key)));
-// only successful instances: resolved by at least one of the three arms
-ids = ids.filter((id) => ARMS.some((a) => R(id, a.key) === true));
-
-// per (id, arm): cost + token-cost components + resolved status
-const row = (id) => {
-  const cells = ARMS.map((a) => { const m = M(id, a.key); return { cost: m.costUsd, in$: m.input * IN_PRICE, cr$: m.cacheRead * CR_PRICE, ok: R(id, a.key) === true }; });
-  return { id, short: id.includes("__") ? id.split("__")[1] : id, cells };
+// Read from the frozen base002 multi-seed snapshot (consistent + immune to any live re-grade in
+// raw/). Each seed dir holds <id>__<arm>/metrics.json and validation/<arm>/<id>.json.
+const BASE = "multiseed/base002";
+const SEED_DIRS = existsSync(BASE)
+  ? readdirSync(BASE).filter((d) => /^s\d+$/.test(d)).sort().map((d) => `${BASE}/${d}`) : [];
+if (!SEED_DIRS.length) { console.error(`no seed snapshots under ${BASE}`); process.exit(1); }
+const readM = (p) => existsSync(p) ? JSON.parse(readFileSync(p, "utf8")) : null;
+const runsFor = (id, a) => SEED_DIRS
+  .map((d) => readM(`${d}/${id}__${a}/metrics.json`)).filter(Boolean)
+  .map((m) => ({ cost: m.costUsd, in$: m.input * IN_PRICE, cr$: m.cacheRead * CR_PRICE, tot: m.totalTokens }));
+// resolved = passed in any seed (pass@K)
+const R = (id, a) => {
+  let seen = false;
+  for (const d of SEED_DIRS) { const p = `${d}/validation/${a}/${id}.json`; if (!existsSync(p)) continue; seen = true; if (JSON.parse(readFileSync(p, "utf8")).resolved === true) return true; }
+  return seen ? false : null;
 };
-let rows = ids.map(row).sort((x, y) => y.cells[0].cost - x.cells[0].cost); // by classic cost, desc
-const N = rows.length;
-// mean over each arm's OWN successful runs within the shown set
-const means = ARMS.map((a, i) => {
-  const ok = rows.filter((r) => r.cells[i].ok);
-  const m = (f) => ok.length ? ok.reduce((s, r) => s + f(r.cells[i]), 0) / ok.length : 0;
-  return { cost: m((c) => c.cost), tok: m((c) => c.in$ + c.cr$), n: ok.length };
+const mean = (arr, f) => arr.length ? arr.reduce((s, x) => s + f(x), 0) / arr.length : 0;
+
+const ids = [...new Set(SEED_DIRS.flatMap((d) => readdirSync(d)).map((b) => {
+  for (const a of ARMS) if (b.endsWith("__" + a.key)) return b.slice(0, -(a.key.length + 2));
+  return null;
+}).filter(Boolean))].filter((id) => ARMS.every((a) => runsFor(id, a.key).length));
+
+const allRows = ids.map((id) => {
+  const cells = ARMS.map((a) => {
+    const runs = runsFor(id, a.key);
+    return { runs, cost: mean(runs, (r) => r.cost), in$: mean(runs, (r) => r.in$), cr$: mean(runs, (r) => r.cr$), tot: mean(runs, (r) => r.tot), ok: R(id, a.key) === true };
+  });
+  return { id, short: id.includes("__") ? id.split("__")[1] : id, cells };
+});
+const byClassicCost = (x, y) => y.cells[0].cost - x.cells[0].cost;
+const successRows = allRows.filter((r) => r.cells.some((c) => c.ok)).sort(byClassicCost);
+const classicWinRows = allRows.filter((r) => r.cells[0].ok).sort(byClassicCost);
+const armMeans = (rs) => ARMS.map((a, i) => {
+  const ok = rs.filter((r) => r.cells[i].ok).map((r) => r.cells[i]);
+  return { cost: mean(ok, (c) => c.cost), tok: mean(ok, (c) => c.in$ + c.cr$), n: ok.length };
 });
 
-const esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;");
+// ---------- markdown tables ----------
+if (TABLE) {
+  const sm = armMeans(successRows);
+  let out = `#### Successful instances (resolved by ≥1 arm) — cost per arm ($, "—" = arm did not resolve it)\n\n`;
+  out += `| benchmark | classic | classic-graphify | classic-graph-bash |\n|---|---|---|---|\n`;
+  for (const r of successRows) out += `| ${r.short} | ${r.cells.map((c) => c.ok ? "$" + c.cost.toFixed(3) : "—").join(" | ")} |\n`;
+  out += `| **mean over passes** | **$${sm[0].cost.toFixed(3)}** (n=${sm[0].n}) | **$${sm[1].cost.toFixed(3)}** (n=${sm[1].n}) | **$${sm[2].cost.toFixed(3)}** (n=${sm[2].n}) |\n\n`;
+  const W = classicWinRows.length, cm = armMeans(classicWinRows);
+  out += `#### On classic's wins only (the ${W} benchmarks classic resolved)\n\n`;
+  out += `| arm | also resolved | mean cost on its wins | Δ vs classic |\n|---|---|---|---|\n`;
+  ARMS.forEach((a, i) => {
+    out += `| ${a.label} | ${cm[i].n}/${W} | $${cm[i].cost.toFixed(3)} | ${i === 0 ? "—" : ((cm[i].cost - cm[0].cost) / cm[0].cost * 100).toFixed(1) + "%"} |\n`;
+  });
+  process.stdout.write(out);
+  process.exit(0);
+}
 
-// shared horizontal-grouped-bar frame
-function chart({ title, sub, file, xmax, xticks, fmtx, drawBar, meanVal }) {
-  const L = 150, R = 18, T = 92, barH = 6, intra = 1, groupGap = 8;
+const esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;");
+const dot = (cx, cy, a) => `<circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="2.5" fill="${a.color}" stroke="#222" stroke-width="0.7"/>`;
+
+function chart({ rows, title, sub, file, metric }) {
+  const ms = armMeans(rows), N = rows.length;
+  const isTok = metric === "tok";
+  const val = (c) => isTok ? c.in$ + c.cr$ : c.cost;
+  const meanArr = ms.map((m) => isTok ? m.tok : m.cost);
+  const xmax = Math.ceil(Math.max(...rows.flatMap((r) => r.cells.filter((c) => c.ok).map(val)), 0.1) * 10) / 10;
+  const xticks = Math.max(1, Math.round(xmax / 0.5));
+  const Lm = 150, R = 18, T = 96, barH = 6, intra = 1, groupGap = 8;
   const groupH = ARMS.length * barH + (ARMS.length - 1) * intra + groupGap;
-  const plotW = 820 - L - R;
-  const H = T + N * groupH + 16;
-  const x = (v) => L + plotW * v / xmax;
+  const plotW = 820 - Lm - R, H = T + N * groupH + 16;
+  const x = (v) => Lm + plotW * v / xmax;
   let s = `<svg xmlns="http://www.w3.org/2000/svg" width="820" height="${H}" viewBox="0 0 820 ${H}" font-family="system-ui,Segoe UI,Helvetica,Arial,sans-serif">
 <rect width="820" height="${H}" fill="#ffffff"/>
-<text x="410" y="26" text-anchor="middle" font-size="16" font-weight="600" fill="#111">${esc(title)}</text>
-<text x="410" y="44" text-anchor="middle" font-size="11.5" fill="#666">${esc(sub)}</text>`;
-  // legend
-  let lx = L;
+<text x="410" y="24" text-anchor="middle" font-size="16" font-weight="600" fill="#111">${esc(title)}</text>
+<text x="410" y="42" text-anchor="middle" font-size="11" fill="#666">${esc(sub)}</text>`;
+  let lx = Lm;
   ARMS.forEach((a, i) => {
-    s += `<rect x="${lx}" y="55" width="12" height="12" fill="${a.color}"/><text x="${lx + 17}" y="65" font-size="11" fill="#333">${esc(a.label)} (mean ${meanVal(i)})</text>`;
-    lx += 30 + (a.label.length + (`${meanVal(i)}`).length + 8) * 6.2;
+    const mv = "$" + meanArr[i].toFixed(3);
+    s += `<rect x="${lx}" y="53" width="12" height="12" fill="${a.color}"/><text x="${lx + 17}" y="63" font-size="11" fill="#333">${esc(a.label)} (mean ${mv})</text>`;
+    lx += 30 + (a.label.length + mv.length + 8) * 6.2;
   });
-  // x grid + ticks (top + along)
   for (let t = 0; t <= xticks; t++) {
     const v = xmax * t / xticks, xx = x(v);
     s += `<line x1="${xx.toFixed(1)}" y1="${T - 6}" x2="${xx.toFixed(1)}" y2="${H - 14}" stroke="#eee" stroke-width="1"/>`;
-    s += `<text x="${xx.toFixed(1)}" y="${T - 10}" text-anchor="middle" font-size="10" fill="#999">${fmtx(v)}</text>`;
+    s += `<text x="${xx.toFixed(1)}" y="${T - 10}" text-anchor="middle" font-size="10" fill="#999">$${v.toFixed(1)}</text>`;
   }
-  // mean reference lines per arm
-  ARMS.forEach((a, i) => {
-    const xx = x(meanRaw[file][i]);
-    s += `<line x1="${xx.toFixed(1)}" y1="${T - 4}" x2="${xx.toFixed(1)}" y2="${H - 14}" stroke="${a.color}" stroke-width="1.3" stroke-dasharray="4 3" opacity="0.8"/>`;
-  });
-  // rows
+  // mean lines + "<n> ok" labels (staggered when close)
+  const order = ARMS.map((a, i) => ({ i, a, xx: x(meanArr[i]) })).sort((p, q) => p.xx - q.xx);
+  let lastX = -999, lvl = 0;
+  for (const { i, a, xx } of order) {
+    s += `<line x1="${xx.toFixed(1)}" y1="${T - 4}" x2="${xx.toFixed(1)}" y2="${H - 14}" stroke="${a.color}" stroke-width="1.3" stroke-dasharray="4 3" opacity="0.85"/>`;
+    lvl = (xx - lastX < 52) ? lvl + 1 : 0; lastX = xx;
+    s += `<text x="${xx.toFixed(1)}" y="${T - 24 - lvl * 13}" text-anchor="middle" font-size="10.5" font-weight="700" fill="${a.color}" stroke="#fff" stroke-width="2.6" paint-order="stroke">${ms[i].n} ok</text>`;
+  }
   rows.forEach((r, ri) => {
     const gTop = T + ri * groupH;
-    s += `<text x="${L - 6}" y="${(gTop + groupH / 2 + 2).toFixed(1)}" text-anchor="end" font-size="9.5" fill="#444">${esc(r.short)}</text>`;
+    s += `<text x="${Lm - 6}" y="${(gTop + groupH / 2 + 2).toFixed(1)}" text-anchor="end" font-size="9.5" fill="#444">${esc(r.short)}</text>`;
     ARMS.forEach((a, i) => {
+      const c = r.cells[i]; if (!c.ok) return; // omit arms that didn't succeed
       const by = gTop + i * (barH + intra);
-      s += drawBar(r.cells[i], a, by, barH, x, L);
+      if (isTok) {
+        const wIn = Math.max(0.3, x(c.in$) - Lm), wCr = Math.max(0.3, x(c.in$ + c.cr$) - x(c.in$));
+        s += `<rect x="${Lm}" y="${by.toFixed(1)}" width="${wIn.toFixed(1)}" height="${barH}" fill="${a.color}"/>`
+          + `<rect x="${x(c.in$).toFixed(1)}" y="${by.toFixed(1)}" width="${wCr.toFixed(1)}" height="${barH}" fill="${a.color}" fill-opacity="0.4"/>`
+          + c.runs.map((rn) => dot(x(rn.in$ + rn.cr$), by + barH / 2, a)).join("");
+      } else {
+        s += `<rect x="${Lm}" y="${by.toFixed(1)}" width="${Math.max(0.8, x(c.cost) - Lm).toFixed(1)}" height="${barH}" fill="${a.color}"/>`
+          + c.runs.map((rn) => dot(x(rn.cost), by + barH / 2, a)).join("");
+      }
     });
   });
-  s += `</svg>\n`;
-  writeFileSync(file, s);
+  writeFileSync(file, s + `</svg>\n`);
+  return { N, ms };
 }
-// raw mean values keyed per file for the reference lines
-const meanRaw = {
-  "plots/cost.svg": means.map((m) => m.cost),
-  "plots/tokens.svg": means.map((m) => m.tok),
-};
-
-const xmaxCost = Math.ceil(Math.max(...rows.flatMap((r) => r.cells.map((c) => c.cost))) * 10) / 10;
-const xmaxTok = Math.ceil(Math.max(...rows.flatMap((r) => r.cells.map((c) => c.in$ + c.cr$))) * 10) / 10;
 
 mkdirSync("plots", { recursive: true });
-
-chart({
+const seedNote = SEED_DIRS.length ? `${SEED_DIRS.length} seed(s)` : "single run";
+chart({ rows: successRows, metric: "cost", file: "plots/cost.svg",
   title: "Cost per benchmark (USD) — classic vs classic-graphify vs classic-graph-bash",
-  sub: `${N} successful instances (resolved by ≥1 arm); solid = that arm passed, hollow = failed/not graded; dashed = arm mean over its passes`,
-  file: "plots/cost.svg", xmax: xmaxCost, xticks: Math.round(xmaxCost / 0.5), fmtx: (v) => "$" + v.toFixed(1),
-  meanVal: (i) => `$${means[i].cost.toFixed(3)}, n=${means[i].n}`,
-  drawBar: (c, a, by, barH, x, L) => {
-    const w = Math.max(0.8, x(c.cost) - L);
-    return c.ok
-      ? `<rect x="${L}" y="${by.toFixed(1)}" width="${w.toFixed(1)}" height="${barH}" fill="${a.color}"/>`
-      : `<rect x="${L}" y="${by.toFixed(1)}" width="${w.toFixed(1)}" height="${barH}" fill="${a.color}" fill-opacity="0.12" stroke="${a.color}" stroke-width="0.8"/>`;
-  },
-});
-
-chart({
+  sub: `${successRows.length} successful instances (resolved by >=1 arm); only passing arms drawn; bar = mean, dot = each run; dashed = arm mean over passes` });
+chart({ rows: successRows, metric: "tok", file: "plots/tokens.svg",
   title: "Token cost per benchmark (USD): input + cached, scaled by price",
-  sub: `${N} successful instances; per arm solid bar = input ×$5/Mtok + faded = cached ×$0.5/Mtok; hollow = arm failed; dashed = arm mean over its passes`,
-  file: "plots/tokens.svg", xmax: xmaxTok, xticks: Math.round(xmaxTok / 0.5), fmtx: (v) => "$" + v.toFixed(1),
-  meanVal: (i) => `$${means[i].tok.toFixed(3)}, n=${means[i].n}`,
-  drawBar: (c, a, by, barH, x, L) => {
-    const wIn = Math.max(0.3, x(c.in$) - L), wCr = Math.max(0.3, x(c.in$ + c.cr$) - x(c.in$));
-    if (!c.ok) {
-      const w = Math.max(0.8, x(c.in$ + c.cr$) - L);
-      return `<rect x="${L}" y="${by.toFixed(1)}" width="${w.toFixed(1)}" height="${barH}" fill="${a.color}" fill-opacity="0.1" stroke="${a.color}" stroke-width="0.8"/>`;
-    }
-    return `<rect x="${L}" y="${by.toFixed(1)}" width="${wIn.toFixed(1)}" height="${barH}" fill="${a.color}"/>`
-      + `<rect x="${x(c.in$).toFixed(1)}" y="${by.toFixed(1)}" width="${wCr.toFixed(1)}" height="${barH}" fill="${a.color}" fill-opacity="0.4"/>`;
-  },
-});
+  sub: `${successRows.length} successful instances; per arm solid = input ×$5/Mtok + faded = cached ×$0.5/Mtok; dot = each run total` });
+chart({ rows: classicWinRows, metric: "cost", file: "plots/cost-vs-classic.svg",
+  title: "Cost on classic's wins only — does each arm solve them cheaper?",
+  sub: `the ${classicWinRows.length} benchmarks classic resolved; only passing arms drawn (missing bar = that arm failed this one)` });
 
-console.log(`wrote plots/cost.svg + plots/tokens.svg  (per-benchmark, n=${N})`);
-ARMS.forEach((a, i) => console.log(`  ${a.label.padEnd(20)} mean cost $${means[i].cost.toFixed(3)}  mean input+cached $${means[i].tok.toFixed(3)}`));
+console.log(`wrote cost.svg, tokens.svg (success, n=${successRows.length}), cost-vs-classic.svg (classic-wins, n=${classicWinRows.length}); ${seedNote}`);
+const sm = armMeans(successRows), cm = armMeans(classicWinRows);
+ARMS.forEach((a, i) => console.log(`  ${a.label.padEnd(20)} success: ${sm[i].n} ok, mean $${sm[i].cost.toFixed(3)}   | on classic-wins: ${cm[i].n}/${classicWinRows.length}, mean $${cm[i].cost.toFixed(3)}`));
