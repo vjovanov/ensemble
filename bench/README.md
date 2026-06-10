@@ -146,6 +146,16 @@ Method note: the split uses char/4 size estimates and the latest sessions, scale
 measured totals so all graphs reconcile; per-arm totals are exact, the split is approximate. codex
 has no per-block session, so it is excluded from this view.
 
+#### Per-benchmark spend by source
+
+The same attribution, but **one stacked bar per benchmark** (sorted by cost) so you can see where the
+spend goes on each individual problem — e.g. which benchmarks are `bash:read`-heavy vs `explore/graph`-
+heavy. One graph per arm; `$ per run` by source.
+
+![Per-benchmark spend by source — classic](plots/breakdown-bench-classic.svg)
+![Per-benchmark spend by source — classic-graphify](plots/breakdown-bench-classic-graphify.svg)
+![Per-benchmark spend by source — classic-graph-bash](plots/breakdown-bench-classic-graph-bash.svg)
+
 **Caveats:** multi-seed `base/002` — **pass@K** correctness, **$ per run** cost (averaged over an
 arm's seeds). At pass@2, `classic-graph-bash` is **23/24** — it misses `logstash-17021` (a regression
 vs classic), while `classic-graphify` is 24/24 (most correct, dearest). `codex` is an external

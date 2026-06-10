@@ -125,7 +125,9 @@ const armData = ARMS.map((a) => {
     const m = JSON.parse(readFileSync(p, "utf8"));
     canonFull += m.costUsd; canonCtx += m.input * IN + m.cacheRead * CR;
   }
-  canonFull /= SEED_DIRS.length; canonCtx /= SEED_DIRS.length;   // $ per run, to match the cost graph
+  // divide by THIS arm's seed count (arms can have different K, e.g. classic/graph-bash=3, graphify=2)
+  const armSeeds = SEED_DIRS.filter((d) => ids.some((id) => existsSync(`${d}/${id}__${a.key}/metrics.json`))).length || 1;
+  canonFull /= armSeeds; canonCtx /= armSeeds;   // $ per run, to match the cost graph
   const sumFull = CATS.reduce((s, c) => s + (cost[c.key] || 0), 0) || 1;
   const sumCtx = CATS.reduce((s, c) => s + (context[c.key] || 0), 0) || 1;
   const fF = canonFull / sumFull, fX = canonCtx / sumCtx;
@@ -188,6 +190,49 @@ stack({ file: "plots/breakdown-cost.svg", view: "cost",
 stack({ file: "plots/breakdown-context.svg", view: "context",
   title: "Where the context $ per run goes — input + cached by source",
   sub: `the replayed-context bulk attributed to its source, over classic's ${ids.length} wins` });
+
+// ---- per-benchmark breakdown: one stacked bar per benchmark, one graph per arm ----
+const perRunCost = (id, k) => {
+  const cs = SEED_DIRS.map((d) => { const p = `${d}/${id}__${k}/metrics.json`; return existsSync(p) ? JSON.parse(readFileSync(p, "utf8")) : null; })
+    .filter((m) => m && typeof m.costUsd === "number").map((m) => m.costUsd);
+  return cs.length ? cs.reduce((s, x) => s + x, 0) / cs.length : 0;   // $ per run (mean over seeds)
+};
+const perBenchData = (k) => ids.map((id) => {
+  const f = sessionFile(id, k);
+  let r = null; if (f) { try { r = analyze(f); } catch { r = null; } }
+  const cat = {}; let st = 0;
+  if (r) for (const c of CATS.map((x) => x.key)) { const v = (r.ctxIn[c] || 0) * IN + (r.ctxCr[c] || 0) * CR + (r.out[c] || 0) * OUT; cat[c] = v; st += v; }
+  const per = perRunCost(id, k), f2 = st > 0 ? per / st : 0;   // scale session split to per-run cost
+  for (const c of CATS.map((x) => x.key)) cat[c] = (cat[c] || 0) * f2;
+  return { id, short: id.includes("__") ? id.split("__")[1] : id, cat, total: per };
+}).filter((d) => d.total > 0).sort((a, b) => b.total - a.total);
+
+function stackPerBench({ file, title, sub, data }) {
+  const Lm = 168, Rm = 150, top = 70, barH = 9, rowH = 13, Wd = 900, plotW = Wd - Lm - Rm;
+  const N = data.length, H = top + N * rowH + 24;
+  const xmax = Math.ceil(Math.max(...data.map((d) => d.total), 0.1) * 10) / 10;
+  const xticks = Math.max(1, Math.round(xmax / 0.5)), x = (v) => Lm + plotW * v / xmax;
+  let s = `<svg xmlns="http://www.w3.org/2000/svg" width="${Wd}" height="${H}" viewBox="0 0 ${Wd} ${H}" font-family="system-ui,Segoe UI,Helvetica,Arial,sans-serif">
+<rect width="${Wd}" height="${H}" fill="#ffffff"/>
+<text x="${Lm + plotW / 2}" y="26" text-anchor="middle" font-size="16" font-weight="600" fill="#111">${esc(title)}</text>
+<text x="${Lm + plotW / 2}" y="44" text-anchor="middle" font-size="11" fill="#666">${esc(sub)}</text>`;
+  for (let t = 0; t <= xticks; t++) { const v = xmax * t / xticks, xx = x(v); s += `<line x1="${xx.toFixed(1)}" y1="${top - 6}" x2="${xx.toFixed(1)}" y2="${H - 16}" stroke="#eee"/><text x="${xx.toFixed(1)}" y="${top - 10}" text-anchor="middle" font-size="10" fill="#999">$${v.toFixed(1)}</text>`; }
+  let ly = top; for (const c of CATS) { s += `<rect x="${Wd - Rm + 16}" y="${ly}" width="11" height="11" fill="${c.color}"/><text x="${Wd - Rm + 31}" y="${ly + 10}" font-size="10.5" fill="#333">${esc(c.key)}</text>`; ly += 18; }
+  data.forEach((d, ri) => {
+    const yTop = top + ri * rowH;
+    s += `<text x="${Lm - 6}" y="${yTop + barH - 1}" text-anchor="end" font-size="9" fill="#444">${esc(d.short)}</text>`;
+    let acc = 0;
+    for (const c of CATS) { const v = d.cat[c.key] || 0; if (v <= 0) continue; const w = x(acc + v) - x(acc); s += `<rect x="${x(acc).toFixed(1)}" y="${yTop}" width="${Math.max(0.4, w).toFixed(1)}" height="${barH}" fill="${c.color}"/>`; acc += v; }
+    s += `<text x="${(x(acc) + 4).toFixed(1)}" y="${yTop + barH - 1}" font-size="8.5" fill="#666">$${acc.toFixed(2)}</text>`;
+  });
+  writeFileSync(file, s + `</svg>\n`);
+}
+for (const a of ARMS) stackPerBench({
+  file: `plots/breakdown-bench-${a.key}.svg`,
+  title: `Per-benchmark spend by source — ${a.label}`,
+  sub: `$ per run by source, over the ${ids.length} benchmarks classic resolves (sorted by cost)`,
+  data: perBenchData(a.key),
+});
 
 console.log(`wrote breakdown-cost.svg + breakdown-context.svg over classic's ${ids.length} wins`);
 for (const d of armData) {
