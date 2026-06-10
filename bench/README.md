@@ -24,15 +24,15 @@ keeps arms with different seed counts comparable — notably the single-run `cod
 the 2-seed pi arms. All figures below are generated from the data (`node lib/plot-results.mjs`;
 `node lib/inject-readme.mjs` for the tables) — see the tables for exact, current numbers.
 
-![Total cost on classic's wins](plots/cost.svg)
+![Cost per run on classic's wins](plots/cost.svg)
 
-**Total cost.** `classic-graph-bash` is the cheapest in total; lead-driven `classic-graphify` is the
+**Cost per run.** `classic-graph-bash` is the cheapest; lead-driven `classic-graphify` is the
 most expensive — its "always build the graph" directive inflates context, so on a balanced pool it
 is *not* cheaper than the raw baseline.
 
 ![Total $ split by token type](plots/tokens.svg)
 
-**Same total, split by token type** — input ×$5/Mtok + cached ×$0.5/Mtok + output ×$30/Mtok; this
+**Same total (per run), split by token type** — input ×$5/Mtok + cached ×$0.5/Mtok + output ×$30/Mtok; this
 reconciles to the cost graph. Output is few tokens but the priciest rate (~30% of the bill), which
 is why the input+cached legs alone fall short. graph-bash cuts all three.
 
