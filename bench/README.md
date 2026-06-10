@@ -42,27 +42,29 @@ per-instance cost is noisy (`simdjson`, `jq-2919` are genuine losses, both C-fam
 known graphify-on-C/C++ weakness); the five cap-set rows' graph-bash cost is provisional
 pending a clean re-pull.
 
-## Cost & tokens across the current pool — `classic` vs `classic-graphify` vs `classic-graph-bash`
+## Cost & tokens per benchmark — `classic` vs `classic-graphify` vs `classic-graph-bash`
 
-Per-run lead-model spend over the **49 instances all three arms have run** (apples-to-apples;
-includes both passing and failing runs, since cost is incurred either way). Each dot is one
-run; the bar is the mean. Regenerate with `node lib/plot-results.mjs`.
+Per-benchmark lead-model spend across the three arms, restricted to **successful instances**
+(resolved by at least one arm; all three arms ran each). One row per benchmark, three bars (one
+per arm). A **solid** bar means that arm passed the instance, **hollow** means it failed or
+isn't graded yet. The dashed vertical line is each arm's **mean over the instances it passed**;
+the legend shows that mean and **how many it resolved** (`n=`). Regenerate with
+`node lib/plot-results.mjs`.
 
-![Cost per run](plots/cost.svg)
+![Cost per benchmark](plots/cost.svg)
 
-**Cost** — mean per run: `classic` **$0.671**, `classic-graphify` **$0.689** (≈ classic, +3%),
-`classic-graph-bash` **$0.441** (**−34% vs classic**). The sidekick arm is the cheapest by a
-wide margin; lead-driven graphify is *not* cheaper than the raw baseline on a balanced pool —
-its hard "always build the graph" directive injects graph context on every run (the high-cost
-outliers), so the savings only show once the graph is trimmed/noise-excluded.
+**Cost.** Mean success cost per arm: `classic` **$0.459** (n=21), `classic-graphify` **$0.491**
+(n=22), `classic-graph-bash` **$0.333** (n=22). On the big spenders (zstd-3438, dayjs, ponyc,
+grpc-go) graph-bash's green bar is consistently the shortest; lead-driven graphify is the
+longest on most rows (its "always build the graph" directive), tracking or exceeding the raw
+baseline rather than beating it.
 
-![Token cost per run, input + cached, stacked](plots/tokens.svg)
+![Token cost per benchmark, input + cached](plots/tokens.svg)
 
-**Tokens scaled by price** (input ×$5/Mtok, cached ×$0.5/Mtok), stacked into the dollar cost
-each contributes; dots are the per-run total. Mean input+cached cost: `classic` **$0.504**,
-`classic-graphify` **$0.522**, `classic-graph-bash` **$0.299**. graph-bash cuts *both*
-components — input $0.258→$0.173 and cached $0.246→$0.125 — which is where the −34% total comes
-from. (Remaining gap to the cost plot is output tokens at $30/Mtok, excluded here.)
+**Tokens scaled by price** (input ×$5/Mtok solid, cached ×$0.5/Mtok faded). Mean input+cached
+per arm: `classic` **$0.331**, `classic-graphify` **$0.351**, `classic-graph-bash` **$0.232**.
+graph-bash cuts both legs on nearly every benchmark, which is where its cost lead comes from.
+(Remaining gap to the cost plot is output tokens at $30/Mtok, excluded here.)
 
 ## Benchmark Arms
 

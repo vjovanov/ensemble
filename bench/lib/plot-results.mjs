@@ -1,9 +1,10 @@
-// Generate two SVG plots from current per-run metrics for the three arms we compare.
-//   plots/cost.svg   — per-run cost (USD): one dot per run + a mean marker, per arm.
-//   plots/tokens.svg — token cost decomposition (USD): mean input-token $ and cached-token $
-//                      stacked per arm (tokens × their price), with per-run total dots + mean.
-// Apples-to-apples over the instances all three arms ran. Pure SVG, no deps.
-// Prices (lead model): input $5/Mtok, cacheRead $0.5/Mtok. Output excluded (small; in cost.svg).
+// Generate two per-benchmark SVG plots comparing the three arms we track.
+//   plots/cost.svg   — one row per benchmark; three bars (classic / graphify / graph-bash) = cost (USD).
+//   plots/tokens.svg — one row per benchmark; three bars split into input (solid) + cached (faded),
+//                      each token count scaled by its price ($/Mtok) into the dollars it contributes.
+// Dashed vertical line per arm = that arm's mean across benchmarks. Apples-to-apples over the
+// instances all three arms ran. Pure SVG, no deps.
+// Prices (lead model): input $5/Mtok, cacheRead $0.5/Mtok. Output excluded (small).
 // Usage: node lib/plot-results.mjs
 import { readFileSync, existsSync, readdirSync, writeFileSync, mkdirSync } from "node:fs";
 
@@ -13,101 +14,112 @@ const ARMS = [
   { key: "classic-graph-bash", label: "classic-graph-bash", color: "#54A24B" },
 ];
 const IN_PRICE = 5e-6, CR_PRICE = 0.5e-6;
-const COL_IN = "#4878B0", COL_CR = "#F2B705"; // input / cached components in tokens.svg
 
 const allIds = [...new Set(readdirSync("raw").map((d) => {
   for (const a of ARMS) if (d.endsWith("__" + a.key)) return d.slice(0, -(a.key.length + 2));
   return null;
 }).filter(Boolean))];
 const M = (id, a) => { const p = `raw/${id}__${a}/metrics.json`; return existsSync(p) ? JSON.parse(readFileSync(p, "utf8")) : null; };
-const ids = allIds.filter((id) => ARMS.every((a) => M(id, a.key))).sort();
-const N = ids.length;
+const R = (id, a) => { const p = `results/validation/${a}/${id}.json`; if (!existsSync(p)) return null; const v = JSON.parse(readFileSync(p, "utf8")); return v.resolved === true ? true : v.status === "unknown" ? null : false; };
+let ids = allIds.filter((id) => ARMS.every((a) => M(id, a.key)));
+// only successful instances: resolved by at least one of the three arms
+ids = ids.filter((id) => ARMS.some((a) => R(id, a.key) === true));
 
-const data = ARMS.map((a) => {
-  const runs = ids.map((id) => { const m = M(id, a.key); return { cost: m.costUsd, in$: m.input * IN_PRICE, cr$: m.cacheRead * CR_PRICE }; });
-  const mean = (f) => runs.reduce((s, r) => s + f(r), 0) / runs.length;
-  return { ...a, runs, meanCost: mean((r) => r.cost), meanIn: mean((r) => r.in$), meanCr: mean((r) => r.cr$) };
+// per (id, arm): cost + token-cost components + resolved status
+const row = (id) => {
+  const cells = ARMS.map((a) => { const m = M(id, a.key); return { cost: m.costUsd, in$: m.input * IN_PRICE, cr$: m.cacheRead * CR_PRICE, ok: R(id, a.key) === true }; });
+  return { id, short: id.includes("__") ? id.split("__")[1] : id, cells };
+};
+let rows = ids.map(row).sort((x, y) => y.cells[0].cost - x.cells[0].cost); // by classic cost, desc
+const N = rows.length;
+// mean over each arm's OWN successful runs within the shown set
+const means = ARMS.map((a, i) => {
+  const ok = rows.filter((r) => r.cells[i].ok);
+  const m = (f) => ok.length ? ok.reduce((s, r) => s + f(r.cells[i]), 0) / ok.length : 0;
+  return { cost: m((c) => c.cost), tok: m((c) => c.in$ + c.cr$), n: ok.length };
 });
 
-// deterministic jitter in [-spread, spread]
-const jit = (i, spread) => (((i * 1103515245 + 12345) % 1000) / 1000 - 0.5) * 2 * spread;
 const esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;");
 
-function frame(W, H, title, sub) {
-  const m = { l: 64, r: 24, t: 70, b: 64 };
-  return { W, H, m, pw: W - m.l - m.r, ph: H - m.t - m.b,
-    head: `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" font-family="system-ui,Segoe UI,Helvetica,Arial,sans-serif">
-<rect width="${W}" height="${H}" fill="#ffffff"/>
-<text x="${W / 2}" y="26" text-anchor="middle" font-size="16" font-weight="600" fill="#111">${esc(title)}</text>
-<text x="${W / 2}" y="44" text-anchor="middle" font-size="11.5" fill="#666">${esc(sub)}</text>` };
-}
-
-function yAxis(f, ymax, ticks, fmt) {
-  const { m, ph } = f; let s = "";
-  const y = (v) => m.t + ph * (1 - v / ymax);
-  for (let i = 0; i <= ticks; i++) {
-    const v = ymax * i / ticks, yy = y(v);
-    s += `<line x1="${m.l}" y1="${yy.toFixed(1)}" x2="${f.W - m.r}" y2="${yy.toFixed(1)}" stroke="#eee" stroke-width="1"/>`;
-    s += `<text x="${m.l - 8}" y="${(yy + 4).toFixed(1)}" text-anchor="end" font-size="10.5" fill="#888">${fmt(v)}</text>`;
+// shared horizontal-grouped-bar frame
+function chart({ title, sub, file, xmax, xticks, fmtx, drawBar, meanVal }) {
+  const L = 150, R = 18, T = 92, barH = 6, intra = 1, groupGap = 8;
+  const groupH = ARMS.length * barH + (ARMS.length - 1) * intra + groupGap;
+  const plotW = 820 - L - R;
+  const H = T + N * groupH + 16;
+  const x = (v) => L + plotW * v / xmax;
+  let s = `<svg xmlns="http://www.w3.org/2000/svg" width="820" height="${H}" viewBox="0 0 820 ${H}" font-family="system-ui,Segoe UI,Helvetica,Arial,sans-serif">
+<rect width="820" height="${H}" fill="#ffffff"/>
+<text x="410" y="26" text-anchor="middle" font-size="16" font-weight="600" fill="#111">${esc(title)}</text>
+<text x="410" y="44" text-anchor="middle" font-size="11.5" fill="#666">${esc(sub)}</text>`;
+  // legend
+  let lx = L;
+  ARMS.forEach((a, i) => {
+    s += `<rect x="${lx}" y="55" width="12" height="12" fill="${a.color}"/><text x="${lx + 17}" y="65" font-size="11" fill="#333">${esc(a.label)} (mean ${meanVal(i)})</text>`;
+    lx += 30 + (a.label.length + (`${meanVal(i)}`).length + 8) * 6.2;
+  });
+  // x grid + ticks (top + along)
+  for (let t = 0; t <= xticks; t++) {
+    const v = xmax * t / xticks, xx = x(v);
+    s += `<line x1="${xx.toFixed(1)}" y1="${T - 6}" x2="${xx.toFixed(1)}" y2="${H - 14}" stroke="#eee" stroke-width="1"/>`;
+    s += `<text x="${xx.toFixed(1)}" y="${T - 10}" text-anchor="middle" font-size="10" fill="#999">${fmtx(v)}</text>`;
   }
-  return { s, y };
-}
-
-function xCenters(f) { const band = f.pw / ARMS.length; return ARMS.map((_, i) => f.m.l + band * (i + 0.5)); }
-function xLabels(f, cx) {
-  return ARMS.map((a, i) => `<text x="${cx[i].toFixed(1)}" y="${f.H - f.m.b + 20}" text-anchor="middle" font-size="12" font-weight="600" fill="${a.color}">${esc(a.label)}</text>`).join("");
-}
-
-// ---------- Plot 1: cost scatter + mean ----------
-function costSvg() {
-  const f = frame(760, 440, "Cost per run (USD)", `${N} instances — all three arms ran each; one dot per run, bar = mean (includes passing & failing runs)`);
-  const ymax = Math.ceil(Math.max(...data.flatMap((d) => d.runs.map((r) => r.cost))) * 10) / 10 + 0.1;
-  const { s: axis, y } = yAxis(f, ymax, 5, (v) => "$" + v.toFixed(1));
-  const cx = xCenters(f);
-  let body = "";
-  data.forEach((d, i) => {
-    for (let j = 0; j < d.runs.length; j++) {
-      const x = cx[i] + jit(j + 1, 34), yy = y(d.runs[j].cost);
-      body += `<circle cx="${x.toFixed(1)}" cy="${yy.toFixed(1)}" r="3" fill="${d.color}" fill-opacity="0.5" stroke="${d.color}" stroke-width="0.6"/>`;
-    }
-    const my = y(d.meanCost);
-    body += `<line x1="${cx[i] - 46}" y1="${my.toFixed(1)}" x2="${cx[i] + 46}" y2="${my.toFixed(1)}" stroke="${d.color}" stroke-width="3"/>`;
-    body += `<text x="${cx[i]}" y="${(my - 8).toFixed(1)}" text-anchor="middle" font-size="12.5" font-weight="700" fill="${d.color}">$${d.meanCost.toFixed(3)}</text>`;
+  // mean reference lines per arm
+  ARMS.forEach((a, i) => {
+    const xx = x(meanRaw[file][i]);
+    s += `<line x1="${xx.toFixed(1)}" y1="${T - 4}" x2="${xx.toFixed(1)}" y2="${H - 14}" stroke="${a.color}" stroke-width="1.3" stroke-dasharray="4 3" opacity="0.8"/>`;
   });
-  return f.head + axis + body + xLabels(f, cx) + "</svg>\n";
-}
-
-// ---------- Plot 2: stacked token-cost (input + cached) + per-run total dots ----------
-function tokensSvg() {
-  const f = frame(760, 440, "Token cost per run (USD): input + cached, scaled by price", `${N} instances — stacked bar = mean (input ×$5/Mtok, cached ×$0.5/Mtok); dots = per-run total`);
-  const ymax = Math.ceil(Math.max(...data.flatMap((d) => d.runs.map((r) => r.in$ + r.cr$))) * 10) / 10 + 0.1;
-  const { s: axis, y } = yAxis(f, ymax, 5, (v) => "$" + v.toFixed(1));
-  const cx = xCenters(f), bw = 84;
-  let body = "";
-  data.forEach((d, i) => {
-    const x0 = cx[i] - bw / 2;
-    const yIn = y(d.meanIn), y0 = y(0), yTop = y(d.meanIn + d.meanCr);
-    body += `<rect x="${x0}" y="${yIn.toFixed(1)}" width="${bw}" height="${(y0 - yIn).toFixed(1)}" fill="${COL_IN}" fill-opacity="0.85"/>`;
-    body += `<rect x="${x0}" y="${yTop.toFixed(1)}" width="${bw}" height="${(yIn - yTop).toFixed(1)}" fill="${COL_CR}" fill-opacity="0.9"/>`;
-    // per-run total dots — in a clean strip to the right of the bar
-    const dotBase = cx[i] + bw / 2 + 16;
-    for (let j = 0; j < d.runs.length; j++) {
-      const x = dotBase + Math.abs(jit(j + 1, 13)), yy = y(d.runs[j].in$ + d.runs[j].cr$);
-      body += `<circle cx="${x.toFixed(1)}" cy="${yy.toFixed(1)}" r="2.6" fill="${d.color}" fill-opacity="0.55"/>`;
-    }
-    body += `<text x="${cx[i]}" y="${(yTop - 8).toFixed(1)}" text-anchor="middle" font-size="12.5" font-weight="700" fill="#222">$${(d.meanIn + d.meanCr).toFixed(3)}</text>`;
-    if (y0 - yIn > 14) body += `<text x="${cx[i]}" y="${(y(d.meanIn / 2) + 3).toFixed(1)}" text-anchor="middle" font-size="10" fill="#fff">in $${d.meanIn.toFixed(3)}</text>`;
-    if (yIn - yTop > 14) body += `<text x="${cx[i]}" y="${(y(d.meanIn + d.meanCr / 2) + 3).toFixed(1)}" text-anchor="middle" font-size="10" fill="#5a4500">cache $${d.meanCr.toFixed(3)}</text>`;
+  // rows
+  rows.forEach((r, ri) => {
+    const gTop = T + ri * groupH;
+    s += `<text x="${L - 6}" y="${(gTop + groupH / 2 + 2).toFixed(1)}" text-anchor="end" font-size="9.5" fill="#444">${esc(r.short)}</text>`;
+    ARMS.forEach((a, i) => {
+      const by = gTop + i * (barH + intra);
+      s += drawBar(r.cells[i], a, by, barH, x, L);
+    });
   });
-  // legend (own line, below subtitle, above plot)
-  const lx = f.m.l, ly = f.m.t - 12;
-  body += `<rect x="${lx}" y="${ly - 9}" width="11" height="11" fill="${COL_IN}" fill-opacity="0.85"/><text x="${lx + 16}" y="${ly}" font-size="11" fill="#444">input tokens ×$5/Mtok</text>`;
-  body += `<rect x="${lx + 180}" y="${ly - 9}" width="11" height="11" fill="${COL_CR}" fill-opacity="0.9"/><text x="${lx + 196}" y="${ly}" font-size="11" fill="#444">cached tokens ×$0.5/Mtok</text>`;
-  return f.head + axis + body + xLabels(f, cx) + "</svg>\n";
+  s += `</svg>\n`;
+  writeFileSync(file, s);
 }
+// raw mean values keyed per file for the reference lines
+const meanRaw = {
+  "plots/cost.svg": means.map((m) => m.cost),
+  "plots/tokens.svg": means.map((m) => m.tok),
+};
+
+const xmaxCost = Math.ceil(Math.max(...rows.flatMap((r) => r.cells.map((c) => c.cost))) * 10) / 10;
+const xmaxTok = Math.ceil(Math.max(...rows.flatMap((r) => r.cells.map((c) => c.in$ + c.cr$))) * 10) / 10;
 
 mkdirSync("plots", { recursive: true });
-writeFileSync("plots/cost.svg", costSvg());
-writeFileSync("plots/tokens.svg", tokensSvg());
-console.log(`wrote plots/cost.svg + plots/tokens.svg  (n=${N} common instances)`);
-for (const d of data) console.log(`  ${d.label.padEnd(20)} meanCost $${d.meanCost.toFixed(3)}  in $${d.meanIn.toFixed(3)}  cache $${d.meanCr.toFixed(3)}`);
+
+chart({
+  title: "Cost per benchmark (USD) — classic vs classic-graphify vs classic-graph-bash",
+  sub: `${N} successful instances (resolved by ≥1 arm); solid = that arm passed, hollow = failed/not graded; dashed = arm mean over its passes`,
+  file: "plots/cost.svg", xmax: xmaxCost, xticks: Math.round(xmaxCost / 0.5), fmtx: (v) => "$" + v.toFixed(1),
+  meanVal: (i) => `$${means[i].cost.toFixed(3)}, n=${means[i].n}`,
+  drawBar: (c, a, by, barH, x, L) => {
+    const w = Math.max(0.8, x(c.cost) - L);
+    return c.ok
+      ? `<rect x="${L}" y="${by.toFixed(1)}" width="${w.toFixed(1)}" height="${barH}" fill="${a.color}"/>`
+      : `<rect x="${L}" y="${by.toFixed(1)}" width="${w.toFixed(1)}" height="${barH}" fill="${a.color}" fill-opacity="0.12" stroke="${a.color}" stroke-width="0.8"/>`;
+  },
+});
+
+chart({
+  title: "Token cost per benchmark (USD): input + cached, scaled by price",
+  sub: `${N} successful instances; per arm solid bar = input ×$5/Mtok + faded = cached ×$0.5/Mtok; hollow = arm failed; dashed = arm mean over its passes`,
+  file: "plots/tokens.svg", xmax: xmaxTok, xticks: Math.round(xmaxTok / 0.5), fmtx: (v) => "$" + v.toFixed(1),
+  meanVal: (i) => `$${means[i].tok.toFixed(3)}, n=${means[i].n}`,
+  drawBar: (c, a, by, barH, x, L) => {
+    const wIn = Math.max(0.3, x(c.in$) - L), wCr = Math.max(0.3, x(c.in$ + c.cr$) - x(c.in$));
+    if (!c.ok) {
+      const w = Math.max(0.8, x(c.in$ + c.cr$) - L);
+      return `<rect x="${L}" y="${by.toFixed(1)}" width="${w.toFixed(1)}" height="${barH}" fill="${a.color}" fill-opacity="0.1" stroke="${a.color}" stroke-width="0.8"/>`;
+    }
+    return `<rect x="${L}" y="${by.toFixed(1)}" width="${wIn.toFixed(1)}" height="${barH}" fill="${a.color}"/>`
+      + `<rect x="${x(c.in$).toFixed(1)}" y="${by.toFixed(1)}" width="${wCr.toFixed(1)}" height="${barH}" fill="${a.color}" fill-opacity="0.4"/>`;
+  },
+});
+
+console.log(`wrote plots/cost.svg + plots/tokens.svg  (per-benchmark, n=${N})`);
+ARMS.forEach((a, i) => console.log(`  ${a.label.padEnd(20)} mean cost $${means[i].cost.toFixed(3)}  mean input+cached $${means[i].tok.toFixed(3)}`));
