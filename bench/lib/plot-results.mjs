@@ -48,8 +48,10 @@ const ids = [...new Set(SEED_DIRS.flatMap((d) => readdirSync(d)).map((b) => {
 // Auto-include the codex reference arm once its instrumented re-run is graded for every benchmark
 // classic resolves (so the refresh picks it up the moment its grade lands; partial data stays out).
 const winIds = ids.filter((id) => resolved(id, "classic") === true);
-const codexReady = winIds.length > 0 && winIds.every((id) => valid(readM(`raw/${id}__codex/metrics.json`)) && existsSync(`results/validation/codex/${id}.json`) && JSON.parse(readFileSync(`results/validation/codex/${id}.json`, "utf8")).status !== "unknown");
-if (codexReady) ARMS.push(CODEX);
+// codex is a single instrumented run; the pi arms sum across SEED_DIRS. Summing a 1-run arm next to
+// K-run arms is apples-to-oranges, so codex only joins when there is a single seed to compare to.
+const codexGraded = winIds.length > 0 && winIds.every((id) => valid(readM(`raw/${id}__codex/metrics.json`)) && existsSync(`results/validation/codex/${id}.json`) && JSON.parse(readFileSync(`results/validation/codex/${id}.json`, "utf8")).status !== "unknown");
+if (codexGraded && SEED_DIRS.length <= 1) ARMS.push(CODEX);
 
 const cell = (id, a) => {
   const runs = runsFor(id, a.key);

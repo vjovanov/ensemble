@@ -43,45 +43,44 @@ table is the ceiling if graph-bash fell back to classic on those: the regression
 worst are exactly what the explore noise-exclusion experiment targets.
 
 <!-- AUTO:cost-tables -->
-#### Total $ used on the 22 benchmarks classic resolves
+#### Total $ used on the 24 benchmarks classic resolves
 
 | arm | resolved | input $ | cached $ | output $ | **total $** | Δ vs classic |
 |---|---|---|---|---|---|---|
-| classic | 22/22 | $3.87 | $2.37 | $2.80 | **$9.04** | — |
-| classic-graphify | 22/22 | $5.15 | $3.56 | $3.17 | **$11.87** | 31.3% |
-| classic-graph-bash | 22/22 | $3.06 | $1.54 | $2.17 | **$6.77** | -25.1% |
-| codex *(ref)* | 20/22 | $4.25 | $5.43 | $4.91 | **$14.59** | 61.4% |
-| graph-bash, classic-capped where worse | 22/22 | — | — | — | **$6.03** | -33.3% |
-
-_codex is a reference arm (external Codex CLI); it spends on all 22 but resolves only 20, so its total is not a like-for-like fix cost._
+| classic | 24/24 | $9.29 | $6.01 | $6.53 | **$21.83** | — |
+| classic-graphify | 24/24 | $11.31 | $8.17 | $7.17 | **$26.66** | 22.1% |
+| classic-graph-bash | 23/24 | $7.48 | $4.22 | $5.40 | **$17.11** | -21.6% |
+| graph-bash, classic-capped where worse | 24/24 | — | — | — | **$15.92** | -27.1% |
 
 #### Per-benchmark cost on classic's wins ($)
 
-| benchmark | classic | classic-graphify | classic-graph-bash | codex |
-|---|---|---|---|---|
-| dayjs-2399 | $1.040 | $1.238 | $0.410 | $1.093 |
-| zstd-3438 | $0.898 | $1.692 | $0.627 | $1.697 |
-| core-11694 | $0.893 | $0.654 | $0.145 | $1.073 |
-| grpc-go-3351 | $0.490 | $0.471 | $0.387 | $0.484 |
-| grpc-go-3258 | $0.480 | $0.759 | $0.419 | $0.847 |
-| fd-1394 | $0.469 | $0.451 | $0.084 | $0.258 |
-| clap-5873 | $0.462 | $0.546 | $0.450 | $0.749 |
-| core-11761 | $0.450 | $0.500 | $0.367 | $0.648 |
-| jq-3238 | $0.444 | $0.498 | $0.877 | _$1.284_ |
-| tracing-2897 | $0.433 | $0.551 | $0.268 | $0.809 |
-| dayjs-2532 | $0.397 | $0.815 | $0.408 | $1.020 |
-| bytes-732 | $0.355 | $0.379 | $0.289 | $0.304 |
-| github-readme-stats-2844 | $0.316 | $0.479 | $0.276 | _$0.341_ |
-| core-11680 | $0.315 | $0.378 | $0.328 | $0.600 |
-| jq-2919 | $0.312 | $0.563 | $0.333 | $0.808 |
-| core-11813 | $0.222 | $0.258 | $0.111 | $0.243 |
-| zstd-3942 | $0.219 | $0.239 | $0.194 | $0.523 |
-| bat-3189 | $0.212 | $0.220 | $0.083 | $0.502 |
-| go-zero-2787 | $0.211 | $0.238 | $0.046 | $0.293 |
-| darkreader-7241 | $0.185 | $0.488 | $0.406 | $0.440 |
-| rayon-986 | $0.122 | $0.192 | $0.161 | $0.294 |
-| express-5555 | $0.115 | $0.267 | $0.102 | $0.279 |
-| **total** | **$9.04** | **$11.87** | **$6.77** | **$14.59** |
+| benchmark | classic | classic-graphify | classic-graph-bash |
+|---|---|---|---|
+| zstd-3438 | $2.312 | $2.494 | $0.976 |
+| dayjs-2399 | $1.575 | $2.148 | $1.231 |
+| simdjson-2178 | $1.513 | $2.781 | $1.971 |
+| logstash-17021 | $1.400 | $1.669 | _$1.228_ |
+| dayjs-2532 | $1.395 | $1.398 | $0.913 |
+| core-11694 | $1.356 | $1.660 | $0.541 |
+| grpc-go-3258 | $1.099 | $1.602 | $1.135 |
+| jq-3238 | $1.028 | $1.117 | $1.372 |
+| tracing-2897 | $0.980 | $1.199 | $0.714 |
+| core-11761 | $0.973 | $1.068 | $0.590 |
+| grpc-go-3351 | $0.901 | $0.881 | $0.803 |
+| clap-5873 | $0.865 | $1.124 | $0.799 |
+| core-11680 | $0.816 | $0.793 | $0.482 |
+| fd-1394 | $0.789 | $0.752 | $0.251 |
+| github-readme-stats-2844 | $0.749 | $0.846 | $0.537 |
+| jq-2919 | $0.531 | $0.942 | $0.696 |
+| zstd-3942 | $0.519 | $0.633 | $0.575 |
+| bytes-732 | $0.517 | $0.645 | $0.444 |
+| core-11813 | $0.515 | $0.433 | $0.186 |
+| bat-3189 | $0.515 | $0.394 | $0.430 |
+| go-zero-2787 | $0.467 | $0.441 | $0.245 |
+| darkreader-7241 | $0.431 | $0.798 | $0.564 |
+| express-5555 | $0.318 | $0.441 | $0.160 |
+| rayon-986 | $0.265 | $0.399 | $0.264 |
+| **total** | **$21.83** | **$26.66** | **$17.11** |
 
 (italic = arm ran but did not resolve that benchmark; "—" = no run)
 <!-- /AUTO:cost-tables -->
@@ -104,28 +103,28 @@ classic's 22 wins. `classic`/`graphify` have no separate read tool — they read
 
 | source | classic | classic-graphify | classic-graph-bash |
 |---|---|---|---|
-| system+prompt | $1.35 | $1.72 | $1.64 |
-| bash:read | $5.23 | $4.92 | $0.04 |
-| bash:build/test | $0.37 | $0.56 | $0.41 |
-| bash:other | $0.12 | $0.19 | $0.21 |
-| explore/graph | $0.00 | $1.96 | $2.88 |
-| edit | $0.63 | $0.80 | $0.56 |
-| thinking | $1.17 | $1.52 | $0.87 |
-| output | $0.17 | $0.21 | $0.16 |
-| **total** | **$9.04** | **$11.87** | **$6.77** |
+| system+prompt | $3.20 | $3.55 | $3.71 |
+| bash:read | $12.66 | $12.01 | $0.24 |
+| bash:build/test | $1.08 | $1.35 | $0.88 |
+| bash:other | $0.29 | $0.35 | $0.48 |
+| explore/graph | $0.00 | $4.21 | $7.60 |
+| edit | $1.41 | $1.56 | $1.77 |
+| thinking | $2.79 | $3.23 | $2.05 |
+| output | $0.40 | $0.40 | $0.36 |
+| **total** | **$21.83** | **$26.66** | **$17.11** |
 
 #### Context only (input+cached) by source — over classic's wins
 
 | source | classic | classic-graphify | classic-graph-bash |
 |---|---|---|---|
-| system+prompt | $1.30 | $1.76 | $1.59 |
-| bash:read | $4.42 | $4.31 | $0.01 |
-| bash:build/test | $0.20 | $0.33 | $0.32 |
-| bash:other | $0.03 | $0.05 | $0.09 |
-| explore/graph | $0.00 | $1.85 | $2.34 |
-| edit | $0.09 | $0.10 | $0.07 |
-| thinking | $0.19 | $0.31 | $0.17 |
-| **total** | **$6.24** | **$8.71** | **$4.60** |
+| system+prompt | $3.13 | $3.55 | $3.66 |
+| bash:read | $10.80 | $10.30 | $0.06 |
+| bash:build/test | $0.57 | $0.76 | $0.68 |
+| bash:other | $0.08 | $0.10 | $0.20 |
+| explore/graph | $0.00 | $3.89 | $6.44 |
+| edit | $0.21 | $0.21 | $0.24 |
+| thinking | $0.51 | $0.68 | $0.42 |
+| **total** | **$15.30** | **$19.49** | **$11.70** |
 <!-- /AUTO:breakdown-tables -->
 
 **Reading it** (exact $ in the table above):
