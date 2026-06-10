@@ -1,0 +1,8 @@
+{
+  "instance": "googlecontainertools__jib-4144",
+  "arm": "classic",
+  "status": "unresolved",
+  "resolved": false,
+  "updatedAt": "2026-06-10T18:28:54.325Z",
+  "report": "/home/vjovanov/p/ensemble/bench/results/classic/final_report.json"
+}

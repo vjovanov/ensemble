@@ -1,0 +1,37 @@
+diff --git c/lib/compress/zstd_compress.c i/lib/compress/zstd_compress.c
+index 3a48e7dcd4..eadc4c4cbf 100644
+--- c/lib/compress/zstd_compress.c
++++ i/lib/compress/zstd_compress.c
+@@ -218,6 +218,12 @@ size_t ZSTD_sizeof_CStream(const ZSTD_CStream* zcs)
+ /* private API call, for dictBuilder only */
+ const seqStore_t* ZSTD_getSeqStore(const ZSTD_CCtx* ctx) { return &(ctx->seqStore); }
+ 
++/* Row match finder hashes are capped at 32 bits. It uses hashLog - rowLog
++ * bits for row selection, plus 8 bits for the tag. Since rowLog can be as
++ * low as 4, hashLog must be capped at 24 + 4 = 28 bits.
++ */
++#define ZSTD_ROW_HASH_MAX_HASHLOG 28
++
+ /* Returns true if the strategy supports using a row based matchfinder */
+ static int ZSTD_rowMatchFinderSupported(const ZSTD_strategy strategy) {
+     return (strategy >= ZSTD_greedy && strategy <= ZSTD_lazy2);
+@@ -1465,11 +1471,19 @@ ZSTD_adjustCParams_internal(ZSTD_compressionParameters cPar,
+     if (cPar.windowLog < ZSTD_WINDOWLOG_ABSOLUTEMIN)
+         cPar.windowLog = ZSTD_WINDOWLOG_ABSOLUTEMIN;  /* minimum wlog required for valid frame header */
+ 
++    if (ZSTD_rowMatchFinderSupported(cPar.strategy)
++      && cPar.hashLog > ZSTD_ROW_HASH_MAX_HASHLOG) {
++        cPar.hashLog = ZSTD_ROW_HASH_MAX_HASHLOG;
++    }
++
+     if (mode == ZSTD_cpm_createCDict && ZSTD_CDictIndicesAreTagged(&cPar)) {
+         U32 const maxShortCacheHashLog = 32 - ZSTD_SHORT_CACHE_TAG_BITS;
+         if (cPar.hashLog > maxShortCacheHashLog) {
+             cPar.hashLog = maxShortCacheHashLog;
+         }
++        if (cPar.chainLog > maxShortCacheHashLog) {
++            cPar.chainLog = maxShortCacheHashLog;
++        }
+     }
+ 
+     return cPar;

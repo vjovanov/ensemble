@@ -1,0 +1,6 @@
+tag=base/003-base002-30
+commit=7df85480395ea54204e648f8696e9bef725dfb28
+date=2026-06-10T22:45:22Z
+seeds=2
+arms=
+from=multiseed/base002

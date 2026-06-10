@@ -1,0 +1,50 @@
+diff --git c/packages/compiler-sfc/src/script/resolveType.ts i/packages/compiler-sfc/src/script/resolveType.ts
+index ee0a723991..f2c8de001e 100644
+--- c/packages/compiler-sfc/src/script/resolveType.ts
++++ i/packages/compiler-sfc/src/script/resolveType.ts
+@@ -1070,17 +1070,25 @@ function loadTSConfig(
+   configPath: string,
+   ts: typeof TS,
+   fs: FS,
++  visited = new Set<string>(),
+ ): TS.ParsedCommandLine[] {
++  const normalizedConfigPath = normalizePath(configPath)
++  if (visited.has(normalizedConfigPath)) {
++    return []
++  }
++  visited.add(normalizedConfigPath)
++
+   // The only case where `fs` is NOT `ts.sys` is during tests.
+-  // parse config host requires an extra `readDirectory` method
+-  // during tests, which is stubbed.
+-  const parseConfigHost = __TEST__
+-    ? {
+-        ...fs,
+-        useCaseSensitiveFileNames: true,
+-        readDirectory: () => [],
+-      }
+-    : ts.sys
++  // parse config host requires a `readDirectory` method, but we do not need
++  // the file list for resolving types, so stub it to avoid unnecessary and
++  // potentially recursive directory traversal.
++  const parseConfigHost = {
++    ...(__TEST__ ? fs : ts.sys),
++    useCaseSensitiveFileNames: __TEST__
++      ? true
++      : ts.sys.useCaseSensitiveFileNames,
++    readDirectory: () => [],
++  }
+   const config = ts.parseJsonConfigFileContent(
+     ts.readConfigFile(configPath, fs.readFile).config,
+     parseConfigHost,
+@@ -1095,8 +1103,8 @@ function loadTSConfig(
+       if (!fs.fileExists(refPath)) {
+         continue
+       }
+-      tsConfigRefMap.set(refPath, configPath)
+-      res.unshift(...loadTSConfig(refPath, ts, fs))
++      tsConfigRefMap.set(normalizePath(refPath), normalizedConfigPath)
++      res.unshift(...loadTSConfig(refPath, ts, fs, visited))
+     }
+   }
+   return res

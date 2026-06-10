@@ -1,0 +1,88 @@
+diff --git c/crates/nu-protocol/src/pipeline/pipeline_data.rs i/crates/nu-protocol/src/pipeline/pipeline_data.rs
+index da0fea3213..2c6ac356cb 100644
+--- c/crates/nu-protocol/src/pipeline/pipeline_data.rs
++++ i/crates/nu-protocol/src/pipeline/pipeline_data.rs
+@@ -1,14 +1,56 @@
+ use crate::{
+     ast::{Call, PathMember},
+     engine::{EngineState, Stack},
+-    ByteStream, ByteStreamType, Config, ListStream, OutDest, PipelineMetadata, Range, ShellError,
+-    Signals, Span, Type, Value,
++    ByteStream, ByteStreamSource, ByteStreamType, Config, ErrSpan, ListStream, OutDest,
++    PipelineMetadata, Range, ShellError, Signals, Span, Type, Value,
+ };
+ use nu_utils::{stderr_write_all_and_flush, stdout_write_all_and_flush};
+-use std::io::Write;
++use std::io::{Read, Write};
+ 
+ const LINE_ENDING_PATTERN: &[char] = &['\r', '\n'];
+ 
++fn trim_end_newline(string: &mut String) {
++    if string.ends_with('\n') {
++        string.pop();
++        if string.ends_with('\r') {
++            string.pop();
++        }
++    }
++}
++
++// Collecting a byte stream as input to another command should not make a failed external
++// command abort the pipeline; non-zero exit codes are reported when the external stream itself is
++// the pipeline result.
++fn byte_stream_into_string_ignore_exit_code(stream: ByteStream) -> Result<String, ShellError> {
++    let span = stream.span();
++
++    if !stream.type_().is_string_coercible() {
++        return Err(ShellError::TypeMismatch {
++            err_message: "expected string, but got binary".into(),
++            span,
++        });
++    }
++
++    let trim = matches!(
++        stream.source(),
++        ByteStreamSource::File(_) | ByteStreamSource::Child(_)
++    );
++
++    let mut bytes = Vec::new();
++    if let Some(mut reader) = stream.reader() {
++        reader.read_to_end(&mut bytes).err_span(span)?;
++    }
++
++    let mut string = String::from_utf8(bytes).map_err(|err| ShellError::NonUtf8Custom {
++        span,
++        msg: err.to_string(),
++    })?;
++    if trim {
++        trim_end_newline(&mut string);
++    }
++    Ok(string)
++}
++
+ /// The foundational abstraction for input and output to commands
+ ///
+ /// This represents either a single Value or a stream of values coming into the command or leaving a command.
+@@ -288,7 +330,9 @@ impl PipelineData {
+             PipelineData::Empty => Ok(String::new()),
+             PipelineData::Value(value, ..) => Ok(value.to_expanded_string(separator, config)),
+             PipelineData::ListStream(stream, ..) => Ok(stream.into_string(separator, config)),
+-            PipelineData::ByteStream(stream, ..) => stream.into_string(),
++            PipelineData::ByteStream(stream, ..) => {
++                byte_stream_into_string_ignore_exit_code(stream)
++            }
+         }
+     }
+ 
+@@ -313,7 +357,11 @@ impl PipelineData {
+             }),
+             PipelineData::ByteStream(stream, metadata) => {
+                 let span = stream.span();
+-                Ok((stream.into_string()?, span, metadata))
++                Ok((
++                    byte_stream_into_string_ignore_exit_code(stream)?,
++                    span,
++                    metadata,
++                ))
+             }
+         }
+     }

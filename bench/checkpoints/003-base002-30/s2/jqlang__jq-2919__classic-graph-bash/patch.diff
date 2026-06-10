@@ -1,0 +1,47 @@
+diff --git c/src/main.c i/src/main.c
+index 6d857c3671..5098dae5ec 100644
+--- c/src/main.c
++++ i/src/main.c
+@@ -349,6 +349,7 @@ int main(int argc, char* argv[]) {
+   int further_args_are_strings = 0;
+   int further_args_are_json = 0;
+   int args_done = 0;
++  int options_done = 0;
+   int jq_flags = 0;
+   size_t short_opts = 0;
+   jv lib_search_paths = jv_null();
+@@ -367,10 +368,12 @@ int main(int argc, char* argv[]) {
+         jq_util_input_add_input(input_state, argv[i]);
+         nfiles++;
+       }
+-    } else if (!strcmp(argv[i], "--")) {
+-      if (!program) usage(2, 1);
+-      args_done = 1;
+-    } else if (!isoptish(argv[i])) {
++    } else if (!options_done && !strcmp(argv[i], "--")) {
++      if (program)
++        args_done = 1;
++      else
++        options_done = 1;
++    } else if (options_done || !isoptish(argv[i])) {
+       if (program) {
+         if (further_args_are_strings) {
+           ARGS = jv_array_append(ARGS, jv_string(argv[i]));
+@@ -387,6 +390,8 @@ int main(int argc, char* argv[]) {
+         }
+       } else {
+         program = argv[i];
++        if (options_done)
++          args_done = 1;
+       }
+     } else {
+       if (argv[i][1] == 'L') {
+@@ -664,7 +669,7 @@ int main(int argc, char* argv[]) {
+     jq_set_attr(jq, jv_string("VERSION_DIR"), jv_string_fmt("%.*s-master", (int)(strchr(JQ_VERSION, '-') - JQ_VERSION), JQ_VERSION));
+ 
+ #ifdef USE_ISATTY
+-  if (!program && (!isatty(STDOUT_FILENO) || !isatty(STDIN_FILENO)))
++  if (!program && !options_done && (!isatty(STDOUT_FILENO) || !isatty(STDIN_FILENO)))
+     program = ".";
+ #endif
+ 

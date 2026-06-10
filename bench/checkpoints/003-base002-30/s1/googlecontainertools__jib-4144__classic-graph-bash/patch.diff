@@ -1,0 +1,31 @@
+diff --git c/jib-cli/src/main/java/com/google/cloud/tools/jib/cli/jar/JarFiles.java i/jib-cli/src/main/java/com/google/cloud/tools/jib/cli/jar/JarFiles.java
+index 7c59cf86da..ca06fdc273 100644
+--- c/jib-cli/src/main/java/com/google/cloud/tools/jib/cli/jar/JarFiles.java
++++ i/jib-cli/src/main/java/com/google/cloud/tools/jib/cli/jar/JarFiles.java
+@@ -89,6 +89,9 @@ public class JarFiles {
+     if (processor.getJavaVersion() <= 11) {
+       return "eclipse-temurin:11-jre";
+     }
+-    return "eclipse-temurin:17-jre";
++    if (processor.getJavaVersion() <= 17) {
++      return "eclipse-temurin:17-jre";
++    }
++    return "eclipse-temurin:21-jre";
+   }
+ }
+diff --git c/jib-plugins-common/src/main/java/com/google/cloud/tools/jib/plugins/common/PluginConfigurationProcessor.java i/jib-plugins-common/src/main/java/com/google/cloud/tools/jib/plugins/common/PluginConfigurationProcessor.java
+index 21b314dc29..2da44cabc8 100644
+--- c/jib-plugins-common/src/main/java/com/google/cloud/tools/jib/plugins/common/PluginConfigurationProcessor.java
++++ i/jib-plugins-common/src/main/java/com/google/cloud/tools/jib/plugins/common/PluginConfigurationProcessor.java
+@@ -772,8 +772,10 @@ public class PluginConfigurationProcessor {
+       return "eclipse-temurin:11-jre";
+     } else if (javaVersion <= 17) {
+       return "eclipse-temurin:17-jre";
++    } else if (javaVersion <= 21) {
++      return "eclipse-temurin:21-jre";
+     }
+-    throw new IncompatibleBaseImageJavaVersionException(17, javaVersion);
++    throw new IncompatibleBaseImageJavaVersionException(21, javaVersion);
+   }
+ 
+   /**

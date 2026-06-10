@@ -1,0 +1,18 @@
+{
+  "instance": "iamkun__dayjs-2420",
+  "arm": "classic",
+  "language": "js",
+  "commit": "74f5feaf26410c7190d989f578d5c991d9e8c54f",
+  "dirty": true,
+  "model": "oca/gpt-5.5",
+  "provider": "OCA",
+  "exploration": "classic",
+  "require_graph": false,
+  "bash_output_summary": false,
+  "explore_debug": "off",
+  "tool_calls": {
+    "lead": "session/*.jsonl",
+    "sidekick": null
+  },
+  "prompts_dir": "prompts/"
+}

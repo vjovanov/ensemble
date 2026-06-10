@@ -1,0 +1,566 @@
+diff --git c/include/simdjson/dom/base.h i/include/simdjson/dom/base.h
+index b862277a21..a3814af5ba 100644
+--- c/include/simdjson/dom/base.h
++++ i/include/simdjson/dom/base.h
+@@ -35,6 +35,21 @@ class key_value_pair;
+ class object;
+ class parser;
+ 
++/** @private Return whether the given JSON Pointer has valid RFC 6901 escape syntax. */
++simdjson_inline bool json_pointer_is_valid(std::string_view json_pointer) noexcept {
++  if (json_pointer.empty()) { return true; }
++  if (json_pointer[0] != '/') { return false; }
++  for (size_t i = 0; i < json_pointer.size(); i++) {
++    if (json_pointer[i] == '~') {
++      i++;
++      if (i == json_pointer.size() || (json_pointer[i] != '0' && json_pointer[i] != '1')) {
++        return false;
++      }
++    }
++  }
++  return true;
++}
++
+ #ifdef SIMDJSON_THREADS_ENABLED
+ struct stage1_worker;
+ #endif // SIMDJSON_THREADS_ENABLED
+diff --git c/include/simdjson/dom/element-inl.h i/include/simdjson/dom/element-inl.h
+index 1f071da608..9deef4d7f0 100644
+--- c/include/simdjson/dom/element-inl.h
++++ i/include/simdjson/dom/element-inl.h
+@@ -383,8 +383,8 @@ inline simdjson_result<element> element::at_pointer(std::string_view json_pointe
+     case internal::tape_type::START_ARRAY:
+       return array(tape).at_pointer(json_pointer);
+     default: {
+-      if(!json_pointer.empty()) { // a non-empty string is invalid on an atom
+-        return INVALID_JSON_POINTER;
++      if(!json_pointer.empty()) { // a non-empty string cannot resolve past an atom
++        return json_pointer_is_valid(json_pointer) ? NO_SUCH_FIELD : INVALID_JSON_POINTER;
+       }
+       // an empty string means that we return the current node
+       dom::element copy(*this);
+diff --git c/include/simdjson/generic/ondemand/base.h i/include/simdjson/generic/ondemand/base.h
+index 89bd0c01bb..f99c39ac7d 100644
+--- c/include/simdjson/generic/ondemand/base.h
++++ i/include/simdjson/generic/ondemand/base.h
+@@ -40,6 +40,21 @@ class token_iterator;
+ class value;
+ class value_iterator;
+ 
++/** @private Return whether the given JSON Pointer has valid RFC 6901 escape syntax. */
++simdjson_inline bool json_pointer_is_valid(std::string_view json_pointer) noexcept {
++  if (json_pointer.empty()) { return true; }
++  if (json_pointer[0] != '/') { return false; }
++  for (size_t i = 0; i < json_pointer.size(); i++) {
++    if (json_pointer[i] == '~') {
++      i++;
++      if (i == json_pointer.size() || (json_pointer[i] != '0' && json_pointer[i] != '1')) {
++        return false;
++      }
++    }
++  }
++  return true;
++}
++
+ } // namespace ondemand
+ } // namespace SIMDJSON_IMPLEMENTATION
+ } // namespace simdjson
+diff --git c/include/simdjson/generic/ondemand/document-inl.h i/include/simdjson/generic/ondemand/document-inl.h
+index 70072c42b1..5e93b4de92 100644
+--- c/include/simdjson/generic/ondemand/document-inl.h
++++ i/include/simdjson/generic/ondemand/document-inl.h
+@@ -312,7 +312,7 @@ simdjson_inline simdjson_result<value> document::at_pointer(std::string_view jso
+     case json_type::object:
+       return (*this).get_object().at_pointer(json_pointer);
+     default:
+-      return INVALID_JSON_POINTER;
++      return json_pointer_is_valid(json_pointer) ? NO_SUCH_FIELD : INVALID_JSON_POINTER;
+   }
+ }
+ 
+diff --git c/include/simdjson/generic/ondemand/value-inl.h i/include/simdjson/generic/ondemand/value-inl.h
+index 41e02fa24e..c3619cde6d 100644
+--- c/include/simdjson/generic/ondemand/value-inl.h
++++ i/include/simdjson/generic/ondemand/value-inl.h
+@@ -240,6 +240,9 @@ simdjson_inline int32_t value::current_depth() const noexcept{
+ }
+ 
+ simdjson_inline simdjson_result<value> value::at_pointer(std::string_view json_pointer) noexcept {
++  if (json_pointer.empty()) {
++    return value(iter);
++  }
+   json_type t;
+   SIMDJSON_TRY(type().get(t));
+   switch (t)
+@@ -249,7 +252,7 @@ simdjson_inline simdjson_result<value> value::at_pointer(std::string_view json_p
+     case json_type::object:
+       return (*this).get_object().at_pointer(json_pointer);
+     default:
+-      return INVALID_JSON_POINTER;
++      return json_pointer_is_valid(json_pointer) ? NO_SUCH_FIELD : INVALID_JSON_POINTER;
+   }
+ }
+ 
+diff --git c/singleheader/simdjson.cpp i/singleheader/simdjson.cpp
+index 7a8d24ab0d..27d3a57afb 100644
+--- c/singleheader/simdjson.cpp
++++ i/singleheader/simdjson.cpp
+@@ -6495,6 +6495,21 @@ class key_value_pair;
+ class object;
+ class parser;
+ 
++/** @private Return whether the given JSON Pointer has valid RFC 6901 escape syntax. */
++simdjson_inline bool json_pointer_is_valid(std::string_view json_pointer) noexcept {
++  if (json_pointer.empty()) { return true; }
++  if (json_pointer[0] != '/') { return false; }
++  for (size_t i = 0; i < json_pointer.size(); i++) {
++    if (json_pointer[i] == '~') {
++      i++;
++      if (i == json_pointer.size() || (json_pointer[i] != '0' && json_pointer[i] != '1')) {
++        return false;
++      }
++    }
++  }
++  return true;
++}
++
+ #ifdef SIMDJSON_THREADS_ENABLED
+ struct stage1_worker;
+ #endif // SIMDJSON_THREADS_ENABLED
+diff --git c/singleheader/simdjson.h i/singleheader/simdjson.h
+index 985ffe1144..10d8e2ca09 100644
+--- c/singleheader/simdjson.h
++++ i/singleheader/simdjson.h
+@@ -4069,6 +4069,21 @@ class key_value_pair;
+ class object;
+ class parser;
+ 
++/** @private Return whether the given JSON Pointer has valid RFC 6901 escape syntax. */
++simdjson_inline bool json_pointer_is_valid(std::string_view json_pointer) noexcept {
++  if (json_pointer.empty()) { return true; }
++  if (json_pointer[0] != '/') { return false; }
++  for (size_t i = 0; i < json_pointer.size(); i++) {
++    if (json_pointer[i] == '~') {
++      i++;
++      if (i == json_pointer.size() || (json_pointer[i] != '0' && json_pointer[i] != '1')) {
++        return false;
++      }
++    }
++  }
++  return true;
++}
++
+ #ifdef SIMDJSON_THREADS_ENABLED
+ struct stage1_worker;
+ #endif // SIMDJSON_THREADS_ENABLED
+@@ -7448,8 +7463,8 @@ inline simdjson_result<element> element::at_pointer(std::string_view json_pointe
+     case internal::tape_type::START_ARRAY:
+       return array(tape).at_pointer(json_pointer);
+     default: {
+-      if(!json_pointer.empty()) { // a non-empty string is invalid on an atom
+-        return INVALID_JSON_POINTER;
++      if(!json_pointer.empty()) { // a non-empty string cannot resolve past an atom
++        return json_pointer_is_valid(json_pointer) ? NO_SUCH_FIELD : INVALID_JSON_POINTER;
+       }
+       // an empty string means that we return the current node
+       dom::element copy(*this);
+@@ -31391,6 +31406,21 @@ class token_iterator;
+ class value;
+ class value_iterator;
+ 
++/** @private Return whether the given JSON Pointer has valid RFC 6901 escape syntax. */
++simdjson_inline bool json_pointer_is_valid(std::string_view json_pointer) noexcept {
++  if (json_pointer.empty()) { return true; }
++  if (json_pointer[0] != '/') { return false; }
++  for (size_t i = 0; i < json_pointer.size(); i++) {
++    if (json_pointer[i] == '~') {
++      i++;
++      if (i == json_pointer.size() || (json_pointer[i] != '0' && json_pointer[i] != '1')) {
++        return false;
++      }
++    }
++  }
++  return true;
++}
++
+ } // namespace ondemand
+ } // namespace arm64
+ } // namespace simdjson
+@@ -36776,7 +36806,7 @@ simdjson_inline simdjson_result<value> document::at_pointer(std::string_view jso
+     case json_type::object:
+       return (*this).get_object().at_pointer(json_pointer);
+     default:
+-      return INVALID_JSON_POINTER;
++      return json_pointer_is_valid(json_pointer) ? NO_SUCH_FIELD : INVALID_JSON_POINTER;
+   }
+ }
+ 
+@@ -40084,6 +40114,9 @@ simdjson_inline int32_t value::current_depth() const noexcept{
+ }
+ 
+ simdjson_inline simdjson_result<value> value::at_pointer(std::string_view json_pointer) noexcept {
++  if (json_pointer.empty()) {
++    return value(iter);
++  }
+   json_type t;
+   SIMDJSON_TRY(type().get(t));
+   switch (t)
+@@ -40093,7 +40126,7 @@ simdjson_inline simdjson_result<value> value::at_pointer(std::string_view json_p
+     case json_type::object:
+       return (*this).get_object().at_pointer(json_pointer);
+     default:
+-      return INVALID_JSON_POINTER;
++      return json_pointer_is_valid(json_pointer) ? NO_SUCH_FIELD : INVALID_JSON_POINTER;
+   }
+ }
+ 
+@@ -41728,6 +41761,21 @@ class token_iterator;
+ class value;
+ class value_iterator;
+ 
++/** @private Return whether the given JSON Pointer has valid RFC 6901 escape syntax. */
++simdjson_inline bool json_pointer_is_valid(std::string_view json_pointer) noexcept {
++  if (json_pointer.empty()) { return true; }
++  if (json_pointer[0] != '/') { return false; }
++  for (size_t i = 0; i < json_pointer.size(); i++) {
++    if (json_pointer[i] == '~') {
++      i++;
++      if (i == json_pointer.size() || (json_pointer[i] != '0' && json_pointer[i] != '1')) {
++        return false;
++      }
++    }
++  }
++  return true;
++}
++
+ } // namespace ondemand
+ } // namespace fallback
+ } // namespace simdjson
+@@ -47113,7 +47161,7 @@ simdjson_inline simdjson_result<value> document::at_pointer(std::string_view jso
+     case json_type::object:
+       return (*this).get_object().at_pointer(json_pointer);
+     default:
+-      return INVALID_JSON_POINTER;
++      return json_pointer_is_valid(json_pointer) ? NO_SUCH_FIELD : INVALID_JSON_POINTER;
+   }
+ }
+ 
+@@ -50421,6 +50469,9 @@ simdjson_inline int32_t value::current_depth() const noexcept{
+ }
+ 
+ simdjson_inline simdjson_result<value> value::at_pointer(std::string_view json_pointer) noexcept {
++  if (json_pointer.empty()) {
++    return value(iter);
++  }
+   json_type t;
+   SIMDJSON_TRY(type().get(t));
+   switch (t)
+@@ -50430,7 +50481,7 @@ simdjson_inline simdjson_result<value> value::at_pointer(std::string_view json_p
+     case json_type::object:
+       return (*this).get_object().at_pointer(json_pointer);
+     default:
+-      return INVALID_JSON_POINTER;
++      return json_pointer_is_valid(json_pointer) ? NO_SUCH_FIELD : INVALID_JSON_POINTER;
+   }
+ }
+ 
+@@ -52557,6 +52608,21 @@ class token_iterator;
+ class value;
+ class value_iterator;
+ 
++/** @private Return whether the given JSON Pointer has valid RFC 6901 escape syntax. */
++simdjson_inline bool json_pointer_is_valid(std::string_view json_pointer) noexcept {
++  if (json_pointer.empty()) { return true; }
++  if (json_pointer[0] != '/') { return false; }
++  for (size_t i = 0; i < json_pointer.size(); i++) {
++    if (json_pointer[i] == '~') {
++      i++;
++      if (i == json_pointer.size() || (json_pointer[i] != '0' && json_pointer[i] != '1')) {
++        return false;
++      }
++    }
++  }
++  return true;
++}
++
+ } // namespace ondemand
+ } // namespace haswell
+ } // namespace simdjson
+@@ -57942,7 +58008,7 @@ simdjson_inline simdjson_result<value> document::at_pointer(std::string_view jso
+     case json_type::object:
+       return (*this).get_object().at_pointer(json_pointer);
+     default:
+-      return INVALID_JSON_POINTER;
++      return json_pointer_is_valid(json_pointer) ? NO_SUCH_FIELD : INVALID_JSON_POINTER;
+   }
+ }
+ 
+@@ -61250,6 +61316,9 @@ simdjson_inline int32_t value::current_depth() const noexcept{
+ }
+ 
+ simdjson_inline simdjson_result<value> value::at_pointer(std::string_view json_pointer) noexcept {
++  if (json_pointer.empty()) {
++    return value(iter);
++  }
+   json_type t;
+   SIMDJSON_TRY(type().get(t));
+   switch (t)
+@@ -61259,7 +61328,7 @@ simdjson_inline simdjson_result<value> value::at_pointer(std::string_view json_p
+     case json_type::object:
+       return (*this).get_object().at_pointer(json_pointer);
+     default:
+-      return INVALID_JSON_POINTER;
++      return json_pointer_is_valid(json_pointer) ? NO_SUCH_FIELD : INVALID_JSON_POINTER;
+   }
+ }
+ 
+@@ -63385,6 +63454,21 @@ class token_iterator;
+ class value;
+ class value_iterator;
+ 
++/** @private Return whether the given JSON Pointer has valid RFC 6901 escape syntax. */
++simdjson_inline bool json_pointer_is_valid(std::string_view json_pointer) noexcept {
++  if (json_pointer.empty()) { return true; }
++  if (json_pointer[0] != '/') { return false; }
++  for (size_t i = 0; i < json_pointer.size(); i++) {
++    if (json_pointer[i] == '~') {
++      i++;
++      if (i == json_pointer.size() || (json_pointer[i] != '0' && json_pointer[i] != '1')) {
++        return false;
++      }
++    }
++  }
++  return true;
++}
++
+ } // namespace ondemand
+ } // namespace icelake
+ } // namespace simdjson
+@@ -68770,7 +68854,7 @@ simdjson_inline simdjson_result<value> document::at_pointer(std::string_view jso
+     case json_type::object:
+       return (*this).get_object().at_pointer(json_pointer);
+     default:
+-      return INVALID_JSON_POINTER;
++      return json_pointer_is_valid(json_pointer) ? NO_SUCH_FIELD : INVALID_JSON_POINTER;
+   }
+ }
+ 
+@@ -72078,6 +72162,9 @@ simdjson_inline int32_t value::current_depth() const noexcept{
+ }
+ 
+ simdjson_inline simdjson_result<value> value::at_pointer(std::string_view json_pointer) noexcept {
++  if (json_pointer.empty()) {
++    return value(iter);
++  }
+   json_type t;
+   SIMDJSON_TRY(type().get(t));
+   switch (t)
+@@ -72087,7 +72174,7 @@ simdjson_inline simdjson_result<value> value::at_pointer(std::string_view json_p
+     case json_type::object:
+       return (*this).get_object().at_pointer(json_pointer);
+     default:
+-      return INVALID_JSON_POINTER;
++      return json_pointer_is_valid(json_pointer) ? NO_SUCH_FIELD : INVALID_JSON_POINTER;
+   }
+ }
+ 
+@@ -74328,6 +74415,21 @@ class token_iterator;
+ class value;
+ class value_iterator;
+ 
++/** @private Return whether the given JSON Pointer has valid RFC 6901 escape syntax. */
++simdjson_inline bool json_pointer_is_valid(std::string_view json_pointer) noexcept {
++  if (json_pointer.empty()) { return true; }
++  if (json_pointer[0] != '/') { return false; }
++  for (size_t i = 0; i < json_pointer.size(); i++) {
++    if (json_pointer[i] == '~') {
++      i++;
++      if (i == json_pointer.size() || (json_pointer[i] != '0' && json_pointer[i] != '1')) {
++        return false;
++      }
++    }
++  }
++  return true;
++}
++
+ } // namespace ondemand
+ } // namespace ppc64
+ } // namespace simdjson
+@@ -79713,7 +79815,7 @@ simdjson_inline simdjson_result<value> document::at_pointer(std::string_view jso
+     case json_type::object:
+       return (*this).get_object().at_pointer(json_pointer);
+     default:
+-      return INVALID_JSON_POINTER;
++      return json_pointer_is_valid(json_pointer) ? NO_SUCH_FIELD : INVALID_JSON_POINTER;
+   }
+ }
+ 
+@@ -83021,6 +83123,9 @@ simdjson_inline int32_t value::current_depth() const noexcept{
+ }
+ 
+ simdjson_inline simdjson_result<value> value::at_pointer(std::string_view json_pointer) noexcept {
++  if (json_pointer.empty()) {
++    return value(iter);
++  }
+   json_type t;
+   SIMDJSON_TRY(type().get(t));
+   switch (t)
+@@ -83030,7 +83135,7 @@ simdjson_inline simdjson_result<value> value::at_pointer(std::string_view json_p
+     case json_type::object:
+       return (*this).get_object().at_pointer(json_pointer);
+     default:
+-      return INVALID_JSON_POINTER;
++      return json_pointer_is_valid(json_pointer) ? NO_SUCH_FIELD : INVALID_JSON_POINTER;
+   }
+ }
+ 
+@@ -85594,6 +85699,21 @@ class token_iterator;
+ class value;
+ class value_iterator;
+ 
++/** @private Return whether the given JSON Pointer has valid RFC 6901 escape syntax. */
++simdjson_inline bool json_pointer_is_valid(std::string_view json_pointer) noexcept {
++  if (json_pointer.empty()) { return true; }
++  if (json_pointer[0] != '/') { return false; }
++  for (size_t i = 0; i < json_pointer.size(); i++) {
++    if (json_pointer[i] == '~') {
++      i++;
++      if (i == json_pointer.size() || (json_pointer[i] != '0' && json_pointer[i] != '1')) {
++        return false;
++      }
++    }
++  }
++  return true;
++}
++
+ } // namespace ondemand
+ } // namespace westmere
+ } // namespace simdjson
+@@ -90979,7 +91099,7 @@ simdjson_inline simdjson_result<value> document::at_pointer(std::string_view jso
+     case json_type::object:
+       return (*this).get_object().at_pointer(json_pointer);
+     default:
+-      return INVALID_JSON_POINTER;
++      return json_pointer_is_valid(json_pointer) ? NO_SUCH_FIELD : INVALID_JSON_POINTER;
+   }
+ }
+ 
+@@ -94287,6 +94407,9 @@ simdjson_inline int32_t value::current_depth() const noexcept{
+ }
+ 
+ simdjson_inline simdjson_result<value> value::at_pointer(std::string_view json_pointer) noexcept {
++  if (json_pointer.empty()) {
++    return value(iter);
++  }
+   json_type t;
+   SIMDJSON_TRY(type().get(t));
+   switch (t)
+@@ -94296,7 +94419,7 @@ simdjson_inline simdjson_result<value> value::at_pointer(std::string_view json_p
+     case json_type::object:
+       return (*this).get_object().at_pointer(json_pointer);
+     default:
+-      return INVALID_JSON_POINTER;
++      return json_pointer_is_valid(json_pointer) ? NO_SUCH_FIELD : INVALID_JSON_POINTER;
+   }
+ }
+ 
+@@ -96331,6 +96454,21 @@ class token_iterator;
+ class value;
+ class value_iterator;
+ 
++/** @private Return whether the given JSON Pointer has valid RFC 6901 escape syntax. */
++simdjson_inline bool json_pointer_is_valid(std::string_view json_pointer) noexcept {
++  if (json_pointer.empty()) { return true; }
++  if (json_pointer[0] != '/') { return false; }
++  for (size_t i = 0; i < json_pointer.size(); i++) {
++    if (json_pointer[i] == '~') {
++      i++;
++      if (i == json_pointer.size() || (json_pointer[i] != '0' && json_pointer[i] != '1')) {
++        return false;
++      }
++    }
++  }
++  return true;
++}
++
+ } // namespace ondemand
+ } // namespace lsx
+ } // namespace simdjson
+@@ -101716,7 +101854,7 @@ simdjson_inline simdjson_result<value> document::at_pointer(std::string_view jso
+     case json_type::object:
+       return (*this).get_object().at_pointer(json_pointer);
+     default:
+-      return INVALID_JSON_POINTER;
++      return json_pointer_is_valid(json_pointer) ? NO_SUCH_FIELD : INVALID_JSON_POINTER;
+   }
+ }
+ 
+@@ -105024,6 +105162,9 @@ simdjson_inline int32_t value::current_depth() const noexcept{
+ }
+ 
+ simdjson_inline simdjson_result<value> value::at_pointer(std::string_view json_pointer) noexcept {
++  if (json_pointer.empty()) {
++    return value(iter);
++  }
+   json_type t;
+   SIMDJSON_TRY(type().get(t));
+   switch (t)
+@@ -105033,7 +105174,7 @@ simdjson_inline simdjson_result<value> value::at_pointer(std::string_view json_p
+     case json_type::object:
+       return (*this).get_object().at_pointer(json_pointer);
+     default:
+-      return INVALID_JSON_POINTER;
++      return json_pointer_is_valid(json_pointer) ? NO_SUCH_FIELD : INVALID_JSON_POINTER;
+   }
+ }
+ 
+@@ -107081,6 +107222,21 @@ class token_iterator;
+ class value;
+ class value_iterator;
+ 
++/** @private Return whether the given JSON Pointer has valid RFC 6901 escape syntax. */
++simdjson_inline bool json_pointer_is_valid(std::string_view json_pointer) noexcept {
++  if (json_pointer.empty()) { return true; }
++  if (json_pointer[0] != '/') { return false; }
++  for (size_t i = 0; i < json_pointer.size(); i++) {
++    if (json_pointer[i] == '~') {
++      i++;
++      if (i == json_pointer.size() || (json_pointer[i] != '0' && json_pointer[i] != '1')) {
++        return false;
++      }
++    }
++  }
++  return true;
++}
++
+ } // namespace ondemand
+ } // namespace lasx
+ } // namespace simdjson
+@@ -112466,7 +112622,7 @@ simdjson_inline simdjson_result<value> document::at_pointer(std::string_view jso
+     case json_type::object:
+       return (*this).get_object().at_pointer(json_pointer);
+     default:
+-      return INVALID_JSON_POINTER;
++      return json_pointer_is_valid(json_pointer) ? NO_SUCH_FIELD : INVALID_JSON_POINTER;
+   }
+ }
+ 
+@@ -115774,6 +115930,9 @@ simdjson_inline int32_t value::current_depth() const noexcept{
+ }
+ 
+ simdjson_inline simdjson_result<value> value::at_pointer(std::string_view json_pointer) noexcept {
++  if (json_pointer.empty()) {
++    return value(iter);
++  }
+   json_type t;
+   SIMDJSON_TRY(type().get(t));
+   switch (t)
+@@ -115783,7 +115942,7 @@ simdjson_inline simdjson_result<value> value::at_pointer(std::string_view json_p
+     case json_type::object:
+       return (*this).get_object().at_pointer(json_pointer);
+     default:
+-      return INVALID_JSON_POINTER;
++      return json_pointer_is_valid(json_pointer) ? NO_SUCH_FIELD : INVALID_JSON_POINTER;
+   }
+ }
+ 

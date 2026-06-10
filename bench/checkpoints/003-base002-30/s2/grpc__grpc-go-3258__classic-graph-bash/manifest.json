@@ -1,0 +1,18 @@
+{
+  "instance": "grpc__grpc-go-3258",
+  "arm": "classic-graph-bash",
+  "language": "go",
+  "commit": "33d228dc7032341dcf65d5ef5d55ead12a4a2311",
+  "dirty": true,
+  "model": "oca/gpt-5.5",
+  "provider": "OCA",
+  "exploration": "sidekick",
+  "require_graph": true,
+  "bash_output_summary": true,
+  "explore_debug": "full",
+  "tool_calls": {
+    "lead": "session/*.jsonl",
+    "sidekick": "explore-debug.jsonl"
+  },
+  "prompts_dir": "prompts/"
+}

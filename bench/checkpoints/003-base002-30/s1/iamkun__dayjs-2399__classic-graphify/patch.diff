@@ -1,0 +1,33 @@
+diff --git c/src/plugin/timezone/index.js i/src/plugin/timezone/index.js
+index c8f8a46753..1e74c4e1b4 100644
+--- c/src/plugin/timezone/index.js
++++ i/src/plugin/timezone/index.js
+@@ -102,6 +102,10 @@ export default (o, c, d) => {
+     if (keepLocalTime) {
+       const newOffset = ins.utcOffset()
+       ins = ins.add(oldOffset - newOffset, MIN)
++    } else if (ins.$offset === 0) {
++      ins.$d = new Date(date)
++      ins.$x.$localOffset = 0
++      ins.init()
+     }
+     ins.$x.$timezone = timezone
+     return ins
+diff --git c/src/plugin/utc/index.js i/src/plugin/utc/index.js
+index f1473570b5..8be08566bc 100644
+--- c/src/plugin/utc/index.js
++++ i/src/plugin/utc/index.js
+@@ -113,8 +113,11 @@ export default (option, Dayjs, dayjs) => {
+   }
+ 
+   proto.valueOf = function () {
+-    const addedOffset = !this.$utils().u(this.$offset)
+-      ? this.$offset + (this.$x.$localOffset || this.$d.getTimezoneOffset()) : 0
++    const { u } = this.$utils()
++    const $localOffset = this.$x && this.$x.$localOffset
++    const addedOffset = !u(this.$offset)
++      ? this.$offset + (u($localOffset) ? this.$d.getTimezoneOffset() : $localOffset)
++      : 0
+     return this.$d.valueOf() - (addedOffset * MILLISECONDS_A_MINUTE)
+   }
+ 

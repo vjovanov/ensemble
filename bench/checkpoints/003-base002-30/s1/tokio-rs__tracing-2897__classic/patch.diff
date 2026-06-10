@@ -1,0 +1,46 @@
+diff --git c/tracing-attributes/src/expand.rs i/tracing-attributes/src/expand.rs
+index a92ef58aee..adf0104c55 100644
+--- c/tracing-attributes/src/expand.rs
++++ i/tracing-attributes/src/expand.rs
+@@ -350,11 +350,17 @@ fn gen_block<B: ToTokens>(
+         }
+     );
+ 
++    let force_fn_once = quote!(
++        fn __tracing_attr_force_fn_once<T, F: FnOnce() -> T>(f: F) -> T {
++            f()
++        }
++    );
++
+     match (err_event, ret_event) {
+         (Some(err_event), Some(ret_event)) => quote_spanned! {block.span()=>
+             #span
+-            #[allow(clippy::redundant_closure_call)]
+-            match (move || #block)() {
++            #force_fn_once
++            match __tracing_attr_force_fn_once(move || #block) {
+                 #[allow(clippy::unit_arg)]
+                 Ok(x) => {
+                     #ret_event;
+@@ -368,8 +374,8 @@ fn gen_block<B: ToTokens>(
+         },
+         (Some(err_event), None) => quote_spanned!(block.span()=>
+             #span
+-            #[allow(clippy::redundant_closure_call)]
+-            match (move || #block)() {
++            #force_fn_once
++            match __tracing_attr_force_fn_once(move || #block) {
+                 #[allow(clippy::unit_arg)]
+                 Ok(x) => Ok(x),
+                 Err(e) => {
+@@ -380,8 +386,8 @@ fn gen_block<B: ToTokens>(
+         ),
+         (None, Some(ret_event)) => quote_spanned!(block.span()=>
+             #span
+-            #[allow(clippy::redundant_closure_call)]
+-            let x = (move || #block)();
++            #force_fn_once
++            let x = __tracing_attr_force_fn_once(move || #block);
+             #ret_event;
+             x
+         ),

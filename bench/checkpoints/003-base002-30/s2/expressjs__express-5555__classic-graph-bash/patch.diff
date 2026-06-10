@@ -1,0 +1,13 @@
+diff --git c/lib/response.js i/lib/response.js
+index f7c94d10e7..daa75e6c49 100644
+--- c/lib/response.js
++++ i/lib/response.js
+@@ -912,6 +912,8 @@ res.location = function location(url) {
+     loc = this.req.get('Referrer') || '/';
+   }
+ 
++  loc = loc.toString();
++
+   var lowerLoc = loc.toLowerCase();
+   var encodedUrl = encodeUrl(loc);
+   if (lowerLoc.indexOf('https://') === 0 || lowerLoc.indexOf('http://') === 0) {

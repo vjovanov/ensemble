@@ -1,0 +1,29 @@
+diff --git c/lib/compress/zstd_compress.c i/lib/compress/zstd_compress.c
+index 3a48e7dcd4..13166e8d59 100644
+--- c/lib/compress/zstd_compress.c
++++ i/lib/compress/zstd_compress.c
+@@ -1466,9 +1466,21 @@ ZSTD_adjustCParams_internal(ZSTD_compressionParameters cPar,
+         cPar.windowLog = ZSTD_WINDOWLOG_ABSOLUTEMIN;  /* minimum wlog required for valid frame header */
+ 
+     if (mode == ZSTD_cpm_createCDict && ZSTD_CDictIndicesAreTagged(&cPar)) {
+-        U32 const maxShortCacheHashLog = 32 - ZSTD_SHORT_CACHE_TAG_BITS;
+-        if (cPar.hashLog > maxShortCacheHashLog) {
+-            cPar.hashLog = maxShortCacheHashLog;
++        U32 const maxShortCacheTableLog = 32 - ZSTD_SHORT_CACHE_TAG_BITS;
++        if (cPar.hashLog > maxShortCacheTableLog) {
++            cPar.hashLog = maxShortCacheTableLog;
++        }
++        if (cPar.chainLog > maxShortCacheTableLog) {
++            cPar.chainLog = maxShortCacheTableLog;
++        }
++    }
++
++    if (ZSTD_rowMatchFinderSupported(cPar.strategy)) {
++        /* Row matchfinder hashes contain an 8-bit tag, and ZSTD_hashPtr() must be
++         * called with hBits <= 32. Since rowLog >= 4, cap hashLog at 24 + 4. */
++        U32 const maxRowHashLog = 28;
++        if (cPar.hashLog > maxRowHashLog) {
++            cPar.hashLog = maxRowHashLog;
+         }
+     }
+ 

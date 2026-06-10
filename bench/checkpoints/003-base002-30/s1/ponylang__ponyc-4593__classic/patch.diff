@@ -1,0 +1,124 @@
+diff --git c/packages/cli/command.pony i/packages/cli/command.pony
+index 717bb24cb8..7925cb3518 100644
+--- c/packages/cli/command.pony
++++ i/packages/cli/command.pony
+@@ -54,6 +54,12 @@ class box Command
+     """
+     try _options(name)? else Option(OptionSpec.bool(name), false) end
+ 
++  fun is_set(name: String): Bool =>
++    """
++    Returns true if an Option by name is present.
++    """
++    _options.contains(name)
++
+   fun arg(name: String): Arg =>
+     """
+     Returns the Arg by name, defaulting to a fake Arg if unknown.
+diff --git c/packages/cli/command_parser.pony i/packages/cli/command_parser.pony
+index a5acce8eab..9c57765bfe 100644
+--- c/packages/cli/command_parser.pony
++++ i/packages/cli/command_parser.pony
+@@ -144,37 +144,15 @@ class CommandParser
+     end
+ 
+     // Fill in option values from env or from coded defaults.
+-    for os in _spec.options().values() do
+-      if not options.contains(os.name()) then
+-        // Lookup and use env vars before code defaults
+-        if envsmap.contains(os.name()) then
+-          let vs =
+-            try
+-              envsmap(os.name())?
+-            else  // TODO(cq) why is else needed? we just checked
+-              ""
+-            end
+-          let v: _Value =
+-            match _ValueParser.parse(os._typ_p(), vs)
+-            | let v: _Value => v
+-            | let se: SyntaxError => return se
+-            end
+-          options.update(os.name(), Option(os, v))
+-        else
+-          if not os.required() then
+-            options.update(os.name(), Option(os, os._default_p()))
+-          end
+-        end
+-      end
++    match _populate_options(options, envsmap)
++    | let se: SyntaxError => return se
++    | None =>
+     end
+ 
+     // Check for missing options and error if any exist.
+-    for os in _spec.options().values() do
+-      if not options.contains(os.name()) then
+-        if os.required() then
+-          return SyntaxError(os.name(), "missing value for required option")
+-        end
+-      end
++    match _check_missing_options(options)
++    | let se: SyntaxError => return se
++    | None =>
+     end
+ 
+     // Check for missing args and error if found.
+@@ -276,6 +254,58 @@ class CommandParser
+       return SyntaxError(token, "too many positional arguments")
+     end
+ 
++  fun _populate_options(
++    options: Map[String,Option] ref,
++    envsmap: Map[String, String] box)
++    : (None | SyntaxError)
++  =>
++    for os in _spec.options().values() do
++      if not options.contains(os.name()) then
++        // Lookup and use env vars before code defaults
++        if envsmap.contains(os.name()) then
++          let vs =
++            try
++              envsmap(os.name())?
++            else  // TODO(cq) why is else needed? we just checked
++              ""
++            end
++          let v: _Value =
++            match _ValueParser.parse(os._typ_p(), vs)
++            | let v: _Value => v
++            | let se: SyntaxError => return se
++            end
++          options.update(os.name(), Option(os, v))
++        else
++          if not os.required() then
++            options.update(os.name(), Option(os, os._default_p()))
++          end
++        end
++      end
++    end
++
++    match _parent
++    | let p: CommandParser box => p._populate_options(options, envsmap)
++    else
++      None
++    end
++
++  fun _check_missing_options(options: Map[String,Option] ref)
++    : (None | SyntaxError)
++  =>
++    for os in _spec.options().values() do
++      if not options.contains(os.name()) then
++        if os.required() then
++          return SyntaxError(os.name(), "missing value for required option")
++        end
++      end
++    end
++
++    match _parent
++    | let p: CommandParser box => p._check_missing_options(options)
++    else
++      None
++    end
++
+   fun _option_with_name(name: String): (OptionSpec | None) =>
+     try
+       return _spec.options()(name)?

@@ -1,0 +1,15 @@
+{
+  "model": "oca/gpt-5.5",
+  "arm": "classic-graphify",
+  "input": 43005,
+  "output": 9303,
+  "cacheRead": 710144,
+  "cacheWrite": 0,
+  "totalTokens": 762452,
+  "costUsd": 0.8492,
+  "assistantTurns": 34,
+  "exploreCalls": 0,
+  "exploreFallbacks": 0,
+  "strictOk": null,
+  "strictNote": ""
+}

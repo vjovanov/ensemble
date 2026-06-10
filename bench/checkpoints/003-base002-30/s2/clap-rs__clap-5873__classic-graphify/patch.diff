@@ -1,0 +1,48 @@
+diff --git c/clap_builder/src/parser/parser.rs i/clap_builder/src/parser/parser.rs
+index 2949c3e138..7920a45d8c 100644
+--- c/clap_builder/src/parser/parser.rs
++++ i/clap_builder/src/parser/parser.rs
+@@ -1546,7 +1546,7 @@ impl Parser<'_> {
+     fn did_you_mean_error(
+         &mut self,
+         arg: &str,
+-        matcher: &mut ArgMatcher,
++        matcher: &ArgMatcher,
+         remaining_args: &[&OsStr],
+         trailing_values: bool,
+     ) -> ClapError {
+@@ -1570,16 +1570,13 @@ impl Parser<'_> {
+             self.cmd.get_subcommands_mut(),
+         );
+ 
+-        // Add the arg to the matches to build a proper usage string
+-        if let Some((name, _)) = did_you_mean.as_ref() {
+-            if let Some(arg) = self.cmd.get_keymap().get(&name.as_ref()) {
+-                self.start_custom_arg(matcher, arg, ValueSource::CommandLine);
+-            }
+-        }
++        let suggested_arg = did_you_mean
++            .as_ref()
++            .and_then(|(name, _)| self.cmd.get_keymap().get(&name.as_ref()));
+         let did_you_mean = did_you_mean.map(|(arg, cmd)| (format!("--{arg}"), cmd));
+ 
+         let required = self.cmd.required_graph();
+-        let used: Vec<Id> = matcher
++        let mut used: Vec<Id> = matcher
+             .arg_ids()
+             .filter(|arg_id| {
+                 matcher.check_explicit(arg_id, &crate::builder::ArgPredicate::IsPresent)
+@@ -1587,6 +1584,13 @@ impl Parser<'_> {
+             .filter(|n| self.cmd.find(n).map(|a| !a.is_hide_set()).unwrap_or(true))
+             .cloned()
+             .collect();
++        // Add the arg to the usage without recording it as a parsed value.
++        if let Some(arg) = suggested_arg {
++            if !arg.is_hide_set() {
++                used.push(arg.get_id().clone());
++                used.extend(self.cmd.groups_for_arg(arg.get_id()));
++            }
++        }
+ 
+         // `did_you_mean` is a lot more likely and should cause us to skip the `--` suggestion
+         // with the one exception being that the CLI is trying to capture arguments

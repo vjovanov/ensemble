@@ -1,0 +1,40 @@
+diff --git c/src/buf/buf_impl.rs i/src/buf/buf_impl.rs
+index c44d4fb384..b8a5a71012 100644
+--- c/src/buf/buf_impl.rs
++++ i/src/buf/buf_impl.rs
+@@ -10,6 +10,15 @@ use std::io::IoSlice;
+ 
+ use alloc::boxed::Box;
+ 
++fn sign_extend(val: u64, nbytes: usize) -> i64 {
++    if nbytes == 0 {
++        return 0;
++    }
++
++    let shift = 64 - (nbytes * 8);
++    ((val << shift) as i64) >> shift
++}
++
+ macro_rules! buf_get_impl {
+     ($this:ident, $typ:tt::$conv:tt) => {{
+         const SIZE: usize = core::mem::size_of::<$typ>();
+@@ -923,7 +932,8 @@ pub trait Buf {
+     /// This function panics if there is not enough remaining data in `self`, or
+     /// if `nbytes` is greater than 8.
+     fn get_int(&mut self, nbytes: usize) -> i64 {
+-        buf_get_impl!(be => self, i64, nbytes);
++        let val = self.get_uint(nbytes);
++        sign_extend(val, nbytes)
+     }
+ 
+     /// Gets a signed n-byte integer from `self` in little-endian byte order.
+@@ -944,7 +954,8 @@ pub trait Buf {
+     /// This function panics if there is not enough remaining data in `self`, or
+     /// if `nbytes` is greater than 8.
+     fn get_int_le(&mut self, nbytes: usize) -> i64 {
+-        buf_get_impl!(le => self, i64, nbytes);
++        let val = self.get_uint_le(nbytes);
++        sign_extend(val, nbytes)
+     }
+ 
+     /// Gets a signed n-byte integer from `self` in native-endian byte order.

@@ -1,0 +1,22 @@
+diff --git c/src/execute.c i/src/execute.c
+index ae92c37317..479b6d4c15 100644
+--- c/src/execute.c
++++ i/src/execute.c
+@@ -695,11 +695,14 @@ jv jq_next(jq_state *jq) {
+         goto do_backtrack;
+       }
+       // $array | .[-1]
+-      if (jv_get_kind(k) == JV_KIND_NUMBER && jv_get_kind(t) == JV_KIND_ARRAY) {
++      if (jv_get_kind(k) == JV_KIND_NUMBER && jv_is_integer(k) && jv_get_kind(t) == JV_KIND_ARRAY) {
+         int idx = jv_number_value(k);
+         if (idx < 0) {
+-          jv_free(k);
+-          k = jv_number(jv_array_length(jv_copy(t)) + idx);
++          int nidx = jv_array_length(jv_copy(t)) + idx;
++          if (nidx >= 0) {
++            jv_free(k);
++            k = jv_number(nidx);
++          }
+         }
+       }
+       jv v = jv_get(t, jv_copy(k));

@@ -1,0 +1,47 @@
+diff --git c/packages/compiler-sfc/src/script/resolveType.ts i/packages/compiler-sfc/src/script/resolveType.ts
+index ee0a723991..3d92e7945f 100644
+--- c/packages/compiler-sfc/src/script/resolveType.ts
++++ i/packages/compiler-sfc/src/script/resolveType.ts
+@@ -1070,17 +1070,21 @@ function loadTSConfig(
+   configPath: string,
+   ts: typeof TS,
+   fs: FS,
++  seen = new Set<string>(),
+ ): TS.ParsedCommandLine[] {
+-  // The only case where `fs` is NOT `ts.sys` is during tests.
+-  // parse config host requires an extra `readDirectory` method
+-  // during tests, which is stubbed.
+-  const parseConfigHost = __TEST__
+-    ? {
+-        ...fs,
+-        useCaseSensitiveFileNames: true,
+-        readDirectory: () => [],
+-      }
+-    : ts.sys
++  const normalizedConfigPath = normalizePath(configPath)
++  if (seen.has(normalizedConfigPath)) {
++    return []
++  }
++  seen.add(normalizedConfigPath)
++  // We only need compiler options and project references for resolving types.
++  // Avoid directory traversal because large / cyclic workspaces can overflow
++  // TypeScript's directory walker while expanding include patterns.
++  const parseConfigHost = {
++    ...fs,
++    useCaseSensitiveFileNames: ts.sys.useCaseSensitiveFileNames,
++    readDirectory: () => [],
++  }
+   const config = ts.parseJsonConfigFileContent(
+     ts.readConfigFile(configPath, fs.readFile).config,
+     parseConfigHost,
+@@ -1095,8 +1099,8 @@ function loadTSConfig(
+       if (!fs.fileExists(refPath)) {
+         continue
+       }
+-      tsConfigRefMap.set(refPath, configPath)
+-      res.unshift(...loadTSConfig(refPath, ts, fs))
++      tsConfigRefMap.set(normalizePath(refPath), normalizedConfigPath)
++      res.unshift(...loadTSConfig(refPath, ts, fs, seen))
+     }
+   }
+   return res

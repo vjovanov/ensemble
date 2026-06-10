@@ -1,0 +1,21 @@
+diff --git c/crates/nu-command/src/system/run_external.rs i/crates/nu-command/src/system/run_external.rs
+index 70a00bc815..a672a3152c 100644
+--- c/crates/nu-command/src/system/run_external.rs
++++ i/crates/nu-command/src/system/run_external.rs
+@@ -180,12 +180,15 @@ impl Command for External {
+         }
+ 
+         // Wrap the output into a `PipelineData::ByteStream`.
+-        let child = ChildProcess::new(
++        let mut child = ChildProcess::new(
+             child,
+             merged_stream,
+             matches!(stderr, OutDest::Pipe),
+             call.head,
+         )?;
++        if matches!(stdout, OutDest::Pipe) {
++            child.set_exit_code(0);
++        }
+         Ok(PipelineData::ByteStream(
+             ByteStream::child(child, call.head),
+             None,
