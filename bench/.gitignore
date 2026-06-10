@@ -13,3 +13,4 @@
 /eval/repos/
 /eval/dataset.jsonl
 /eval/config.*.json
+/base001-ids.json

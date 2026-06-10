@@ -5,6 +5,8 @@ What we tried and what worked. One row per experiment, newest first. Maintained 
 
 | date | experiment | arms · instances | outcome | decision |
 |---|---|---|---|---|
+| 2026-06-10 | **sidekick savings analysis** (ideal input+cached savings of explore/bash/compile-fix from classic) | classic · 11 passing | **analyzed** — explore |---|---|---|---|---|
+.76/36% (mostly cacheRead) is the lever; bash $0.33, compile-fix similar; graph-trim is the explore multiplier | [docs/analysis/sidekick-savings.md] |
 | 2026-06-10 | **bash success-verdict digest** (digest broad successful build/test output; out-of-band raw capture) | classic-graph-bash · 5 build-heavy × 3 seeds vs base/001 | **adopted (minor)** — no regression; cost-neutral & digest never fired (lead redirects build output itself, so nothing broad to digest). Safety net for unredirected floods; bash lever is ~$0.33 vs explore $1.76 | §DF-014-bash-success-verdict-digest |
 | 2026-06-10 | **DF-010 case-set surfacing** (exp off base/001) | classic-graph-bash · jq-3238/simdjson + controls × 3 seeds | **passed (partial)** — jq-3238 0/3→1/3, no regression; PASS gate. Pending full-run-before-merge | §DF-010-explore-surface-test-caseset |
 | 2026-06-09 | **graph-bash deep failure analysis** (root-cause every graph-bash failure on base/001) | classic-graph-bash · jq-3238/nushell/simdjson | **analyzed** — unifying cause = *subset-fix* (fix covers the case seen, not the case-set graded). nushell single-chokepoint (not multi-site); simdjson content-not-location | §DF-010-explore-surface-test-caseset, §DF-011-explore-shared-chokepoint, §DF-012-lead-hermetic-verify, §DF-013-graphify-amalgamation-awareness |
