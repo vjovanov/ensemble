@@ -164,6 +164,23 @@ framing makes that one run comparable, and it lands as the most expensive arm (i
 so it isn't a like-for-like fix cost). The historical single-seed benchmarks-20 milestone (graph-bash
 11/20 ⊇ classic 8/20) is in `docs/experiments.md`.
 
+### Next experiments
+
+Full ledger + rationale: [`docs/experiments.md`](../docs/experiments.md). Given the base/002 data we run
+**one focused experiment**, with the rest reprioritized:
+
+- **Active — [DF-015: explore returns source on code-intent + noise-node exclusion](../docs/decisions/functional/DF-015-explore-return-source-on-code-intent.md)**
+  (branch `exp/explore-source-on-intent`, off `base/002-30`). Closes graph-bash's two cost regressions
+  (`simdjson-2178` +30%, `jq-3238` +33%): make the explore sidekick return *code* — not BFS node-name
+  dumps — when the lead asks for source, and drop vendored/test/generated graph nodes.
+- **Shelved** — [DA-002 compile-test-fix sidekick](../docs/decisions/architectural/DA-002-compile-test-fix-sidekick.md):
+  the data falsifies its premise (`build/test` is ~$0.4/run, not the lever).
+  [DF-013 amalgamation-awareness](../docs/decisions/functional/DF-013-graphify-amalgamation-awareness.md) is folded into DF-015.
+- **Deferred (correctness track)** — [DF-010 case-set surfacing](../docs/decisions/functional/DF-010-explore-surface-test-caseset.md),
+  [DF-011 shared-chokepoint](../docs/decisions/functional/DF-011-explore-shared-chokepoint.md),
+  [DF-012 lead hermetic verify](../docs/decisions/functional/DF-012-lead-hermetic-verify.md): target the
+  lone correctness regression (`logstash-17021`), to revisit after DF-015.
+
 ## Benchmark Arms
 
 | Arm | Flags | What it isolates |
