@@ -55,6 +55,7 @@ const codexGraded = winIds.length > 0 && winIds.every((id) => valid(readM(`raw/$
 if (codexGraded) ARMS.push(CODEX);
 
 const mean = (arr, f) => arr.length ? sum(arr, f) / arr.length : 0;   // per-run: divide by seed count
+const median = (a) => { if (!a.length) return 0; const s = [...a].sort((x, y) => x - y), m = s.length >> 1; return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2; };
 const cell = (id, a) => {
   const runs = runsFor(id, a.key);
   return { runs, cost: mean(runs, (r) => r.cost), in$: mean(runs, (r) => r.in$), cr$: mean(runs, (r) => r.cr$), out$: mean(runs, (r) => r.out$), ok: resolved(id, a.key) === true, ran: runs.length > 0 };
@@ -136,7 +137,8 @@ function perBench({ file, title, sub }) {
   const Lm = 150, R = 18, T = 80, barH = 5, intra = 1, groupGap = 8;
   const groupH = ARMS.length * barH + (ARMS.length - 1) * intra + groupGap;
   const plotW = 860 - Lm - R, H = T + W * groupH + 16;
-  const xmax = Math.ceil(Math.max(...rows.flatMap((r) => r.cells.map((c) => c.cost)), 0.1) * 10) / 10;
+  // x covers every individual run (dot), so nothing clips beyond the median bar.
+  const xmax = Math.ceil(Math.max(...rows.flatMap((r) => r.cells.flatMap((c) => c.runs.map((rn) => rn.cost))), 0.1) * 10) / 10;
   const xticks = Math.max(1, Math.round(xmax / 0.5)), x = (v) => Lm + plotW * v / xmax;
   let s = `<svg xmlns="http://www.w3.org/2000/svg" width="860" height="${H}" viewBox="0 0 860 ${H}" font-family="system-ui,Segoe UI,Helvetica,Arial,sans-serif">
 <rect width="860" height="${H}" fill="#ffffff"/>
@@ -155,7 +157,8 @@ function perBench({ file, title, sub }) {
     ARMS.forEach((a, i) => {
       const c = r.cells[i]; if (!c.ok) return;
       const by = gTop + i * (barH + intra);
-      s += `<rect x="${Lm}" y="${by.toFixed(1)}" width="${Math.max(0.8, x(c.cost) - Lm).toFixed(1)}" height="${barH}" fill="${a.color}"/>`
+      const bar = median(c.runs.map((rn) => rn.cost));   // bar = median over seeds; dots = each seed
+      s += `<rect x="${Lm}" y="${by.toFixed(1)}" width="${Math.max(0.8, x(bar) - Lm).toFixed(1)}" height="${barH}" fill="${a.color}"/>`
         + c.runs.map((rn) => `<circle cx="${x(rn.cost).toFixed(1)}" cy="${(by + barH / 2).toFixed(1)}" r="2.3" fill="${a.color}" stroke="#222" stroke-width="0.6"/>`).join("");
     });
   });
@@ -170,7 +173,7 @@ summaryBars({ file: "plots/tokens.svg", mode: "tok",
   sub: `same total as the cost graph; per-run spend over the ${W} benchmarks by token type (output is $30/Mtok)` });
 perBench({ file: "plots/cost-vs-classic.svg",
   title: "Per-benchmark $ per run on classic's wins",
-  sub: `the ${W} benchmarks classic resolved; bar = $ per run (avg over seeds), dot = each seed (only arms that solved it)` });
+  sub: `the ${W} benchmarks classic resolved; bar = median over seeds, dot = each seed run (only arms that solved it)` });
 
 console.log(`wrote cost.svg + tokens.svg + cost-vs-classic.svg ($ per run over classic's ${W} wins); ${SEED_DIRS.length} seed(s)`);
 ARMS.forEach((a, i) => console.log(`  ${a.label.padEnd(20)} total $${totals[i].cost.toFixed(2)}  (in $${totals[i].in$.toFixed(2)} + cache $${totals[i].cr$.toFixed(2)})  solved ${totals[i].n}/${W}  ran ${totals[i].ran}/${W}`));
