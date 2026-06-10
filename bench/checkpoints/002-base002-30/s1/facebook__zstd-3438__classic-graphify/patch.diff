@@ -1,0 +1,120 @@
+diff --git c/lib/compress/zstd_compress.c i/lib/compress/zstd_compress.c
+index 3a48e7dcd4..cf89b4ac88 100644
+--- c/lib/compress/zstd_compress.c
++++ i/lib/compress/zstd_compress.c
+@@ -303,6 +303,22 @@ static int ZSTD_CDictIndicesAreTagged(const ZSTD_compressionParameters* const cP
+     return cParams->strategy == ZSTD_fast || cParams->strategy == ZSTD_dfast;
+ }
+ 
++static void ZSTD_capCParamsForCDict(ZSTD_compressionParameters* cParams) {
++    if (ZSTD_CDictIndicesAreTagged(cParams)) {
++        U32 const maxShortCacheLog = 32 - ZSTD_SHORT_CACHE_TAG_BITS;
++        if (cParams->hashLog > maxShortCacheLog) cParams->hashLog = maxShortCacheLog;
++        if (cParams->chainLog > maxShortCacheLog) cParams->chainLog = maxShortCacheLog;
++    }
++}
++
++static void ZSTD_capCParamsForRowMatchFinder(ZSTD_compressionParameters* cParams,
++                                             ZSTD_paramSwitch_e useRowMatchFinder) {
++    if (ZSTD_rowMatchFinderUsed(cParams->strategy, useRowMatchFinder)) {
++        U32 const maxRowHashLog = 32 - ZSTD_ROW_HASH_TAG_BITS + 4;
++        if (cParams->hashLog > maxRowHashLog) cParams->hashLog = maxRowHashLog;
++    }
++}
++
+ static ZSTD_CCtx_params ZSTD_makeCCtxParamsFromCParams(
+         ZSTD_compressionParameters cParams)
+ {
+@@ -1465,11 +1481,8 @@ ZSTD_adjustCParams_internal(ZSTD_compressionParameters cPar,
+     if (cPar.windowLog < ZSTD_WINDOWLOG_ABSOLUTEMIN)
+         cPar.windowLog = ZSTD_WINDOWLOG_ABSOLUTEMIN;  /* minimum wlog required for valid frame header */
+ 
+-    if (mode == ZSTD_cpm_createCDict && ZSTD_CDictIndicesAreTagged(&cPar)) {
+-        U32 const maxShortCacheHashLog = 32 - ZSTD_SHORT_CACHE_TAG_BITS;
+-        if (cPar.hashLog > maxShortCacheHashLog) {
+-            cPar.hashLog = maxShortCacheHashLog;
+-        }
++    if (mode == ZSTD_cpm_createCDict) {
++        ZSTD_capCParamsForCDict(&cPar);
+     }
+ 
+     return cPar;
+@@ -1962,6 +1975,7 @@ static size_t ZSTD_resetCCtx_internal(ZSTD_CCtx* zc,
+     params = &zc->appliedParams;
+ 
+     assert(params->useRowMatchFinder != ZSTD_ps_auto);
++    ZSTD_capCParamsForRowMatchFinder(&zc->appliedParams.cParams, params->useRowMatchFinder);
+     assert(params->useBlockSplitter != ZSTD_ps_auto);
+     assert(params->ldmParams.enableLdm != ZSTD_ps_auto);
+     assert(params->maxBlockSize != 0);
+@@ -5134,6 +5148,8 @@ static size_t ZSTD_initCDict_internal(
+ {
+     DEBUGLOG(3, "ZSTD_initCDict_internal (dictContentType:%u)", (unsigned)dictContentType);
+     assert(!ZSTD_checkCParams(params.cParams));
++    ZSTD_capCParamsForCDict(&params.cParams);
++    ZSTD_capCParamsForRowMatchFinder(&params.cParams, params.useRowMatchFinder);
+     cdict->matchState.cParams = params.cParams;
+     cdict->matchState.dedicatedDictSearch = params.enableDedicatedDictSearch;
+     if ((dictLoadMethod == ZSTD_dlm_byRef) || (!dictBuffer) || (!dictSize)) {
+@@ -5186,6 +5202,8 @@ static ZSTD_CDict* ZSTD_createCDict_advanced_internal(size_t dictSize,
+                                       ZSTD_customMem customMem)
+ {
+     if ((!customMem.customAlloc) ^ (!customMem.customFree)) return NULL;
++    ZSTD_capCParamsForCDict(&cParams);
++    ZSTD_capCParamsForRowMatchFinder(&cParams, useRowMatchFinder);
+ 
+     {   size_t const workspaceSize =
+             ZSTD_cwksp_alloc_size(sizeof(ZSTD_CDict)) +
+@@ -5337,16 +5355,21 @@ const ZSTD_CDict* ZSTD_initStaticCDict(
+                                  ZSTD_compressionParameters cParams)
+ {
+     ZSTD_paramSwitch_e const useRowMatchFinder = ZSTD_resolveRowMatchFinderMode(ZSTD_ps_auto, &cParams);
+-    /* enableDedicatedDictSearch == 1 ensures matchstate is not too small in case this CDict will be used for DDS + row hash */
+-    size_t const matchStateSize = ZSTD_sizeof_matchState(&cParams, useRowMatchFinder, /* enableDedicatedDictSearch */ 1, /* forCCtx */ 0);
+-    size_t const neededSize = ZSTD_cwksp_alloc_size(sizeof(ZSTD_CDict))
+-                            + (dictLoadMethod == ZSTD_dlm_byRef ? 0
+-                               : ZSTD_cwksp_alloc_size(ZSTD_cwksp_align(dictSize, sizeof(void*))))
+-                            + ZSTD_cwksp_alloc_size(HUF_WORKSPACE_SIZE)
+-                            + matchStateSize;
++    size_t matchStateSize;
++    size_t neededSize;
+     ZSTD_CDict* cdict;
+     ZSTD_CCtx_params params;
+ 
++    ZSTD_capCParamsForCDict(&cParams);
++    ZSTD_capCParamsForRowMatchFinder(&cParams, useRowMatchFinder);
++    /* enableDedicatedDictSearch == 1 ensures matchstate is not too small in case this CDict will be used for DDS + row hash */
++    matchStateSize = ZSTD_sizeof_matchState(&cParams, useRowMatchFinder, /* enableDedicatedDictSearch */ 1, /* forCCtx */ 0);
++    neededSize = ZSTD_cwksp_alloc_size(sizeof(ZSTD_CDict))
++               + (dictLoadMethod == ZSTD_dlm_byRef ? 0
++                  : ZSTD_cwksp_alloc_size(ZSTD_cwksp_align(dictSize, sizeof(void*))))
++               + ZSTD_cwksp_alloc_size(HUF_WORKSPACE_SIZE)
++               + matchStateSize;
++
+     if ((size_t)workspace & 7) return NULL;  /* 8-aligned */
+ 
+     {
+diff --git c/lib/compress/zstd_compress_internal.h i/lib/compress/zstd_compress_internal.h
+index 3b888acfa9..fc7aab8bdb 100644
+--- c/lib/compress/zstd_compress_internal.h
++++ i/lib/compress/zstd_compress_internal.h
+@@ -212,6 +212,7 @@ typedef struct {
+ typedef struct ZSTD_matchState_t ZSTD_matchState_t;
+ 
+ #define ZSTD_ROW_HASH_CACHE_SIZE 8       /* Size of prefetching hash cache for row-based matchfinder */
++#define ZSTD_ROW_HASH_TAG_BITS 8         /* Number of bits to use for the row-based matchfinder tag */
+ 
+ struct ZSTD_matchState_t {
+     ZSTD_window_t window;   /* State for window round buffer management */
+diff --git c/lib/compress/zstd_lazy.c i/lib/compress/zstd_lazy.c
+index 810bf011cf..a247342729 100644
+--- c/lib/compress/zstd_lazy.c
++++ i/lib/compress/zstd_lazy.c
+@@ -759,7 +759,6 @@ size_t ZSTD_HcFindBestMatch(
+ ***********************************/
+ /* Constants for row-based hash */
+ #define ZSTD_ROW_HASH_TAG_OFFSET 16     /* byte offset of hashes in the match state's tagTable from the beginning of a row */
+-#define ZSTD_ROW_HASH_TAG_BITS 8        /* nb bits to use for the tag */
+ #define ZSTD_ROW_HASH_TAG_MASK ((1u << ZSTD_ROW_HASH_TAG_BITS) - 1)
+ #define ZSTD_ROW_HASH_MAX_ENTRIES 64    /* absolute maximum number of entries per row, for all configurations */
+ 

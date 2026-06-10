@@ -1,0 +1,46 @@
+diff --git c/clap_builder/src/parser/arg_matcher.rs i/clap_builder/src/parser/arg_matcher.rs
+index 065165d3a4..2216630e7e 100644
+--- c/clap_builder/src/parser/arg_matcher.rs
++++ i/clap_builder/src/parser/arg_matcher.rs
+@@ -13,7 +13,7 @@ use crate::util::FlatMap;
+ use crate::util::Id;
+ use crate::INTERNAL_ERROR_MSG;
+ 
+-#[derive(Debug, Default)]
++#[derive(Debug, Clone, Default)]
+ pub(crate) struct ArgMatcher {
+     matches: ArgMatches,
+     pending: Option<PendingArg>,
+diff --git c/clap_builder/src/parser/parser.rs i/clap_builder/src/parser/parser.rs
+index 2949c3e138..b4ccf1f1b5 100644
+--- c/clap_builder/src/parser/parser.rs
++++ i/clap_builder/src/parser/parser.rs
+@@ -1546,7 +1546,7 @@ impl Parser<'_> {
+     fn did_you_mean_error(
+         &mut self,
+         arg: &str,
+-        matcher: &mut ArgMatcher,
++        matcher: &ArgMatcher,
+         remaining_args: &[&OsStr],
+         trailing_values: bool,
+     ) -> ClapError {
+@@ -1570,12 +1570,17 @@ impl Parser<'_> {
+             self.cmd.get_subcommands_mut(),
+         );
+ 
+-        // Add the arg to the matches to build a proper usage string
++        // Add the suggested arg to a copy of the matches to build a proper usage string
++        // without affecting the matches returned when the error is ignored.
++        let mut usage_matcher = None;
+         if let Some((name, _)) = did_you_mean.as_ref() {
+             if let Some(arg) = self.cmd.get_keymap().get(&name.as_ref()) {
+-                self.start_custom_arg(matcher, arg, ValueSource::CommandLine);
++                let mut matcher = matcher.clone();
++                self.start_custom_arg(&mut matcher, arg, ValueSource::CommandLine);
++                usage_matcher = Some(matcher);
+             }
+         }
++        let matcher = usage_matcher.as_ref().unwrap_or(matcher);
+         let did_you_mean = did_you_mean.map(|(arg, cmd)| (format!("--{arg}"), cmd));
+ 
+         let required = self.cmd.required_graph();

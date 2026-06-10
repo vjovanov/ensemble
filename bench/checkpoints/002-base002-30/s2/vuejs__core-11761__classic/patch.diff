@@ -1,0 +1,16 @@
+diff --git c/packages/reactivity/src/arrayInstrumentations.ts i/packages/reactivity/src/arrayInstrumentations.ts
+index 6cf7602eca..7c26248e0e 100644
+--- c/packages/reactivity/src/arrayInstrumentations.ts
++++ i/packages/reactivity/src/arrayInstrumentations.ts
+@@ -244,7 +244,10 @@ function apply(
+   const methodFn = arr[method]
+   // @ts-expect-error
+   if (methodFn !== arrayProto[method]) {
+-    const result = methodFn.apply(arr, args)
++    // When the user has extended the array method, calling it with the raw
++    // array would make any `super` calls inside the method access raw values
++    // (e.g. `super.find(...)`), so item property reads would not be tracked.
++    const result = methodFn.apply(self, args)
+     return needsWrap ? toReactive(result) : result
+   }
+ 

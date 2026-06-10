@@ -1,0 +1,27 @@
+diff --git c/src/plugin/utc/index.js i/src/plugin/utc/index.js
+index f1473570b5..4239256ca7 100644
+--- c/src/plugin/utc/index.js
++++ i/src/plugin/utc/index.js
+@@ -137,6 +137,22 @@ export default (option, Dayjs, dayjs) => {
+     }
+     return oldToDate.call(this)
+   }
++
++  const oldClone = proto.clone
++  proto.clone = function () {
++    const ins = oldClone.call(this)
++    if (!this.$utils().u(this.$offset)) {
++      ins.$y = this.$y
++      ins.$M = this.$M
++      ins.$D = this.$D
++      ins.$W = this.$W
++      ins.$H = this.$H
++      ins.$m = this.$m
++      ins.$s = this.$s
++      ins.$ms = this.$ms
++    }
++    return ins
++  }
+   const oldDiff = proto.diff
+   proto.diff = function (input, units, float) {
+     if (input && this.$u === input.$u) {

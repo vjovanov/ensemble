@@ -1,0 +1,13 @@
+diff --git c/packages/reactivity/src/dep.ts i/packages/reactivity/src/dep.ts
+index 4ce73ac995..7283f11cf1 100644
+--- c/packages/reactivity/src/dep.ts
++++ i/packages/reactivity/src/dep.ts
+@@ -22,6 +22,8 @@ export let globalVersion = 0
+  * @internal
+  */
+ export class Dep {
++  readonly __v_skip: true = true
++
+   version = 0
+   /**
+    * Link between this dep and the current active effect

@@ -1,0 +1,20 @@
+diff --git c/src/plugin/timezone/index.js i/src/plugin/timezone/index.js
+index c8f8a46753..db13bb6d8e 100644
+--- c/src/plugin/timezone/index.js
++++ i/src/plugin/timezone/index.js
+@@ -97,8 +97,14 @@ export default (o, c, d) => {
+     const date = this.toDate()
+     const target = date.toLocaleString('en-US', { timeZone: timezone })
+     const diff = Math.round((date - new Date(target)) / 1000 / 60)
++    const targetOffset = (-Math.round(date.getTimezoneOffset() / 15) * 15) - diff
+     let ins = d(target).$set(MS, this.$ms)
+-      .utcOffset((-Math.round(date.getTimezoneOffset() / 15) * 15) - diff, true)
++      .utcOffset(targetOffset, true)
++    if (targetOffset === 0) {
++      ins.$d = new Date(ins.valueOf())
++      delete ins.$offset
++      ins.init()
++    }
+     if (keepLocalTime) {
+       const newOffset = ins.utcOffset()
+       ins = ins.add(oldOffset - newOffset, MIN)

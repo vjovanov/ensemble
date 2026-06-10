@@ -1,0 +1,43 @@
+diff --git c/crates/nu-command/src/strings/detect_columns.rs i/crates/nu-command/src/strings/detect_columns.rs
+index 23858d9e49..717670c668 100644
+--- c/crates/nu-command/src/strings/detect_columns.rs
++++ i/crates/nu-command/src/strings/detect_columns.rs
+@@ -168,7 +168,7 @@ fn guess_width(
+     use super::guess_width::GuessWidth;
+     let input_span = input.span().unwrap_or(call.head);
+ 
+-    let mut input = input.collect_string("", &args.config)?;
++    let mut input = collect_string(input, &args.config)?;
+     if let Some(rows) = args.num_rows_to_skip {
+         input = input.lines().skip(rows).map(|x| x.to_string()).join("\n");
+     }
+@@ -240,7 +240,7 @@ fn detect_columns(
+     args: Arguments,
+ ) -> Result<PipelineData, ShellError> {
+     let name_span = call.head;
+-    let input = input.collect_string("", &args.config)?;
++    let input = collect_string(input, &args.config)?;
+ 
+     let input: Vec<_> = input
+         .lines()
+@@ -325,6 +325,20 @@ fn detect_columns(
+     }
+ }
+ 
++fn collect_string(input: PipelineData, config: &Config) -> Result<String, ShellError> {
++    match input {
++        PipelineData::ByteStream(stream, ..) if stream.type_().is_string_coercible() => stream
++            .lines()
++            .map(|lines| {
++                lines
++                    .collect::<Result<Vec<_>, _>>()
++                    .map(|lines| lines.join("\n"))
++            })
++            .unwrap_or_else(|| Ok(String::new())),
++        input => input.collect_string("", config),
++    }
++}
++
+ pub fn find_columns(input: &str) -> Vec<Spanned<String>> {
+     let mut chars = input.char_indices().peekable();
+     let mut output = vec![];

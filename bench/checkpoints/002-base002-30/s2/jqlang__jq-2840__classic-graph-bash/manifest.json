@@ -1,0 +1,18 @@
+{
+  "instance": "jqlang__jq-2840",
+  "arm": "classic-graph-bash",
+  "language": "c",
+  "commit": "74f5feaf26410c7190d989f578d5c991d9e8c54f",
+  "dirty": true,
+  "model": "oca/gpt-5.5",
+  "provider": "OCA",
+  "exploration": "sidekick",
+  "require_graph": true,
+  "bash_output_summary": true,
+  "explore_debug": "full",
+  "tool_calls": {
+    "lead": "session/*.jsonl",
+    "sidekick": "explore-debug.jsonl"
+  },
+  "prompts_dir": "prompts/"
+}

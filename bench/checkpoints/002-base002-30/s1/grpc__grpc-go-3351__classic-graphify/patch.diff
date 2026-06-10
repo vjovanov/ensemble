@@ -1,0 +1,33 @@
+diff --git c/balancer/grpclb/grpclb_remote_balancer.go i/balancer/grpclb/grpclb_remote_balancer.go
+index e70ce75007..7a5b7a18be 100644
+--- c/balancer/grpclb/grpclb_remote_balancer.go
++++ i/balancer/grpclb/grpclb_remote_balancer.go
+@@ -93,6 +93,18 @@ func (lb *lbBalancer) processServerList(l *lbpb.ServerList) {
+ 	lb.refreshSubConns(backendAddrs, false, lb.usePickFirst)
+ }
+ 
++// processFallbackResponse updates balancer state to use the fallback backends
++// provided by the resolver.
++func (lb *lbBalancer) processFallbackResponse() {
++	if grpclog.V(2) {
++		grpclog.Infof("lbBalancer: processing fallback response")
++	}
++	lb.mu.Lock()
++	defer lb.mu.Unlock()
++
++	lb.refreshSubConns(lb.resolvedBackendAddrs, true, lb.usePickFirst)
++}
++
+ // refreshSubConns creates/removes SubConns with backendAddrs, and refreshes
+ // balancer state and picker.
+ //
+@@ -278,6 +290,9 @@ func (ccw *remoteBalancerCCWrapper) readServerList(s *balanceLoadClientStream) e
+ 		if serverList := reply.GetServerList(); serverList != nil {
+ 			ccw.lb.processServerList(serverList)
+ 		}
++		if fallback := reply.GetFallbackResponse(); fallback != nil {
++			ccw.lb.processFallbackResponse()
++		}
+ 	}
+ }
+ 

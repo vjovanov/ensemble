@@ -1,0 +1,109 @@
+diff --git c/api/index.js i/api/index.js
+index a3d9f2a9c0..6d909dbab7 100644
+--- c/api/index.js
++++ i/api/index.js
+@@ -37,6 +37,7 @@ export default async (req, res) => {
+     number_format,
+     border_color,
+     rank_icon,
++    show,
+     show_total_reviews,
+   } = req.query;
+   res.setHeader("Content-Type", "image/svg+xml");
+@@ -96,6 +97,7 @@ export default async (req, res) => {
+         locale: locale ? locale.toLowerCase() : null,
+         disable_animations: parseBoolean(disable_animations),
+         rank_icon,
++        show: parseArray(show),
+         show_total_reviews: parseBoolean(show_total_reviews),
+       }),
+     );
+diff --git c/readme.md i/readme.md
+index 4c15007112..dbebe5c4a4 100644
+--- c/readme.md
++++ i/readme.md
+@@ -88,6 +88,7 @@ Please visit [this link](https://give.do/fundraisers/stand-beside-the-victims-of
+ 
+ - [GitHub Stats Card](#github-stats-card)
+     - [Hiding individual stats](#hiding-individual-stats)
++    - [Showing additional individual stats](#showing-additional-individual-stats)
+     - [Showing icons](#showing-icons)
+     - [Themes](#themes)
+     - [Customization](#customization)
+@@ -149,6 +150,16 @@ You can pass a query parameter `&hide=` to hide any specific stats with comma-se
+ ![Anurag's GitHub stats](https://github-readme-stats.vercel.app/api?username=anuraghazra&hide=contribs,prs)
+ ```
+ 
++### Showing additional individual stats
++
++You can pass a query parameter `&show=` to show any additional stats with comma-separated values.
++
++> Options: `&show=reviews`
++
++```md
++![Anurag's GitHub stats](https://github-readme-stats.vercel.app/api?username=anuraghazra&show=reviews)
++```
++
+ ### Showing icons
+ 
+ To enable icons, you can pass `&show_icons=true` in the query param, like so:
+@@ -306,7 +317,7 @@ You can provide multiple comma-separated values in the bg_color option to render
+ -   `disable_animations` - Disables all animations in the card _(boolean)_. Default: `false`.
+ -   `ring_color` - Color of the rank circle _(hex color)_. Defaults to the theme ring color if it exists and otherwise the title color.
+ -   `number_format` - Switch between two available formats for displaying the card values `short` (i.e. `6.6k`) and `long` (i.e. `6626`). Default: `short`.
+--   `show_total_reviews` - Show total PR reviews _(boolean)_. Default: `false`.
++-   `show` - Shows [additional items](#showing-additional-individual-stats) on stats _(Comma-separated values)_. Default: `[] (blank array)`.
+ 
+ > **Note**
+ > When hide_rank=`true`, the minimum card width is 270 px + the title length and padding.
+diff --git c/src/cards/stats-card.js i/src/cards/stats-card.js
+index 9b5763e848..455418b274 100644
+--- c/src/cards/stats-card.js
++++ i/src/cards/stats-card.js
+@@ -112,6 +112,7 @@ const renderStatsCard = (stats = {}, options = { hide: [] }) => {
+     locale,
+     disable_animations = false,
+     rank_icon = "default",
++    show = [],
+     show_total_reviews = false,
+   } = options;
+ 
+@@ -161,7 +162,7 @@ const renderStatsCard = (stats = {}, options = { hide: [] }) => {
+     id: "prs",
+   };
+ 
+-  if (show_total_reviews) {
++  if (show.includes("reviews") || show_total_reviews) {
+     STATS.reviews = {
+       icon: icons.reviews,
+       label: i18n.t("statcard.reviews"),
+diff --git c/src/cards/types.d.ts i/src/cards/types.d.ts
+index cec7b7f705..8663b2da56 100644
+--- c/src/cards/types.d.ts
++++ i/src/cards/types.d.ts
+@@ -27,6 +27,7 @@ export type StatCardOptions = CommonOptions & {
+   ring_color: string;
+   text_bold: boolean;
+   rank_icon: RankIcon;
++  show: string[];
+   show_total_reviews: boolean;
+ };
+ 
+diff --git c/src/common/utils.js i/src/common/utils.js
+index 3e77731738..5f49ff2edd 100644
+--- c/src/common/utils.js
++++ i/src/common/utils.js
+@@ -101,7 +101,12 @@ const parseBoolean = (value) => {
+  */
+ const parseArray = (str) => {
+   if (!str) return [];
+-  return str.split(",");
++
++  const list = str.replace(/^\[(.*)\]$/, "$1");
++  return list
++    .split(",")
++    .map((item) => item.trim())
++    .filter(Boolean);
+ };
+ 
+ /**

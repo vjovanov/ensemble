@@ -1,0 +1,18 @@
+{
+  "instance": "googlecontainertools__jib-4144",
+  "arm": "classic-graph-bash",
+  "language": "java",
+  "commit": "430d2e684aff7b1c740f9ba0aa56343771310cff",
+  "dirty": true,
+  "model": "oca/gpt-5.5",
+  "provider": "OCA",
+  "exploration": "sidekick",
+  "require_graph": true,
+  "bash_output_summary": true,
+  "explore_debug": "full",
+  "tool_calls": {
+    "lead": "session/*.jsonl",
+    "sidekick": "explore-debug.jsonl"
+  },
+  "prompts_dir": "prompts/"
+}

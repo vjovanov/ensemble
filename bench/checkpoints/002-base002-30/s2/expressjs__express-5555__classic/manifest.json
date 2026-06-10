@@ -1,0 +1,18 @@
+{
+  "instance": "expressjs__express-5555",
+  "arm": "classic",
+  "language": "js",
+  "commit": "33d228dc7032341dcf65d5ef5d55ead12a4a2311",
+  "dirty": true,
+  "model": "oca/gpt-5.5",
+  "provider": "OCA",
+  "exploration": "classic",
+  "require_graph": false,
+  "bash_output_summary": false,
+  "explore_debug": "off",
+  "tool_calls": {
+    "lead": "session/*.jsonl",
+    "sidekick": null
+  },
+  "prompts_dir": "prompts/"
+}

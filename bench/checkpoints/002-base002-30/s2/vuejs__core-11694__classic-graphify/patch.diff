@@ -1,0 +1,63 @@
+diff --git c/packages/reactivity/src/baseHandlers.ts i/packages/reactivity/src/baseHandlers.ts
+index 8f21e35400..68734b4d9c 100644
+--- c/packages/reactivity/src/baseHandlers.ts
++++ i/packages/reactivity/src/baseHandlers.ts
+@@ -107,6 +107,10 @@ class BaseReactiveHandler implements ProxyHandler<Target> {
+       return res
+     }
+ 
++    if (!isReadonly && isRef(target) && key === 'value') {
++      return res
++    }
++
+     if (!isReadonly) {
+       track(target, TrackOpTypes.GET, key)
+     }
+@@ -142,6 +146,10 @@ class MutableReactiveHandler extends BaseReactiveHandler {
+     value: unknown,
+     receiver: object,
+   ): boolean {
++    if (isRef(target) && key === 'value') {
++      return Reflect.set(target, key, value, target)
++    }
++
+     let oldValue = target[key]
+     if (!this._isShallow) {
+       const isOldValueReadonly = isReadonly(oldValue)
+@@ -165,7 +173,14 @@ class MutableReactiveHandler extends BaseReactiveHandler {
+       isArray(target) && isIntegerKey(key)
+         ? Number(key) < target.length
+         : hasOwn(target, key)
+-    const result = Reflect.set(target, key, value, receiver)
++    const result = Reflect.set(
++      target,
++      key,
++      value,
++      // if this is a proxy wrapping a ref, invoke class setters using the raw
++      // ref as receiver so internal ref fields aren't proxied
++      isRef(target) ? target : receiver,
++    )
+     // don't trigger if target is something up in the prototype chain of original
+     if (target === toRaw(receiver)) {
+       if (!hadKey) {
+diff --git c/packages/reactivity/src/dep.ts i/packages/reactivity/src/dep.ts
+index 4ce73ac995..54fa21a344 100644
+--- c/packages/reactivity/src/dep.ts
++++ i/packages/reactivity/src/dep.ts
+@@ -1,6 +1,6 @@
+-import { extend, isArray, isIntegerKey, isMap, isSymbol } from '@vue/shared'
++import { def, extend, isArray, isIntegerKey, isMap, isSymbol } from '@vue/shared'
+ import type { ComputedRefImpl } from './computed'
+-import { type TrackOpTypes, TriggerOpTypes } from './constants'
++import { ReactiveFlags, type TrackOpTypes, TriggerOpTypes } from './constants'
+ import {
+   type DebuggerEventExtraInfo,
+   EffectFlags,
+@@ -40,6 +40,7 @@ export class Dep {
+   subsHead?: Link
+ 
+   constructor(public computed?: ComputedRefImpl | undefined) {
++    def(this, ReactiveFlags.SKIP, true)
+     if (__DEV__) {
+       this.subsHead = undefined
+     }

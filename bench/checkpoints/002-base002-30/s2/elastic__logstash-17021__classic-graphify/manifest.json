@@ -1,0 +1,18 @@
+{
+  "instance": "elastic__logstash-17021",
+  "arm": "classic-graphify",
+  "language": "java",
+  "commit": "430d2e684aff7b1c740f9ba0aa56343771310cff",
+  "dirty": true,
+  "model": "oca/gpt-5.5",
+  "provider": "OCA",
+  "exploration": "classic",
+  "require_graph": false,
+  "bash_output_summary": false,
+  "explore_debug": "off",
+  "tool_calls": {
+    "lead": "session/*.jsonl",
+    "sidekick": null
+  },
+  "prompts_dir": "prompts/"
+}

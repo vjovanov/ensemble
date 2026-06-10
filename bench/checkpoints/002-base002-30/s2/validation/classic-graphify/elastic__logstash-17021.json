@@ -1,0 +1,8 @@
+{
+  "instance": "elastic__logstash-17021",
+  "arm": "classic-graphify",
+  "status": "unresolved",
+  "resolved": false,
+  "updatedAt": "2026-06-10T20:37:16.832Z",
+  "report": "/home/vjovanov/p/ensemble/bench/results/classic-graphify/final_report.json"
+}
