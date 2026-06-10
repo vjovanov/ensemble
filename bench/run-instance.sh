@@ -281,9 +281,12 @@ else
     # cdx already passes --dangerously-bypass-approvals-and-sandbox; edits land in ARM_SRC.
     # Match the pi classic arm's reasoning level (gpt-5.5 thinkingLevel=medium); Codex's
     # config default is "high". Same model (gpt-5.5/oca), so this aligns model + effort.
+    # --json emits event JSONL (incl. per-turn token usage) to stdout; the final message is
+    # captured separately via --output-last-message so we still keep agent.out for inspection.
     ( cd "$ARM_SRC" && timeout "${AGENT_TIMEOUT}s" \
-        cdx exec -C "$ARM_SRC" -c model_reasoning_effort="medium" "$PROMPT" \
-      ) >"$OUT/agent.out" 2>"$OUT/agent.err" &
+        cdx exec -C "$ARM_SRC" -c model_reasoning_effort="medium" \
+          --json --output-last-message "$OUT/agent.out" "$PROMPT" \
+      ) >"$OUT/codex-events.jsonl" 2>"$OUT/agent.err" &
     AGENT_PID=$!
   else
     MODEL_ARGS=(--model "$MODEL")
@@ -354,7 +357,17 @@ fs.writeFileSync(process.argv[3], JSON.stringify(rec)+"\n");
 
 # --- 7. Metrics + strict assertion ------------------------------------------
 SESSION_FILE="$(find "$SESSION_DIR" -name '*.jsonl' -type f 2>/dev/null | head -1)"
-if [ -n "$SESSION_FILE" ]; then
+if [ "$ARM" = "codex" ]; then
+  # Codex has no pi session; derive metrics from the cdx --json event log instead.
+  if [ -s "$OUT/codex-events.jsonl" ]; then
+    node "$BENCH_DIR/lib/codex-metrics.mjs" "$OUT/codex-events.jsonl" --arm codex --model "$MODEL" --price "$PRICE" \
+      > "$OUT/metrics.json"
+    log "metrics: $(node -e 'const m=require(process.argv[1]);console.log(`tokens=${m.totalTokens} cost=$${m.costUsd} turns=${m.assistantTurns}`)' "$OUT/metrics.json")"
+  else
+    log "WARN: no codex events (DRY_RUN or agent failed); writing empty metrics"
+    printf '{"arm":"codex","note":"no events"}\n' > "$OUT/metrics.json"
+  fi
+elif [ -n "$SESSION_FILE" ]; then
   node "$BENCH_DIR/lib/parse-session.mjs" "$SESSION_FILE" --arm "$ARM" --price "$PRICE" \
     > "$OUT/metrics.json"
   log "metrics: $(node -e 'const m=require(process.argv[1]);console.log(`tokens=${m.totalTokens} cost=$${m.costUsd} turns=${m.assistantTurns} explore=${m.exploreCalls} strict=${m.strictOk}`)' "$OUT/metrics.json")"
