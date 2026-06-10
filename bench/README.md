@@ -142,11 +142,13 @@ Method note: the split uses char/4 size estimates and the latest sessions, scale
 measured totals so all graphs reconcile; per-arm totals are exact, the split is approximate. codex
 has no per-block session, so it is excluded from this view.
 
-**Caveats:** multi-seed `base/002` (`resolved` is pass@K; per-instance cost is noisy). `graphify` is
-the most *correct* arm but the most expensive. `codex` is an external reference (cost captured via
-`cdx --json`, `lib/codex-metrics.mjs`); it auto-joins the cost graphs once its grade completes. The
-historical single-seed benchmarks-20 milestone (graph-bash 11/20 ⊇ classic 8/20) is in
-`docs/experiments.md`.
+**Caveats:** multi-seed `base/002` reports **pass@K** correctness and **summed** cost across seeds
+(all $ used). At pass@2, `classic-graph-bash` is **23/24** — it misses `logstash-17021` (a regression
+vs classic), while `classic-graphify` is 24/24 (most correct, dearest). `codex` is an external
+reference captured as a **single** instrumented run (`cdx --json`, `lib/codex-metrics.mjs`); it is
+shown only in the single-seed view and **held out of the multi-seed summed comparison** (a 1-run arm
+isn't comparable to K-run arms). The historical single-seed benchmarks-20 milestone (graph-bash
+11/20 ⊇ classic 8/20) is in `docs/experiments.md`.
 
 ## Benchmark Arms
 
