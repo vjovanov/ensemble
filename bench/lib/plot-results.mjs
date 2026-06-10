@@ -69,16 +69,16 @@ const totals = ARMS.map((a, i) => ({
 }));
 
 if (TABLE) {
-  let out = `#### $ per run on the ${W} benchmarks classic resolves (averaged over seeds)\n\n`;
-  out += `| arm | resolved | input $ | cached $ | output $ | **total $** | Δ vs classic |\n|---|---|---|---|---|---|---|\n`;
+  let out = `#### Cost on the ${W} benchmarks classic resolves — $ per run (averaged over an arm's seeds)\n\n`;
+  out += `| arm | resolved | input $ | cached $ | output $ | **avg $/bench** | **total $** | Δ vs classic |\n|---|---|---|---|---|---|---|---|\n`;
   ARMS.forEach((a, i) => {
     const t = totals[i], d = i === 0 ? "—" : `${((t.cost - totals[0].cost) / totals[0].cost * 100).toFixed(1)}%`;
-    out += `| ${a.label}${a.ref ? " *(ref)*" : ""} | ${t.n}/${W} | $${t.in$.toFixed(2)} | $${t.cr$.toFixed(2)} | $${t.out$.toFixed(2)} | **$${t.cost.toFixed(2)}** | ${d} |\n`;
+    out += `| ${a.label}${a.ref ? " *(ref)*" : ""} | ${t.n}/${W} | $${t.in$.toFixed(2)} | $${t.cr$.toFixed(2)} | $${t.out$.toFixed(2)} | **$${(t.cost / W).toFixed(2)}** | **$${t.cost.toFixed(2)}** | ${d} |\n`;
   });
   const gb = ARMS.findIndex((a) => a.key === "classic-graph-bash");
   if (gb >= 0) {
     const capped = sum(rows, (r) => Math.min(r.cells[0].cost, r.cells[gb].cost));
-    out += `| graph-bash, classic-capped where worse | ${W}/${W} | — | — | — | **$${capped.toFixed(2)}** | ${((capped - totals[0].cost) / totals[0].cost * 100).toFixed(1)}% |\n`;
+    out += `| graph-bash, classic-capped where worse | ${W}/${W} | — | — | — | **$${(capped / W).toFixed(2)}** | **$${capped.toFixed(2)}** | ${((capped - totals[0].cost) / totals[0].cost * 100).toFixed(1)}% |\n`;
   }
   const ref = ARMS.findIndex((a) => a.ref);
   if (ref >= 0) out += `\n_${ARMS[ref].label} is a reference arm (external Codex CLI); it spends on all ${W} but resolves only ${totals[ref].n}, so its total is not a like-for-like fix cost._\n`;
@@ -128,13 +128,13 @@ function summaryBars({ file, title, sub, mode }) {
     s += `<text x="${cx(i)}" y="${(y(total(i)) - 22).toFixed(1)}" text-anchor="middle" font-size="17" font-weight="700" fill="${a.color}">$${total(i).toFixed(2)}</text>`
       + `<text x="${cx(i)}" y="${(y(total(i)) - 8).toFixed(1)}" text-anchor="middle" font-size="10" fill="#666">${dlt}</text>`
       + `<text x="${cx(i)}" y="${H - B + 24}" text-anchor="middle" font-size="12" font-weight="600" fill="${a.color}">${esc(a.label)}${a.ref ? " (ref)" : ""}</text>`
-      + `<text x="${cx(i)}" y="${H - B + 40}" text-anchor="middle" font-size="10" fill="#888">solved ${t.n}/${W}</text>`;
+      + `<text x="${cx(i)}" y="${H - B + 40}" text-anchor="middle" font-size="10" fill="#888">avg $${(total(i) / W).toFixed(2)}/bench · solved ${t.n}/${W}</text>`;
   });
   writeFileSync(file, s + `</svg>\n`);
 }
 
 function perBench({ file, title, sub }) {
-  const Lm = 150, R = 18, T = 80, barH = 5, intra = 1, groupGap = 8;
+  const Lm = 150, R = 18, T = 94, barH = 5, intra = 1, groupGap = 8;
   const groupH = ARMS.length * barH + (ARMS.length - 1) * intra + groupGap;
   const plotW = 860 - Lm - R, H = T + W * groupH + 16;
   // x covers every individual run (dot), so nothing clips beyond the median bar.
@@ -144,11 +144,11 @@ function perBench({ file, title, sub }) {
 <rect width="860" height="${H}" fill="#ffffff"/>
 <text x="430" y="24" text-anchor="middle" font-size="16" font-weight="600" fill="#111">${esc(title)}</text>
 <text x="430" y="42" text-anchor="middle" font-size="11" fill="#666">${esc(sub)}</text>`;
-  let lx = Lm;
+  // 2-row legend so 4 arms never clip; each shows average per benchmark and total over the set.
   ARMS.forEach((a, i) => {
-    const tv = "$" + totals[i].cost.toFixed(2);
-    s += `<rect x="${lx}" y="53" width="12" height="12" fill="${a.color}"/><text x="${lx + 17}" y="63" font-size="11" fill="#333">${esc(a.label)} (total ${tv})</text>`;
-    lx += 26 + (a.label.length + tv.length + 9) * 6.1;
+    const avg = "$" + (totals[i].cost / (W || 1)).toFixed(2), tot = "$" + totals[i].cost.toFixed(2);
+    const col = i % 2, lx = Lm + col * 350, ly = 56 + ((i - col) / 2) * 17;
+    s += `<rect x="${lx}" y="${ly - 9}" width="12" height="12" fill="${a.color}"/><text x="${lx + 17}" y="${ly + 1}" font-size="11" fill="#333">${esc(a.label)} — avg ${avg}/bench · total ${tot}</text>`;
   });
   for (let t = 0; t <= xticks; t++) { const v = xmax * t / xticks, xx = x(v); s += `<line x1="${xx.toFixed(1)}" y1="${T - 6}" x2="${xx.toFixed(1)}" y2="${H - 14}" stroke="#eee"/><text x="${xx.toFixed(1)}" y="${T - 10}" text-anchor="middle" font-size="10" fill="#999">$${v.toFixed(1)}</text>`; }
   rows.forEach((r, ri) => {
