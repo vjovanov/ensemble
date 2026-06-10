@@ -151,7 +151,7 @@ function perBench({ file, title, sub }) {
 
 summaryBars({ file: "plots/cost.svg", mode: "cost",
   title: "Total $ spent on the benchmarks classic resolves",
-  sub: `sum of lead-model cost over the ${W} benchmarks classic solves (pi arms solve all ${W}; codex is a reference)` });
+  sub: `sum of lead-model cost over the ${W} benchmarks classic solves (all three arms solve all ${W})` });
 summaryBars({ file: "plots/tokens.svg", mode: "tok",
   title: "Total $ split by token type — input + cached + output",
   sub: `same total as the cost graph; shows how each arm's spend over the ${W} benchmarks breaks down (output is $30/Mtok)` });
