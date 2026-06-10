@@ -6,7 +6,7 @@ same agent + model on the same [Multi-SWE-bench](https://github.com/multi-swe-be
 instances under different benchmark arms and grades the patches with the
 official Docker eval harness.
 
-## Latest results — base/002 seed 1 (oca/gpt-5.5)
+## Latest results — base/002 (oca/gpt-5.5, multi-seed)
 
 **What we're doing.** The expensive lead model spends roughly half its turns on read-only
 exploration (grep/read) and on build/test runs. We try to move that work onto a cheap sidekick
@@ -17,42 +17,40 @@ sidekick). We count **only real fixes** (patches that pass the Docker eval, `res
 ask the candidate to be **strictly better** than classic: resolve a superset and cost no more
 on the fixes both make (methodology: `docs/requirements.md` §REQ-002, §REQ-003).
 
-**Set:** 30 balanced instances, **seed 1** of the in-progress multi-seed `base/002`. Resolved:
-`classic` **22/30**, `classic-graphify` **25/30**, `classic-graph-bash` **24/30**. We compare on
-the **22 benchmarks `classic` resolves** (all three arms also resolve all 22 — zero regressions),
-and we report the **total $ used** — the sum across those benchmarks, not an average. Regenerate
-with `node lib/plot-results.mjs`.
+**Set:** 30 balanced instances under the multi-seed `base/002` (pass@K = resolved in any seed). We
+compare on the **benchmarks `classic` resolves** and report the **total $ used** — the sum across
+those benchmarks (and seeds: all $ used), not an average. All figures below are generated from the
+data and **auto-refresh as seeds and the codex arm land** (`node lib/plot-results.mjs` for the
+plots; `node lib/inject-readme.mjs` for the tables) — see the tables for exact, current numbers.
 
 ![Total cost on classic's wins](plots/cost.svg)
 
-**Total cost.** Sum of lead-model spend over the 22: `classic` **$9.04**, `classic-graphify`
-**$11.87** (**+31%**), `classic-graph-bash` **$6.77** (**−25%**). graph-bash is the cheapest in
-total; lead-driven graphify is the most expensive (its "always build the graph" directive
-inflates context), so on a balanced pool it is *not* cheaper than the raw baseline.
+**Total cost.** `classic-graph-bash` is the cheapest in total; lead-driven `classic-graphify` is the
+most expensive — its "always build the graph" directive inflates context, so on a balanced pool it
+is *not* cheaper than the raw baseline.
 
-![Total token cost on classic's wins](plots/tokens.svg)
+![Total $ split by token type](plots/tokens.svg)
 
-**Same total, split by token type** — input ×$5/Mtok + cached ×$0.5/Mtok + output ×$30/Mtok.
-`classic` $3.87 + $2.37 + $2.80, `classic-graphify` $5.15 + $3.56 + $3.17, `classic-graph-bash`
-$3.06 + $1.54 + $2.17. Output is few tokens but the priciest rate (~30% of the bill), which is why
-this reconciles to the cost graph while the other two legs alone don't. graph-bash cuts all three.
+**Same total, split by token type** — input ×$5/Mtok + cached ×$0.5/Mtok + output ×$30/Mtok; this
+reconciles to the cost graph. Output is few tokens but the priciest rate (~30% of the bill), which
+is why the input+cached legs alone fall short. graph-bash cuts all three.
 
 ![Per-benchmark cost on classic's wins](plots/cost-vs-classic.svg)
 
-**Per-benchmark breakdown** (the totals above, row by row). graph-bash is the shortest bar on
-most rows but is *worse than classic on 6 of 22* — almost entirely two: `jq-3238` (+$0.43) and
-`darkreader-7241` (+$0.22), both graph-noise cases. **If graph-bash fell back to classic on those
-6, the total drops to $6.03 (−33% vs classic)** — i.e. the 6 regressions cost only $0.74, and the
-two that matter are exactly what the explore noise-exclusion experiment targets.
+**Per-benchmark.** graph-bash is the shortest bar on most rows but loses to classic on a handful —
+mostly graph-noise cases (`jq-3238`, `darkreader-7241`). The *classic-capped where worse* row in the
+table is the ceiling if graph-bash fell back to classic on those: the regressions are cheap, and the
+worst are exactly what the explore noise-exclusion experiment targets.
 
+<!-- AUTO:cost-tables -->
 #### Total $ used on the 22 benchmarks classic resolves
 
 | arm | resolved | input $ | cached $ | output $ | **total $** | Δ vs classic |
 |---|---|---|---|---|---|---|
 | classic | 22/22 | $3.87 | $2.37 | $2.80 | **$9.04** | — |
-| classic-graphify | 22/22 | $5.15 | $3.56 | $3.17 | **$11.87** | +31.3% |
-| classic-graph-bash | 22/22 | $3.06 | $1.54 | $2.17 | **$6.77** | **−25.1%** |
-| graph-bash, classic-capped where worse | 22/22 | — | — | — | **$6.03** | **−33.3%** |
+| classic-graphify | 22/22 | $5.15 | $3.56 | $3.17 | **$11.87** | 31.3% |
+| classic-graph-bash | 22/22 | $3.06 | $1.54 | $2.17 | **$6.77** | -25.1% |
+| graph-bash, classic-capped where worse | 22/22 | — | — | — | **$6.03** | -33.3% |
 
 #### Per-benchmark cost on classic's wins ($)
 
@@ -82,6 +80,9 @@ two that matter are exactly what the explore noise-exclusion experiment targets.
 | express-5555 | $0.115 | $0.267 | $0.102 |
 | **total** | **$9.04** | **$11.87** | **$6.77** |
 
+(italic = arm ran but did not resolve that benchmark; "—" = no run)
+<!-- /AUTO:cost-tables -->
+
 ### Where the money goes — spend attribution by source
 
 To see *what* to optimize, we attribute each arm's spend to what produced it. For every assistant
@@ -95,36 +96,53 @@ classic's 22 wins. `classic`/`graphify` have no separate read tool — they read
 ![Full spend by source](plots/breakdown-cost.svg)
 ![Context spend by source](plots/breakdown-context.svg)
 
+<!-- AUTO:breakdown-tables -->
+#### Full $ (input+cached+output) by source — over classic's wins
+
 | source | classic | classic-graphify | classic-graph-bash |
 |---|---|---|---|
-| `bash:read` (file discovery) | **$5.23** | **$4.92** | $0.04 |
-| `explore/graph` | — | $1.96 | **$2.88** |
-| `bash:build/test` | $0.37 | $0.56 | $0.41 |
-| `bash:other` | $0.12 | $0.19 | $0.21 |
-| `system+prompt` | $1.35 | $1.72 | $1.64 |
-| `thinking` | $1.17 | $1.52 | $0.87 |
-| `edit` | $0.63 | $0.80 | $0.56 |
-| `output` | $0.17 | $0.21 | $0.16 |
+| system+prompt | $1.35 | $1.72 | $1.64 |
+| bash:read | $5.23 | $4.92 | $0.04 |
+| bash:build/test | $0.37 | $0.56 | $0.41 |
+| bash:other | $0.12 | $0.19 | $0.21 |
+| explore/graph | $0.00 | $1.96 | $2.88 |
+| edit | $0.63 | $0.80 | $0.56 |
+| thinking | $1.17 | $1.52 | $0.87 |
+| output | $0.17 | $0.21 | $0.16 |
 | **total** | **$9.04** | **$11.87** | **$6.77** |
 
-**Reading it:**
-- **`bash:read` (file discovery) is the dominant cost** — 58% of `classic`'s spend. This is the lead
+#### Context only (input+cached) by source — over classic's wins
+
+| source | classic | classic-graphify | classic-graph-bash |
+|---|---|---|---|
+| system+prompt | $1.30 | $1.76 | $1.59 |
+| bash:read | $4.42 | $4.31 | $0.01 |
+| bash:build/test | $0.20 | $0.33 | $0.32 |
+| bash:other | $0.03 | $0.05 | $0.09 |
+| explore/graph | $0.00 | $1.85 | $2.34 |
+| edit | $0.09 | $0.10 | $0.07 |
+| thinking | $0.19 | $0.31 | $0.17 |
+| **total** | **$6.24** | **$8.71** | **$4.60** |
+<!-- /AUTO:breakdown-tables -->
+
+**Reading it** (exact $ in the table above):
+- **`bash:read` (file discovery) is the dominant cost** — ~58% of `classic`'s spend. This is the lead
   searching/reading source via shell, re-read into context every turn.
-- **graph-bash replaces it with the explore sidekick**: `bash:read` collapses $5.23 → $0.04, swapped
-  for `explore/graph` $2.88 (discovery done off the lead's context) — the source of its −25%.
+- **graph-bash replaces it with the explore sidekick**: `bash:read` collapses to ~zero, swapped for a
+  smaller `explore/graph` (discovery done off the lead's context) — the source of its lead.
 - **graphify is the most expensive because the graph *didn't replace* reading** — it still does
-  `bash:read` $4.92 **and** adds `explore/graph` $1.96. It pays for both.
-- **build/test is tiny everywhere** ($0.37–0.56) — not a lever; the lead redirects build output to files.
-- **Remaining levers**: for graph-bash, `explore/graph` $2.88 (graph noise-exclusion) and the
-  `system+prompt` overhead $1.64; for graphify, stop the lead's manual `bash:read` once it has the graph.
+  `bash:read` **and** adds `explore/graph`. It pays for both.
+- **build/test is tiny everywhere** — not a lever; the lead redirects build output to files.
+- **Remaining levers**: for graph-bash, `explore/graph` (graph noise-exclusion) and the
+  `system+prompt` overhead; for graphify, stop the lead's manual `bash:read` once it has the graph.
 
-Method note: the split uses char/4 size estimates and the latest (seed-2) sessions, scaled to the
-seed-1 measured totals so all graphs reconcile; per-arm totals are exact, the split is approximate.
-codex has no per-block session, so it is excluded from this view.
+Method note: the split uses char/4 size estimates and the latest sessions, scaled to the seed-1
+measured totals so all graphs reconcile; per-arm totals are exact, the split is approximate. codex
+has no per-block session, so it is excluded from this view.
 
-**Caveats:** seed 1 of an in-progress 2-seed run (`resolved` is pass@1 so far; per-instance cost
-is noisy). graphify is the most *correct* arm here (25/30 overall) but the most expensive. A codex
-reference arm is being added (cost capture wired via `lib/codex-metrics.mjs`; grade pending). The
+**Caveats:** multi-seed `base/002` (`resolved` is pass@K; per-instance cost is noisy). `graphify` is
+the most *correct* arm but the most expensive. `codex` is an external reference (cost captured via
+`cdx --json`, `lib/codex-metrics.mjs`); it auto-joins the cost graphs once its grade completes. The
 historical single-seed benchmarks-20 milestone (graph-bash 11/20 ⊇ classic 8/20) is in
 `docs/experiments.md`.
 

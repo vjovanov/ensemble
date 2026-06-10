@@ -115,13 +115,14 @@ const armData = ARMS.map((a) => {
       cost[c] = (cost[c] || 0) + full$;
     }
   }
-  // Scale the session-derived split to the seed-1 measured totals (the cost/token graphs), so every
-  // graph reconciles. Sessions only exist for the latest seed; the SPLIT is what they provide, the
-  // absolute total comes from the frozen seed-1 metrics.
+  // Scale the session-derived split to the measured totals across ALL seeds (what the cost/token
+  // graphs sum), so every graph reconciles. Sessions exist only for the latest seed; the SPLIT is
+  // what they provide, the absolute total comes from the frozen per-seed metrics.
   let canonFull = 0, canonCtx = 0;
-  for (const id of ids) {
-    const m = (() => { const p = `${SEED_DIRS[0]}/${id}__${a.key}/metrics.json`; return existsSync(p) ? JSON.parse(readFileSync(p, "utf8")) : null; })();
-    if (!m) continue;
+  for (const id of ids) for (const d of SEED_DIRS) {
+    const p = `${d}/${id}__${a.key}/metrics.json`;
+    if (!existsSync(p)) continue;
+    const m = JSON.parse(readFileSync(p, "utf8"));
     canonFull += m.costUsd; canonCtx += m.input * IN + m.cacheRead * CR;
   }
   const sumFull = CATS.reduce((s, c) => s + (cost[c.key] || 0), 0) || 1;

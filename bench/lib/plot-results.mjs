@@ -14,10 +14,8 @@ const ARMS = [
   { key: "classic", label: "classic", color: "#4C78A8" },
   { key: "classic-graphify", label: "classic-graphify", color: "#E45756" },
   { key: "classic-graph-bash", label: "classic-graph-bash", color: "#54A24B" },
-  // codex (reference) is added back once its instrumented re-run is graded; cost capture is wired
-  // up (lib/codex-metrics.mjs) but the grade was still running at commit time.
-  // { key: "codex", label: "codex", color: "#B07AA1", ref: true },
 ];
+const CODEX = { key: "codex", label: "codex", color: "#B07AA1", ref: true };
 const IN_PRICE = 5e-6, CR_PRICE = 0.5e-6, OUT_PRICE = 30e-6;
 const TABLE = process.argv.includes("--table");
 
@@ -40,12 +38,18 @@ const resolved = (id, a) => {
   return seen ? false : null;
 };
 const sum = (arr, f) => arr.reduce((s, x) => s + f(x), 0);
-const PI = ARMS.filter((a) => !a.ref);
+const PI = ARMS;   // ARMS currently holds only the pi arms; codex is appended below if ready.
 
 const ids = [...new Set(SEED_DIRS.flatMap((d) => readdirSync(d)).map((b) => {
   for (const a of PI) if (b.endsWith("__" + a.key)) return b.slice(0, -(a.key.length + 2));
   return null;
 }).filter(Boolean))].filter((id) => PI.every((a) => runsFor(id, a.key).length));
+
+// Auto-include the codex reference arm once its instrumented re-run is graded for every benchmark
+// classic resolves (so the refresh picks it up the moment its grade lands; partial data stays out).
+const winIds = ids.filter((id) => resolved(id, "classic") === true);
+const codexReady = winIds.length > 0 && winIds.every((id) => valid(readM(`raw/${id}__codex/metrics.json`)) && existsSync(`results/validation/codex/${id}.json`) && JSON.parse(readFileSync(`results/validation/codex/${id}.json`, "utf8")).status !== "unknown");
+if (codexReady) ARMS.push(CODEX);
 
 const cell = (id, a) => {
   const runs = runsFor(id, a.key);
@@ -66,6 +70,11 @@ if (TABLE) {
     const t = totals[i], d = i === 0 ? "—" : `${((t.cost - totals[0].cost) / totals[0].cost * 100).toFixed(1)}%`;
     out += `| ${a.label}${a.ref ? " *(ref)*" : ""} | ${t.n}/${W} | $${t.in$.toFixed(2)} | $${t.cr$.toFixed(2)} | $${t.out$.toFixed(2)} | **$${t.cost.toFixed(2)}** | ${d} |\n`;
   });
+  const gb = ARMS.findIndex((a) => a.key === "classic-graph-bash");
+  if (gb >= 0) {
+    const capped = sum(rows, (r) => Math.min(r.cells[0].cost, r.cells[gb].cost));
+    out += `| graph-bash, classic-capped where worse | ${W}/${W} | — | — | — | **$${capped.toFixed(2)}** | ${((capped - totals[0].cost) / totals[0].cost * 100).toFixed(1)}% |\n`;
+  }
   const ref = ARMS.findIndex((a) => a.ref);
   if (ref >= 0) out += `\n_${ARMS[ref].label} is a reference arm (external Codex CLI); it spends on all ${W} but resolves only ${totals[ref].n}, so its total is not a like-for-like fix cost._\n`;
   out += `\n#### Per-benchmark cost on classic's wins ($)\n\n`;
@@ -151,7 +160,7 @@ function perBench({ file, title, sub }) {
 
 summaryBars({ file: "plots/cost.svg", mode: "cost",
   title: "Total $ spent on the benchmarks classic resolves",
-  sub: `sum of lead-model cost over the ${W} benchmarks classic solves (all three arms solve all ${W})` });
+  sub: `sum of lead-model cost over the ${W} benchmarks classic solves` });
 summaryBars({ file: "plots/tokens.svg", mode: "tok",
   title: "Total $ split by token type — input + cached + output",
   sub: `same total as the cost graph; shows how each arm's spend over the ${W} benchmarks breaks down (output is $30/Mtok)` });
