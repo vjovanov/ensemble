@@ -125,6 +125,7 @@ const armData = ARMS.map((a) => {
     const m = JSON.parse(readFileSync(p, "utf8"));
     canonFull += m.costUsd; canonCtx += m.input * IN + m.cacheRead * CR;
   }
+  canonFull /= SEED_DIRS.length; canonCtx /= SEED_DIRS.length;   // $ per run, to match the cost graph
   const sumFull = CATS.reduce((s, c) => s + (cost[c.key] || 0), 0) || 1;
   const sumCtx = CATS.reduce((s, c) => s + (context[c.key] || 0), 0) || 1;
   const fF = canonFull / sumFull, fX = canonCtx / sumCtx;
@@ -182,10 +183,10 @@ function stack({ file, title, sub, view }) {
 }
 
 stack({ file: "plots/breakdown-cost.svg", view: "cost",
-  title: "Where the $ goes — full spend by source",
+  title: "Where the $ goes (per run) — full spend by source",
   sub: `input+cached+output attributed to what produced it, summed over classic's ${ids.length} wins` });
 stack({ file: "plots/breakdown-context.svg", view: "context",
-  title: "Where the context $ goes — input + cached by source",
+  title: "Where the context $ per run goes — input + cached by source",
   sub: `the replayed-context bulk attributed to its source, over classic's ${ids.length} wins` });
 
 console.log(`wrote breakdown-cost.svg + breakdown-context.svg over classic's ${ids.length} wins`);

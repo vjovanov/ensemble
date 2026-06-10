@@ -1,11 +1,12 @@
-// Total lead-model spend of the arms, over the benchmarks `classic` resolves. No averages —
-// everything is a SUM of all $ used.
-//   plots/cost.svg          — total $ per arm.
-//   plots/tokens.svg        — total token cost per arm, input (solid) + cached (faded) stacked.
-//   plots/cost-vs-classic.svg — per-benchmark: each benchmark's total $ per arm (dots = seeds).
+// Lead-model spend of the arms over the benchmarks `classic` resolves, reported as $ PER RUN
+// (a benchmark's cost averaged over an arm's seeds, then summed over benchmarks) so arms with
+// different seed counts compare directly.
+//   plots/cost.svg          — $ per run per arm.
+//   plots/tokens.svg        — per-run token cost per arm, input + cached + output stacked.
+//   plots/cost-vs-classic.svg — per-benchmark: each benchmark's $ per run per arm (dots = seeds).
 // pi arms (classic / classic-graphify / classic-graph-bash) come from the frozen base/002 seed
-// snapshot (consistent, summed across seeds = all $ used). codex is a reference arm read from raw/
-// (+ results/validation) — it solves fewer instances, so each bar is annotated "solved K/N".
+// snapshots (pass@K for resolved). codex is a single-run reference read from raw/ (+ validation);
+// per-run framing makes its one run comparable to the pi arms' K seeds.
 // Prices: input $5/Mtok, cached $0.5/Mtok, output $30/Mtok.
 // Usage: node lib/plot-results.mjs [--table]
 import { readFileSync, existsSync, readdirSync, writeFileSync, mkdirSync } from "node:fs";
@@ -48,14 +49,15 @@ const ids = [...new Set(SEED_DIRS.flatMap((d) => readdirSync(d)).map((b) => {
 // Auto-include the codex reference arm once its instrumented re-run is graded for every benchmark
 // classic resolves (so the refresh picks it up the moment its grade lands; partial data stays out).
 const winIds = ids.filter((id) => resolved(id, "classic") === true);
-// codex is a single instrumented run; the pi arms sum across SEED_DIRS. Summing a 1-run arm next to
-// K-run arms is apples-to-oranges, so codex only joins when there is a single seed to compare to.
+// We report $ PER RUN (averaged over an arm's seeds), so codex's single instrumented run is directly
+// comparable to the pi arms' K seeds. codex joins as soon as it is graded for classic's wins.
 const codexGraded = winIds.length > 0 && winIds.every((id) => valid(readM(`raw/${id}__codex/metrics.json`)) && existsSync(`results/validation/codex/${id}.json`) && JSON.parse(readFileSync(`results/validation/codex/${id}.json`, "utf8")).status !== "unknown");
-if (codexGraded && SEED_DIRS.length <= 1) ARMS.push(CODEX);
+if (codexGraded) ARMS.push(CODEX);
 
+const mean = (arr, f) => arr.length ? sum(arr, f) / arr.length : 0;   // per-run: divide by seed count
 const cell = (id, a) => {
   const runs = runsFor(id, a.key);
-  return { runs, cost: sum(runs, (r) => r.cost), in$: sum(runs, (r) => r.in$), cr$: sum(runs, (r) => r.cr$), out$: sum(runs, (r) => r.out$), ok: resolved(id, a.key) === true, ran: runs.length > 0 };
+  return { runs, cost: mean(runs, (r) => r.cost), in$: mean(runs, (r) => r.in$), cr$: mean(runs, (r) => r.cr$), out$: mean(runs, (r) => r.out$), ok: resolved(id, a.key) === true, ran: runs.length > 0 };
 };
 const allRows = ids.map((id) => ({ id, short: id.includes("__") ? id.split("__")[1] : id, cells: ARMS.map((a) => cell(id, a)) }));
 const rows = allRows.filter((r) => r.cells[0].ok).sort((x, y) => y.cells[0].cost - x.cells[0].cost);
@@ -66,7 +68,7 @@ const totals = ARMS.map((a, i) => ({
 }));
 
 if (TABLE) {
-  let out = `#### Total $ used on the ${W} benchmarks classic resolves\n\n`;
+  let out = `#### $ per run on the ${W} benchmarks classic resolves (averaged over seeds)\n\n`;
   out += `| arm | resolved | input $ | cached $ | output $ | **total $** | Δ vs classic |\n|---|---|---|---|---|---|---|\n`;
   ARMS.forEach((a, i) => {
     const t = totals[i], d = i === 0 ? "—" : `${((t.cost - totals[0].cost) / totals[0].cost * 100).toFixed(1)}%`;
@@ -161,14 +163,14 @@ function perBench({ file, title, sub }) {
 }
 
 summaryBars({ file: "plots/cost.svg", mode: "cost",
-  title: "Total $ spent on the benchmarks classic resolves",
-  sub: `sum of lead-model cost over the ${W} benchmarks classic solves` });
+  title: "$ per run on the benchmarks classic resolves",
+  sub: `average lead-model $ per run (per seed) over the ${W} benchmarks classic solves` });
 summaryBars({ file: "plots/tokens.svg", mode: "tok",
-  title: "Total $ split by token type — input + cached + output",
-  sub: `same total as the cost graph; shows how each arm's spend over the ${W} benchmarks breaks down (output is $30/Mtok)` });
+  title: "$ per run split by token type — input + cached + output",
+  sub: `same total as the cost graph; per-run spend over the ${W} benchmarks by token type (output is $30/Mtok)` });
 perBench({ file: "plots/cost-vs-classic.svg",
-  title: "Per-benchmark cost on classic's wins",
-  sub: `the ${W} benchmarks classic resolved; bar = total $ for that benchmark, dot = each seed (only arms that solved it)` });
+  title: "Per-benchmark $ per run on classic's wins",
+  sub: `the ${W} benchmarks classic resolved; bar = $ per run (avg over seeds), dot = each seed (only arms that solved it)` });
 
-console.log(`wrote cost.svg + tokens.svg + cost-vs-classic.svg (total $ over classic's ${W} wins); ${SEED_DIRS.length} seed(s)`);
+console.log(`wrote cost.svg + tokens.svg + cost-vs-classic.svg ($ per run over classic's ${W} wins); ${SEED_DIRS.length} seed(s)`);
 ARMS.forEach((a, i) => console.log(`  ${a.label.padEnd(20)} total $${totals[i].cost.toFixed(2)}  (in $${totals[i].in$.toFixed(2)} + cache $${totals[i].cr$.toFixed(2)})  solved ${totals[i].n}/${W}  ran ${totals[i].ran}/${W}`));

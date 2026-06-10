@@ -18,10 +18,11 @@ ask the candidate to be **strictly better** than classic: resolve a superset and
 on the fixes both make (methodology: `docs/requirements.md` §REQ-002, §REQ-003).
 
 **Set:** 30 balanced instances under the multi-seed `base/002` (pass@K = resolved in any seed). We
-compare on the **benchmarks `classic` resolves** and report the **total $ used** — the sum across
-those benchmarks (and seeds: all $ used), not an average. All figures below are generated from the
-data and **auto-refresh as seeds and the codex arm land** (`node lib/plot-results.mjs` for the
-plots; `node lib/inject-readme.mjs` for the tables) — see the tables for exact, current numbers.
+compare on the **benchmarks `classic` resolves** and report **$ per run** — each benchmark's cost
+**averaged over an arm's seeds**, summed across benchmarks. Per-run (rather than summed-over-seeds)
+keeps arms with different seed counts comparable — notably the single-run `codex` reference against
+the 2-seed pi arms. All figures below are generated from the data (`node lib/plot-results.mjs`;
+`node lib/inject-readme.mjs` for the tables) — see the tables for exact, current numbers.
 
 ![Total cost on classic's wins](plots/cost.svg)
 
@@ -43,44 +44,47 @@ table is the ceiling if graph-bash fell back to classic on those: the regression
 worst are exactly what the explore noise-exclusion experiment targets.
 
 <!-- AUTO:cost-tables -->
-#### Total $ used on the 24 benchmarks classic resolves
+#### $ per run on the 24 benchmarks classic resolves (averaged over seeds)
 
 | arm | resolved | input $ | cached $ | output $ | **total $** | Δ vs classic |
 |---|---|---|---|---|---|---|
-| classic | 24/24 | $9.29 | $6.01 | $6.53 | **$21.83** | — |
-| classic-graphify | 24/24 | $11.31 | $8.17 | $7.17 | **$26.66** | 22.1% |
-| classic-graph-bash | 23/24 | $7.48 | $4.22 | $5.40 | **$17.11** | -21.6% |
-| graph-bash, classic-capped where worse | 24/24 | — | — | — | **$15.92** | -27.1% |
+| classic | 24/24 | $4.64 | $3.01 | $3.26 | **$10.91** | — |
+| classic-graphify | 24/24 | $5.66 | $4.09 | $3.58 | **$13.33** | 22.1% |
+| classic-graph-bash | 23/24 | $3.74 | $2.11 | $2.70 | **$8.55** | -21.6% |
+| codex *(ref)* | 20/24 | $5.15 | $7.36 | $6.12 | **$18.63** | 70.7% |
+| graph-bash, classic-capped where worse | 24/24 | — | — | — | **$7.96** | -27.1% |
+
+_codex is a reference arm (external Codex CLI); it spends on all 24 but resolves only 20, so its total is not a like-for-like fix cost._
 
 #### Per-benchmark cost on classic's wins ($)
 
-| benchmark | classic | classic-graphify | classic-graph-bash |
-|---|---|---|---|
-| zstd-3438 | $2.312 | $2.494 | $0.976 |
-| dayjs-2399 | $1.575 | $2.148 | $1.231 |
-| simdjson-2178 | $1.513 | $2.781 | $1.971 |
-| logstash-17021 | $1.400 | $1.669 | _$1.228_ |
-| dayjs-2532 | $1.395 | $1.398 | $0.913 |
-| core-11694 | $1.356 | $1.660 | $0.541 |
-| grpc-go-3258 | $1.099 | $1.602 | $1.135 |
-| jq-3238 | $1.028 | $1.117 | $1.372 |
-| tracing-2897 | $0.980 | $1.199 | $0.714 |
-| core-11761 | $0.973 | $1.068 | $0.590 |
-| grpc-go-3351 | $0.901 | $0.881 | $0.803 |
-| clap-5873 | $0.865 | $1.124 | $0.799 |
-| core-11680 | $0.816 | $0.793 | $0.482 |
-| fd-1394 | $0.789 | $0.752 | $0.251 |
-| github-readme-stats-2844 | $0.749 | $0.846 | $0.537 |
-| jq-2919 | $0.531 | $0.942 | $0.696 |
-| zstd-3942 | $0.519 | $0.633 | $0.575 |
-| bytes-732 | $0.517 | $0.645 | $0.444 |
-| core-11813 | $0.515 | $0.433 | $0.186 |
-| bat-3189 | $0.515 | $0.394 | $0.430 |
-| go-zero-2787 | $0.467 | $0.441 | $0.245 |
-| darkreader-7241 | $0.431 | $0.798 | $0.564 |
-| express-5555 | $0.318 | $0.441 | $0.160 |
-| rayon-986 | $0.265 | $0.399 | $0.264 |
-| **total** | **$21.83** | **$26.66** | **$17.11** |
+| benchmark | classic | classic-graphify | classic-graph-bash | codex |
+|---|---|---|---|---|
+| zstd-3438 | $1.156 | $1.247 | $0.488 | $1.697 |
+| dayjs-2399 | $0.787 | $1.074 | $0.616 | $1.093 |
+| simdjson-2178 | $0.756 | $1.390 | $0.986 | _$1.425_ |
+| logstash-17021 | $0.700 | $0.835 | _$0.614_ | _$2.613_ |
+| dayjs-2532 | $0.698 | $0.699 | $0.456 | $1.020 |
+| core-11694 | $0.678 | $0.830 | $0.270 | $1.073 |
+| grpc-go-3258 | $0.550 | $0.801 | $0.568 | $0.847 |
+| jq-3238 | $0.514 | $0.559 | $0.686 | _$1.284_ |
+| tracing-2897 | $0.490 | $0.599 | $0.357 | $0.809 |
+| core-11761 | $0.486 | $0.534 | $0.295 | $0.648 |
+| grpc-go-3351 | $0.450 | $0.441 | $0.402 | $0.484 |
+| clap-5873 | $0.433 | $0.562 | $0.399 | $0.749 |
+| core-11680 | $0.408 | $0.397 | $0.241 | $0.600 |
+| fd-1394 | $0.395 | $0.376 | $0.126 | $0.258 |
+| github-readme-stats-2844 | $0.374 | $0.423 | $0.268 | _$0.341_ |
+| jq-2919 | $0.266 | $0.471 | $0.348 | $0.808 |
+| zstd-3942 | $0.259 | $0.316 | $0.288 | $0.523 |
+| bytes-732 | $0.258 | $0.323 | $0.222 | $0.304 |
+| core-11813 | $0.258 | $0.216 | $0.093 | $0.243 |
+| bat-3189 | $0.257 | $0.197 | $0.215 | $0.502 |
+| go-zero-2787 | $0.233 | $0.221 | $0.123 | $0.293 |
+| darkreader-7241 | $0.215 | $0.399 | $0.282 | $0.440 |
+| express-5555 | $0.159 | $0.220 | $0.080 | $0.279 |
+| rayon-986 | $0.132 | $0.199 | $0.132 | $0.294 |
+| **total** | **$10.91** | **$13.33** | **$8.55** | **$18.63** |
 
 (italic = arm ran but did not resolve that benchmark; "—" = no run)
 <!-- /AUTO:cost-tables -->
@@ -89,8 +93,8 @@ worst are exactly what the explore noise-exclusion experiment targets.
 
 To see *what* to optimize, we attribute each arm's spend to what produced it. For every assistant
 turn the API bills `input + cacheRead` (the context read that turn) + `output` (what it generated);
-we split those across the blocks present that turn, proportional to size, and sum per category over
-classic's 22 wins. `classic`/`graphify` have no separate read tool — they read files by running
+we split those across the blocks present that turn, proportional to size, and aggregate per category
+($ per run) over the benchmarks classic resolves. `classic`/`graphify` have no separate read tool — they read files by running
 `ls`/`sed`/`rg`/`find` through **bash**, so we split bash by command (`bash:read` = file discovery,
 `bash:build/test`, `bash:other`); `graphify`'s `graphify query` graph calls are counted as
 `explore/graph`. Generated by `node lib/token-breakdown.mjs`. Two views (totals match the cost graph):
@@ -103,28 +107,28 @@ classic's 22 wins. `classic`/`graphify` have no separate read tool — they read
 
 | source | classic | classic-graphify | classic-graph-bash |
 |---|---|---|---|
-| system+prompt | $3.20 | $3.55 | $3.71 |
-| bash:read | $12.66 | $12.01 | $0.24 |
-| bash:build/test | $1.08 | $1.35 | $0.88 |
-| bash:other | $0.29 | $0.35 | $0.48 |
-| explore/graph | $0.00 | $4.21 | $7.60 |
-| edit | $1.41 | $1.56 | $1.77 |
-| thinking | $2.79 | $3.23 | $2.05 |
-| output | $0.40 | $0.40 | $0.36 |
-| **total** | **$21.83** | **$26.66** | **$17.11** |
+| system+prompt | $1.60 | $1.78 | $1.86 |
+| bash:read | $6.33 | $6.00 | $0.12 |
+| bash:build/test | $0.54 | $0.67 | $0.44 |
+| bash:other | $0.14 | $0.18 | $0.24 |
+| explore/graph | $0.00 | $2.10 | $3.80 |
+| edit | $0.70 | $0.78 | $0.89 |
+| thinking | $1.39 | $1.62 | $1.03 |
+| output | $0.20 | $0.20 | $0.18 |
+| **total** | **$10.91** | **$13.33** | **$8.55** |
 
 #### Context only (input+cached) by source — over classic's wins
 
 | source | classic | classic-graphify | classic-graph-bash |
 |---|---|---|---|
-| system+prompt | $3.13 | $3.55 | $3.66 |
-| bash:read | $10.80 | $10.30 | $0.06 |
-| bash:build/test | $0.57 | $0.76 | $0.68 |
-| bash:other | $0.08 | $0.10 | $0.20 |
-| explore/graph | $0.00 | $3.89 | $6.44 |
-| edit | $0.21 | $0.21 | $0.24 |
-| thinking | $0.51 | $0.68 | $0.42 |
-| **total** | **$15.30** | **$19.49** | **$11.70** |
+| system+prompt | $1.57 | $1.78 | $1.83 |
+| bash:read | $5.40 | $5.15 | $0.03 |
+| bash:build/test | $0.28 | $0.38 | $0.34 |
+| bash:other | $0.04 | $0.05 | $0.10 |
+| explore/graph | $0.00 | $1.95 | $3.22 |
+| edit | $0.10 | $0.10 | $0.12 |
+| thinking | $0.26 | $0.34 | $0.21 |
+| **total** | **$7.65** | **$9.74** | **$5.85** |
 <!-- /AUTO:breakdown-tables -->
 
 **Reading it** (exact $ in the table above):
@@ -142,12 +146,12 @@ Method note: the split uses char/4 size estimates and the latest sessions, scale
 measured totals so all graphs reconcile; per-arm totals are exact, the split is approximate. codex
 has no per-block session, so it is excluded from this view.
 
-**Caveats:** multi-seed `base/002` reports **pass@K** correctness and **summed** cost across seeds
-(all $ used). At pass@2, `classic-graph-bash` is **23/24** — it misses `logstash-17021` (a regression
+**Caveats:** multi-seed `base/002` — **pass@K** correctness, **$ per run** cost (averaged over an
+arm's seeds). At pass@2, `classic-graph-bash` is **23/24** — it misses `logstash-17021` (a regression
 vs classic), while `classic-graphify` is 24/24 (most correct, dearest). `codex` is an external
-reference captured as a **single** instrumented run (`cdx --json`, `lib/codex-metrics.mjs`); it is
-shown only in the single-seed view and **held out of the multi-seed summed comparison** (a 1-run arm
-isn't comparable to K-run arms). The historical single-seed benchmarks-20 milestone (graph-bash
+reference captured as a single instrumented run (`cdx --json`, `lib/codex-metrics.mjs`); the per-run
+framing makes that one run comparable, and it lands as the most expensive arm (it also resolves fewer,
+so it isn't a like-for-like fix cost). The historical single-seed benchmarks-20 milestone (graph-bash
 11/20 ⊇ classic 8/20) is in `docs/experiments.md`.
 
 ## Benchmark Arms
