@@ -227,7 +227,9 @@ function stackPerBench({ file, title, sub, data }) {
   });
   writeFileSync(file, s + `</svg>\n`);
 }
-for (const a of ARMS) stackPerBench({
+// classic-graphify last in the per-benchmark spend graphs
+const pbArms = [...ARMS].sort((a, b) => (a.key === "classic-graphify" ? 1 : 0) - (b.key === "classic-graphify" ? 1 : 0));
+for (const a of pbArms) stackPerBench({
   file: `plots/breakdown-bench-${a.key}.svg`,
   title: `Per-benchmark spend by source — ${a.label}`,
   sub: `$ per run by source, over the ${ids.length} benchmarks classic resolves (sorted by cost)`,

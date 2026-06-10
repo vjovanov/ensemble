@@ -153,8 +153,8 @@ spend goes on each individual problem — e.g. which benchmarks are `bash:read`-
 heavy. One graph per arm; `$ per run` by source.
 
 ![Per-benchmark spend by source — classic](plots/breakdown-bench-classic.svg)
-![Per-benchmark spend by source — classic-graphify](plots/breakdown-bench-classic-graphify.svg)
 ![Per-benchmark spend by source — classic-graph-bash](plots/breakdown-bench-classic-graph-bash.svg)
+![Per-benchmark spend by source — classic-graphify](plots/breakdown-bench-classic-graphify.svg)
 
 **Caveats:** multi-seed `base/002` — **pass@K** correctness, **$ per run** cost (averaged over an
 arm's seeds). At pass@2, `classic-graph-bash` is **23/24** — it misses `logstash-17021` (a regression
