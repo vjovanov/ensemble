@@ -3,6 +3,9 @@
 What we tried and what worked. One row per experiment, newest first. Maintained per
 §REQ-004-experiment-hygiene.3. Outcome ∈ worked / mixed / failed / proposed / running.
 
+> **Decision dependency tree:** [`docs/decision-tree.md`](decision-tree.md) — auto-generated from the
+> grund citations (`node docs/decision-tree.mjs`); shows what each decision is downstream of.
+
 | date | experiment | arms · instances | outcome | decision |
 |---|---|---|---|---|
 | 2026-06-11 | **svelte-15115 failure analysis** (lone pass@3 correctness miss) | graph-bash, graphify, classic · svelte-15115 | **analyzed** — wrong-phase misdirection: task is *disallow runes in const tags* (a validation); classic added 13-line validation in 2-analyze/CallExpression.js; graph arms reframed as runtime/codegen and wrote 106–121 lines in 3-transform/ConstTag.js. Explore obediently served transform code instead of anchoring on the analogous existing diagnostic | §DF-016-explore-anchor-validation-on-analogous-fix |
