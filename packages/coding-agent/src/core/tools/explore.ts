@@ -939,6 +939,21 @@ function capExploreOutput(text: string, maxBytes: number): string {
 	return `${kept.join("\n")}\n\n[explore output capped at ${formatSize(maxBytes)}; ${omitted} more line(s) omitted — read the cited files directly for full content.]`;
 }
 
+// §DF-017: drop graph traversal NODE lines for vendored / test / generated files — they are never the
+// edit site (simdjson pulls `dependencies/jsoncppdist`, `tests/`; jq pulls generated `parser.c`) and
+// just bloat the sidekick's navigation. Conservative: only removes NODE lines, keeps headers + code.
+function filterGraphNoise(text: string): string {
+	if (!text || !text.includes("NODE ")) return text;
+	const noisy = (p: string): boolean =>
+		/(^|\/)(dependencies|vendor|third[_-]?party|node_modules|tests?|examples?|benchmarks?)\//i.test(p) ||
+		/[^/]*(dist|\.tab\.c|\.yy\.c|parser\.c|lexer\.c|\.generated\.|\.min\.|_test\.|\.test\.)/i.test(p);
+	const out = text.split("\n").filter((line) => {
+		const m = /^\s*NODE\b.*\[src=([^ \]]+)/.exec(line);
+		return !(m && noisy(m[1]));
+	});
+	return out.join("\n");
+}
+
 // §FS-001-ensemble-explore.2.1 / .5.6: the sidekick is backend-conditional — with graphify it
 // relays graph nodes unchanged (no post-processing); without it, it reads raw files and trims
 // them coarse-grained (whole declarations only, never inside a retained body).
@@ -988,7 +1003,7 @@ async function runSidekick(
 		async ({ question }, toolSignal) => {
 			const result = await backend.query(question, toolSignal);
 			if (result !== undefined) {
-				return result;
+				return filterGraphNoise(result);
 			}
 			return requireGraph
 				? `No graph result for "${question}". (Required-graph mode: filesystem fallback disabled.)`
@@ -1002,7 +1017,7 @@ async function runSidekick(
 		async ({ node }, toolSignal) => {
 			const result = await backend.explain(node, toolSignal);
 			if (result !== undefined) {
-				return result;
+				return filterGraphNoise(result);
 			}
 			return requireGraph
 				? `No graph result for "${node}". (Required-graph mode: filesystem fallback disabled.)`
