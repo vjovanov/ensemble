@@ -1,6 +1,6 @@
 # DF-015-explore-return-source-on-code-intent: When the task asks for code, return source — not a graph traversal; exclude vendored/test/generated nodes
 
-**Status: Proposed (the single active experiment).** Grounded per §REQ-001-decision-log; targets the
+**Status: REJECTED (failed — cost worse, not merged).** Grounded per §REQ-001-decision-log; targets the
 cost regression measured in §REQ-005-research-checkpoints (base/002-30); subsumes
 §DF-013-graphify-amalgamation-awareness (lever #2); relates to §DF-004-explore-injected-content-cap,
 §DF-008-explore-root-cause-tracing.
@@ -46,13 +46,32 @@ Two levers, in priority order:
    `third_party/`, `node_modules/`, `*dist*`), test (`tests?/`, `*_test.*`, `*.test.*`), or generated
    (`parser.c`/`lexer.c`/`*.tab.c`/`*.generated.*`). Shrinks every traversal the sidekick does navigate.
 
-## 3. Validation (planned)
+## 3. Validation — FAILED
 
-Experiment worktree off `base/current` (= `base/002-base002-30`), change only `explore.ts`, re-run
-`classic-graph-bash` × 3 seeds on **simdjson-2178 + jq-3238** (targets) and **clap-5873 / tracing-2897 /
-go-zero-2787** (non-C controls, to confirm no regression on the cases explore already wins), then
-`compare.sh` for the §REQ-002/003 verdict vs the frozen base.
+Worktree `exp/explore-source-on-intent` (both levers), `classic-graph-bash` × 3 seeds on the targets +
+controls vs the 3-seed base. **$ per run (exp vs base-gb):**
 
-**PASS gate:** simdjson-2178 and jq-3238 cost ≤ classic per run (close the +30/+33% regressions) with no
-correctness loss; controls unchanged within noise. **Watch:** that returning source doesn't re-inflate
-cost via large slices (§DF-004 cap still applies) or lose the root-cause tracing win (§DF-008).
+| | classic | base-gb | exp-gb | Δ vs base |
+|---|---|---|---|---|
+| simdjson-2178 | $0.823 | $1.028 | $1.003 | −2% (flat) |
+| jq-3238 | $0.448 | $0.608 | **$0.804** | **+32%** |
+| clap-5873 | $0.430 | $0.433 | $0.478 | +10% |
+| tracing-2897 | $0.446 | $0.403 | **$0.733** | **+82%** |
+| go-zero-2787 | $0.222 | $0.159 | $0.200 | +26% |
+
+Correctness held (all still resolve) but **cost got worse on every instance**, including the controls
+— a clear §REQ-003 regression. **Rejected; not merged.**
+
+**Why it backfired** (from the sessions):
+- Lever #2 (noise exclusion) worked in isolation — simdjson explore injection **189KB→50KB**, cacheRead
+  **1020k→467k** — but total cost stayed flat (the lead still does the same bash; seed-noise dominates).
+- Lever #1 (force source) **backfired**: returning function bodies is often *bigger* than node lists
+  (jq-3238 explore **11KB→72KB**), and the blanket "never return graph traversal" directive disrupted the
+  cases where explore was already cheap (tracing bash 10→18, turns 15→26 → +82%).
+
+**Learnings.** The C-family cost regressions are **not** an explore-prompt problem — the lead does heavy
+`bash` on tight C source regardless, so explore tweaks don't move the total. The pragmatic lever is the
+**classic-capped routing** (−26.6% vs classic, already measured) — i.e. detect graph-noisy / explore-not-
+helping cases and fall back to classic — rather than reshaping what explore returns. Lever #2 alone
+(noise-node exclusion, no forced-source) is the only salvageable piece and could be retried narrowly, but
+is low priority.
