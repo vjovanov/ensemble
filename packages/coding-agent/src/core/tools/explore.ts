@@ -867,6 +867,11 @@ export function exploreSidekickSystemPrompt(graphifyAvailable: boolean, pressure
 				// For bug fixes, trace symptom -> cause before naming the edit site; this overrides the
 				// 3-fact minimality when the cause is not the symptom site.
 				"When the task is to fix a bug or wrong/failing behavior, do NOT stop at the first site whose text matches the symptom. Trace from the symptom to its ROOT CAUSE by following callers and definitions (`node_at`, `graph_explain`), and return the originating site plus the symptom→cause path. Fixing a symptom site while the real cause is elsewhere is the primary correctness failure to avoid — this takes precedence over the 3-fact minimality above.",
+				// §DF-016: svelte-15115 — "disallow $state/$derived in {@const}" is a VALIDATION; the lead
+				// reframed it as a transform/runtime bug and edited 3-transform/ConstTag.js (wrong phase),
+				// while the fix mirrors a sibling diagnostic in 2-analyze. Anchor diagnostic tasks on the
+				// analogous existing error, not the feature's transform site.
+				"When the task is to DISALLOW / FORBID / REJECT / VALIDATE / emit an error or warning for some usage (a diagnostic, not a behavior change), the fix almost always mirrors an EXISTING sibling diagnostic — added in the analysis/validation phase, NOT in transform/codegen. Find how the nearest existing diagnostic of the same family is raised (search sibling error codes / validation helpers) and return THAT site and pattern as the edit target, even if the caller is asking about transform or runtime code.",
 				"Default output budget: <= 120 lines total and <= 4 code excerpts. Prefer 20-60 lines.",
 				"Never return an entire file, class, or long method because it was requested broadly. Return only the exact declarations or slices needed for the task.",
 				"If a tool result is large, summarize what it proves and quote only the smallest exact lines needed as evidence.",
