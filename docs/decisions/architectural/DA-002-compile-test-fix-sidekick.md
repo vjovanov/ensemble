@@ -1,7 +1,13 @@
 # DA-002-compile-test-fix-sidekick: A sidekick owns the build→test→apply green-loop; the lead's authority over fixes is a tunable dial
 
-**Status: Proposed — experiment to run (all three authority modes).** Grounded per
-§REQ-001-decision-log. Subsumes §DA-001-edit-executor-sidekick (edit application) and
+**Status: Deferred (revisit after explore is finished). Measured addressable = ~52% of lead cost.**
+The verify/iterate tail (every turn from the first build onward — build runs + re-edit cycles + replayed
+build output) is **$5.59 of $10.77/seed (52%)** on graph-bash's 26 classic-wins; 11/26 actually iterate.
+Earlier shelving cited `bash:build/test` ≈ $0.4/run, but that is only build *execution* — the real cost
+is the iteration *turns* (lead thinking/edits/replay), so the "~50% lever" framing holds. Dual lever:
+cost (offload the tail) **and** correctness (iterate-to-green is what the fix-quality misses dayjs/jq/jib
+need). Caveat: the grading test is hidden → needs a self-authored reproduction, which caps both gains.
+Grounded per §REQ-001-decision-log. Subsumes §DA-001-edit-executor-sidekick (edit application) and
 §DF-005-compile-test-turn-delegation (test delegation) into one role; gated by
 §REQ-003-strictly-better-than-baseline; revisits §DF-002-sidekick-token-cost-out-of-scope.
 
