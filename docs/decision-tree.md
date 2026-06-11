@@ -38,6 +38,7 @@ flowchart TD
     DF_016_explore_anchor_validation_on_analogous_fix["✅ DF-016<br/><small>For 'disallow/validate' tasks, an…</small>"]
     DF_017_graph_noise_node_exclusion["⬜ DF-017<br/><small>Drop vendored / test / generated …</small>"]
     DF_018_explore_no_raw_node_dumps["⬜ DF-018<br/><small>The sidekick must not return raw …</small>"]
+    DF_020a_explore_whiff_robustness["⬜ DF-020<br/><small>when a graph call whiffs (miss or…</small>"]
   end
   subgraph Roadmap["Roadmap"]
     RM_001_bash_sidekick["RM-001<br/><small>bash sidekick</small>"]
@@ -82,6 +83,10 @@ flowchart TD
   DF_017_graph_noise_node_exclusion -- subsumes --> DF_013_graphify_amalgamation_awareness
   DF_018_explore_no_raw_node_dumps -. relates .-> DF_015_explore_return_source_on_code_intent
   DF_018_explore_no_raw_node_dumps -. relates .-> DF_017_graph_noise_node_exclusion
+  DF_020a_explore_whiff_robustness -. relates .-> DF_008_explore_root_cause_tracing
+  DF_020a_explore_whiff_robustness -. relates .-> DF_006_explore_giveup_and_supplement_guard
+  DF_020a_explore_whiff_robustness -. relates .-> DF_004_explore_injected_content_cap
+  DF_020a_explore_whiff_robustness -. relates .-> DF_015_explore_return_source_on_code_intent
   DA_001_edit_executor_sidekick -. relates .-> DF_004_explore_injected_content_cap
   DA_001_edit_executor_sidekick -- subsumes --> DA_002_compile_test_fix_sidekick
   DA_002_compile_test_fix_sidekick -- subsumes --> DA_001_edit_executor_sidekick
@@ -100,6 +105,7 @@ flowchart TD
 - ✅ **DF-004** — Cap the content explore injects into the caller
   ↳ DA-001 _(relates it)_
   ↳ DF-015 _(relates it)_
+  ↳ DF-020 _(relates it)_
 - **FS-001** — ensemble explore
   ↳ DF-007 _(relates it)_
   ↳ DF-008 _(relates it)_
