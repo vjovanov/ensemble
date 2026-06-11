@@ -44,47 +44,49 @@ table is the ceiling if graph-bash fell back to classic on those: the regression
 worst are exactly what the explore noise-exclusion experiment targets.
 
 <!-- AUTO:cost-tables -->
-#### $ per run on the 24 benchmarks classic resolves (averaged over seeds)
+#### Cost on the 26 benchmarks classic resolves — $ per run (averaged over an arm's seeds)
 
-| arm | resolved | input $ | cached $ | output $ | **total $** | Δ vs classic |
-|---|---|---|---|---|---|---|
-| classic | 24/24 | $4.64 | $3.01 | $3.26 | **$10.91** | — |
-| classic-graphify | 24/24 | $5.66 | $4.09 | $3.58 | **$13.33** | 22.1% |
-| classic-graph-bash | 23/24 | $3.74 | $2.11 | $2.70 | **$8.55** | -21.6% |
-| codex *(ref)* | 20/24 | $5.15 | $7.36 | $6.12 | **$18.63** | 70.7% |
-| graph-bash, classic-capped where worse | 24/24 | — | — | — | **$7.96** | -27.1% |
+| arm | resolved | input $ | cached $ | output $ | **avg $/run** | **total $** | Δ vs classic |
+|---|---|---|---|---|---|---|---|
+| classic | 26/26 | $5.36 | $3.85 | $3.78 | **$0.50** | **$12.99** | — |
+| classic-graphify | 25/26 | $6.19 | $4.63 | $4.08 | **$0.57** | **$14.90** | 14.7% |
+| classic-graph-bash | 25/26 | $4.31 | $2.58 | $3.13 | **$0.39** | **$10.02** | -22.9% |
+| codex *(ref)* | 21/26 | $5.78 | $8.05 | $6.83 | **$0.79** | **$20.67** | 59.1% |
+| graph-bash, classic-capped where worse | 26/26 | — | — | — | **$0.37** | **$9.54** | -26.6% |
 
-_codex is a reference arm (external Codex CLI); it spends on all 24 but resolves only 20, so its total is not a like-for-like fix cost._
+_codex is a reference arm (external Codex CLI); it spends on all 26 but resolves only 21, so its total is not a like-for-like fix cost._
 
 #### Per-benchmark cost on classic's wins ($)
 
 | benchmark | classic | classic-graphify | classic-graph-bash | codex |
 |---|---|---|---|---|
-| zstd-3438 | $1.156 | $1.247 | $0.488 | $1.697 |
-| dayjs-2399 | $0.787 | $1.074 | $0.616 | $1.093 |
-| simdjson-2178 | $0.756 | $1.390 | $0.986 | _$1.425_ |
-| logstash-17021 | $0.700 | $0.835 | _$0.614_ | _$2.613_ |
-| dayjs-2532 | $0.698 | $0.699 | $0.456 | $1.020 |
-| core-11694 | $0.678 | $0.830 | $0.270 | $1.073 |
-| grpc-go-3258 | $0.550 | $0.801 | $0.568 | $0.847 |
-| jq-3238 | $0.514 | $0.559 | $0.686 | _$1.284_ |
-| tracing-2897 | $0.490 | $0.599 | $0.357 | $0.809 |
-| core-11761 | $0.486 | $0.534 | $0.295 | $0.648 |
-| grpc-go-3351 | $0.450 | $0.441 | $0.402 | $0.484 |
-| clap-5873 | $0.433 | $0.562 | $0.399 | $0.749 |
-| core-11680 | $0.408 | $0.397 | $0.241 | $0.600 |
-| fd-1394 | $0.395 | $0.376 | $0.126 | $0.258 |
-| github-readme-stats-2844 | $0.374 | $0.423 | $0.268 | _$0.341_ |
-| jq-2919 | $0.266 | $0.471 | $0.348 | $0.808 |
-| zstd-3942 | $0.259 | $0.316 | $0.288 | $0.523 |
-| bytes-732 | $0.258 | $0.323 | $0.222 | $0.304 |
-| core-11813 | $0.258 | $0.216 | $0.093 | $0.243 |
-| bat-3189 | $0.257 | $0.197 | $0.215 | $0.502 |
-| go-zero-2787 | $0.233 | $0.221 | $0.123 | $0.293 |
-| darkreader-7241 | $0.215 | $0.399 | $0.282 | $0.440 |
-| express-5555 | $0.159 | $0.220 | $0.080 | $0.279 |
-| rayon-986 | $0.132 | $0.199 | $0.132 | $0.294 |
-| **total** | **$10.91** | **$13.33** | **$8.55** | **$18.63** |
+| dayjs-2532 | $1.056 | $0.699 | $0.590 | $1.020 |
+| zstd-3438 | $1.032 | $1.247 | $0.612 | $1.697 |
+| svelte-15115 | $0.923 | _$0.928_ | _$0.688_ | $1.472 |
+| simdjson-2178 | $0.823 | $1.390 | $1.028 | _$1.425_ |
+| grpc-go-3351 | $0.754 | $0.441 | $0.352 | $0.484 |
+| dayjs-2399 | $0.750 | $1.074 | $0.600 | $1.093 |
+| core-11694 | $0.670 | $0.830 | $0.321 | $1.073 |
+| logstash-17021 | $0.641 | $0.835 | $0.554 | _$2.613_ |
+| grpc-go-3258 | $0.631 | $0.801 | $0.671 | $0.847 |
+| ponyc-4593 | $0.524 | $0.643 | $0.401 | _$0.569_ |
+| core-11761 | $0.497 | $0.534 | $0.286 | $0.648 |
+| github-readme-stats-2844 | $0.453 | $0.423 | $0.292 | _$0.341_ |
+| jq-3238 | $0.448 | $0.559 | $0.608 | _$1.284_ |
+| tracing-2897 | $0.446 | $0.599 | $0.403 | $0.809 |
+| clap-5873 | $0.430 | $0.562 | $0.433 | $0.749 |
+| fd-1394 | $0.393 | $0.376 | $0.156 | $0.258 |
+| core-11680 | $0.374 | $0.397 | $0.292 | $0.600 |
+| darkreader-7241 | $0.344 | $0.399 | $0.248 | $0.440 |
+| bat-3189 | $0.322 | $0.197 | $0.199 | $0.502 |
+| jq-2919 | $0.282 | $0.471 | $0.343 | $0.808 |
+| zstd-3942 | $0.245 | $0.316 | $0.255 | $0.523 |
+| core-11813 | $0.232 | $0.216 | $0.089 | $0.243 |
+| bytes-732 | $0.226 | $0.323 | $0.222 | $0.304 |
+| go-zero-2787 | $0.222 | $0.221 | $0.159 | $0.293 |
+| express-5555 | $0.151 | $0.220 | $0.092 | $0.279 |
+| rayon-986 | $0.123 | $0.199 | $0.125 | $0.294 |
+| **total** | **$12.99** | **$14.90** | **$10.02** | **$20.67** |
 
 (italic = arm ran but did not resolve that benchmark; "—" = no run)
 <!-- /AUTO:cost-tables -->
@@ -107,28 +109,28 @@ we split those across the blocks present that turn, proportional to size, and ag
 
 | source | classic | classic-graphify | classic-graph-bash |
 |---|---|---|---|
-| system+prompt | $1.60 | $1.78 | $1.86 |
-| bash:read | $6.33 | $6.00 | $0.12 |
-| bash:build/test | $0.54 | $0.67 | $0.44 |
-| bash:other | $0.14 | $0.18 | $0.24 |
-| explore/graph | $0.00 | $2.10 | $3.80 |
-| edit | $0.70 | $0.78 | $0.89 |
-| thinking | $1.39 | $1.62 | $1.03 |
-| output | $0.20 | $0.20 | $0.18 |
-| **total** | **$10.91** | **$13.33** | **$8.55** |
+| system+prompt | $1.57 | $1.92 | $2.10 |
+| bash:read | $7.71 | $6.72 | $0.34 |
+| bash:build/test | $0.53 | $0.68 | $0.54 |
+| bash:other | $0.62 | $0.20 | $0.38 |
+| explore/graph | $0.00 | $2.37 | $4.67 |
+| edit | $0.88 | $0.94 | $0.82 |
+| thinking | $1.48 | $1.83 | $0.97 |
+| output | $0.21 | $0.23 | $0.21 |
+| **total** | **$12.99** | **$14.90** | **$10.02** |
 
 #### Context only (input+cached) by source — over classic's wins
 
 | source | classic | classic-graphify | classic-graph-bash |
 |---|---|---|---|
-| system+prompt | $1.57 | $1.78 | $1.83 |
-| bash:read | $5.40 | $5.15 | $0.03 |
-| bash:build/test | $0.28 | $0.38 | $0.34 |
-| bash:other | $0.04 | $0.05 | $0.10 |
-| explore/graph | $0.00 | $1.95 | $3.22 |
-| edit | $0.10 | $0.10 | $0.12 |
-| thinking | $0.26 | $0.34 | $0.21 |
-| **total** | **$7.65** | **$9.74** | **$5.85** |
+| system+prompt | $1.54 | $1.92 | $2.05 |
+| bash:read | $6.68 | $5.73 | $0.17 |
+| bash:build/test | $0.30 | $0.38 | $0.42 |
+| bash:other | $0.28 | $0.06 | $0.16 |
+| explore/graph | $0.00 | $2.21 | $3.77 |
+| edit | $0.16 | $0.14 | $0.13 |
+| thinking | $0.26 | $0.38 | $0.19 |
+| **total** | **$9.21** | **$10.82** | **$6.89** |
 <!-- /AUTO:breakdown-tables -->
 
 **Reading it** (exact $ in the table above):
