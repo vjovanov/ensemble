@@ -85,4 +85,25 @@ several subsystems, **name them in one line and let the caller pick** rather tha
 "anticipate the obvious next hop". Re-screen on the same six; PASS gate now also requires **dayjs-2399 ≤
 base** (no expansion).
 
-### Result v2 — (pending re-screen)
+### Result v2 — gate fix worked on the target, but 1-seed screens hit the noise floor
+
+`classic-graph-bash`, 1 seed (fresh seed vs v1). dayjs-2399 — the deliberate target — **fixed**, but the
+v1 headline wins did not reproduce and grpc-go-3258 failed.
+
+| instance | base/003 (3-seed) | v1 broad (calls/$) | v2 tight (calls/$) | resolved v2 |
+|---|---|---|---|---|
+| **dayjs-2399** | YYY, ~$0.60 | 12 / $1.29 | **8 / $0.36** | Y ✓ (over-trigger gone) |
+| grpc-go-3258 | **YYY**, ~$0.67 | 8 / $0.38 | 7 / $0.49 | **N** |
+| simdjson-2178 | YYN, ~$1.03 | 9 / $0.62 | 14 / $1.01 | Y |
+| dayjs-2532 | YYY, ~$0.59 | 5 / $0.32 | 14 / $1.01 | Y |
+| clap-5873 | YYY, ~$0.43 | 2 / $0.16 | 3 / $0.22 | Y |
+| express-5555 | —, ~$0.09 | 1 / $0.06 | 2 / $0.07 | Y |
+
+**Reading.** The one cleanly-attributable change — the dayjs-2399 gate — landed: 12→8 calls, −72% cost, no
+expansion. But the v1→v2 swings on simdjson (9→14) and dayjs-2532 (5→14) **exceed any plausible directive
+effect** — they are **seed noise**. Two single seeds now tell opposite headlines, and grpc (3/3 at base)
+failed once in v2. **1-seed screens cannot decide this**; v1 and v2 differ by seed as much as by directive.
+Either v2 over-tightened (starved grpc, shrank the wins) or it is all variance — indistinguishable at K=1.
+**Next: a 3-seed run on the targets is required to get a real verdict**, per §REQ-005; or shelve DF-020b
+as too seed-fragile given the modest absolute cost ($0.4–1.0) on this set. The v2 gate fix stands
+regardless (it removed a real over-trigger).
