@@ -187,6 +187,14 @@ is **multi-seed**: run each (instance, arm) K times (default K=3). Report **pass
 K = capability) and the resolved-rate; cost = mean over the resolved seeds. This is *cheaper long-run*
 because it stops us chasing seed noise with prompt tweaks (the DF-008/DF-009 loop). `bench/multiseed.sh`.
 
+**No single-seed screens — every experiment is run at K=3 from the start, scoped to only the relevant
+benchmarks.** A 1-seed "cheap screen" is not a valid signal: it sits on the noise floor and two single
+seeds of the *same* change can give opposite headlines. DF-020b proved this — a 1-seed v1 showed −40 to
+−63%, a 1-seed v2 (after a gate tweak) showed the wins gone and a 3/3-reliable instance failing; the
+v1↔v2 swing was pure seed variance, not the directive. So we do **not** screen at K=1 and then "confirm";
+we run the scoped set at **K=3 directly**. Keeping the scope tight (targets + regression-risk controls,
+§2) is what keeps K=3 cheap — scope, not seed count, is the cost lever.
+
 **Reuse and don't-redo, to keep multi-seed cheap:**
 - **Count existing runs as a seed.** An arm's existing `raw/` run (at the *current* code) counts as seed 1;
   multi-seed then only adds K−1 fresh seeds (`multiseed.sh --reuse <arms>`, per-arm — a stale-code run must

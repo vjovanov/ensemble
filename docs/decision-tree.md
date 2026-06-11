@@ -39,7 +39,7 @@ flowchart TD
     DF_017_graph_noise_node_exclusion["⬜ DF-017<br/><small>Drop vendored / test / generated …</small>"]
     DF_018_explore_no_raw_node_dumps["⬜ DF-018<br/><small>The sidekick must not return raw …</small>"]
     DF_020a_explore_whiff_robustness["❌ DF-020a<br/><small>when a graph call whiffs (miss or…</small>"]
-    DF_020b_explore_decisive_search["✅ DF-020b<br/><small>for understanding/flow tasks, ans…</small>"]
+    DF_020b_explore_decisive_search["⬜ DF-020b<br/><small>for understanding/flow tasks, ans…</small>"]
   end
   subgraph Roadmap["Roadmap"]
     RM_001_bash_sidekick["RM-001<br/><small>bash sidekick</small>"]
@@ -89,11 +89,12 @@ flowchart TD
   DF_020a_explore_whiff_robustness -. relates .-> DF_004_explore_injected_content_cap
   DF_020a_explore_whiff_robustness -. relates .-> DF_015_explore_return_source_on_code_intent
   DF_020a_explore_whiff_robustness -. relates .-> DF_020b_explore_decisive_search
-  DF_020b_explore_decisive_search -. relates .-> DF_015_explore_return_source_on_code_intent
+  DF_020b_explore_decisive_search -. relates .-> REQ_005_research_checkpoints
   DF_020b_explore_decisive_search -. relates .-> DF_020a_explore_whiff_robustness
   DF_020b_explore_decisive_search -. relates .-> REQ_001_decision_log
   DF_020b_explore_decisive_search -. relates .-> DF_008_explore_root_cause_tracing
   DF_020b_explore_decisive_search -. relates .-> DF_016_explore_anchor_validation_on_analogous_fix
+  DF_020b_explore_decisive_search -. relates .-> DF_015_explore_return_source_on_code_intent
   DA_001_edit_executor_sidekick -. relates .-> DF_004_explore_injected_content_cap
   DA_001_edit_executor_sidekick -- subsumes --> DA_002_compile_test_fix_sidekick
   DA_002_compile_test_fix_sidekick -- subsumes --> DA_001_edit_executor_sidekick
@@ -135,6 +136,7 @@ flowchart TD
   ↳ DF-014 _(relates it)_
   ↳ DF-015 _(targets it)_
   ↳ DF-016 _(relates it)_
+  ↳ DF-020b _(relates it)_
 - **RM-001** — bash sidekick
   ↳ DF-003 _(relates it)_
   ↳ DF-005 _(relates it)_

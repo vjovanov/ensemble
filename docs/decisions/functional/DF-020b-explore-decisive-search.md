@@ -1,9 +1,12 @@
 # DF-020b-explore-decisive-search: for understanding/flow tasks, answer the whole local call-chain in one decisive response (compact pointers, not more source) and stop probing once answerable
 
-**Status: SCREENED (promising) — tightening the gate before adoption.** 1-seed screen: 6/6 correct,
-−40 to −63% cost on five of six (the lead re-ask loop collapsed: grpc 15→8, simdjson 15→9, dayjs-2532
-12→5, clap 7→2). One regression — **dayjs-2399 8→12 lead calls, +115% vs base** — the §DF-015 over-trigger
-watch firing on a cross-plugin bug. Re-aim of the rejected §DF-020a (whiff-robustness was a
+**Status: INCONCLUSIVE at K=1 — next: re-run v1 (broad) at K=3, scoped (queued, not yet run).** Two
+1-seed screens gave opposite headlines on pure seed variance (v1 −40 to −63% on 5/6; v2 wins gone, grpc
+3/3-at-base failed once), which is exactly why §REQ-005-research-checkpoints.0 now forbids single-seed
+screens. **Decision: re-run the broad v1 directive at K=3 on the scoped set** (branch
+`exp/explore-decisive-v1` @ `8c5bfac5a5`); **v2 is parked** (its gate fix removed the real dayjs-2399
+over-trigger, but it also shrank the wins and may have starved grpc — revisit only if v1@K=3 confirms a
+win worth tightening). Re-aim of the rejected §DF-020a (whiff-robustness was a
 no-op: the sidekick navigates via `search`/`source_slice`, not `graph_query`/`graph_explain`). Grounded
 per §REQ-001-decision-log; targets the explore re-ask storm measured on base/003 (grpc-go-3258,
 simdjson-2178: 12–15 lead explore calls, ~15 internal `search`/`source_slice` ops each); relates to
@@ -84,6 +87,26 @@ adjacent subsystems / plugins / files** the caller did not ask about; if the ans
 several subsystems, **name them in one line and let the caller pick** rather than fetching them all. Drop
 "anticipate the obvious next hop". Re-screen on the same six; PASS gate now also requires **dayjs-2399 ≤
 base** (no expansion).
+
+### Next experiment (queued — DO NOT run until the machine is back): v1 broad directive @ K=3, scoped
+
+Per §REQ-005-research-checkpoints.0 (no single-seed screens), get the verdict at K=3 on the broad v1
+directive (the version with the big wins). Branch `exp/explore-decisive-v1` is pinned at the v1 commit
+`8c5bfac5a5`. Scoped set = the retry-heavy targets + controls; compare against base/003's frozen 3 seeds.
+
+```sh
+git worktree add /home/vjovanov/p/ensemble-exp-decisive-v1 exp/explore-decisive-v1
+# seed node_modules/instances/pristine as in bench/run-decisive-screen.sh, then:
+cd /home/vjovanov/p/ensemble-exp-decisive-v1/bench
+./multiseed.sh decisive-v1-3seed \
+  --instances grpc__grpc-go-3258,simdjson__simdjson-2178,iamkun__dayjs-2532,iamkun__dayjs-2399,clap-rs__clap-5873,expressjs__express-5555 \
+  --arms classic-graph-bash --seeds 3 --conc 4
+```
+
+**PASS gate:** pass@3 ≥ base on every instance (no correctness regression — watch grpc, which is 3/3 at
+base) **and** mean cost down on the retry-heavy targets, controls flat. If it passes → DF-020b is win #2
+(with §DF-016) toward the merge-3-wins full run. If grpc regresses at K=3 → the broad directive is unsafe;
+fall back to evaluating v2 at K=3.
 
 ### Result v2 — gate fix worked on the target, but 1-seed screens hit the noise floor
 
