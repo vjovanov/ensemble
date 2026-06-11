@@ -1,6 +1,9 @@
 # DF-020b-explore-decisive-search: for understanding/flow tasks, answer the whole local call-chain in one decisive response (compact pointers, not more source) and stop probing once answerable
 
-**Status: PROPOSED — cheap-screen scheduled.** Re-aim of the rejected §DF-020a (whiff-robustness was a
+**Status: SCREENED (promising) — tightening the gate before adoption.** 1-seed screen: 6/6 correct,
+−40 to −63% cost on five of six (the lead re-ask loop collapsed: grpc 15→8, simdjson 15→9, dayjs-2532
+12→5, clap 7→2). One regression — **dayjs-2399 8→12 lead calls, +115% vs base** — the §DF-015 over-trigger
+watch firing on a cross-plugin bug. Re-aim of the rejected §DF-020a (whiff-robustness was a
 no-op: the sidekick navigates via `search`/`source_slice`, not `graph_query`/`graph_explain`). Grounded
 per §REQ-001-decision-log; targets the explore re-ask storm measured on base/003 (grpc-go-3258,
 simdjson-2178: 12–15 lead explore calls, ~15 internal `search`/`source_slice` ops each); relates to
@@ -54,4 +57,32 @@ flat-to-down and no correctness regression; controls stay flat. **Watch (the §D
 the controls (which are not understanding tasks) catch that. If it over-triggers or backfires on cost, the
 directive's gate is too broad; tighten or reject.
 
-### Result — (pending screen)
+### Result — SCREENED (promising, 1 seed vs base/003); gate too broad on cross-cutting bugs
+
+`classic-graph-bash`, 1 seed. Correctness **6/6**. The re-ask loop collapsed on the linear-chain targets;
+one cross-plugin instance over-triggered.
+
+| instance | lead calls (base-behavior → b) | base/003 $ (3-seed mean) | DF-020b $ | Δ |
+|---|---|---|---|---|
+| grpc-go-3258 | 15 → **8** | $0.67 | $0.38 | **−43%** |
+| simdjson-2178 | 15 → **9** | $1.03 | $0.62 | **−40%** |
+| dayjs-2532 | 12 → **5** | $0.59 | $0.32 | **−46%** |
+| clap-5873 (ctrl) | 7 → **2** | $0.43 | $0.16 | **−63%** |
+| express-5555 (ctrl) | 1 → **1** | $0.09 | $0.06 | −33% |
+| **dayjs-2399** | 8 → **12** | $0.60 | $1.29 | **+115%** ⚠ |
+
+**Root cause of the dayjs-2399 regression.** Its bug is **cross-plugin** (utc / timezone / locale /
+badMutable / core index.js) — there is no single "local chain". The clause *"anticipate the obvious next
+hop"* + "return the whole chain" makes the sidekick **expand** into adjacent subsystems (each next hop
+opens another plugin), so the lead chases more leads: products grew 11.5 KB → 20.4 KB and calls 8 → 12.
+On the linear chains (grpc resolver wiring, simdjson parser path) the same directive converges and wins.
+
+**Tightening (v2, to re-screen).** Narrow the gate and remove the expansion driver: fire only when the
+caller names a **concrete** symbol / function / path (not an open-ended "how does this whole feature
+work"); answer **only that path** (named function + immediate caller/callee hop on it); **do NOT volunteer
+adjacent subsystems / plugins / files** the caller did not ask about; if the answer genuinely spans
+several subsystems, **name them in one line and let the caller pick** rather than fetching them all. Drop
+"anticipate the obvious next hop". Re-screen on the same six; PASS gate now also requires **dayjs-2399 ≤
+base** (no expansion).
+
+### Result v2 — (pending re-screen)
