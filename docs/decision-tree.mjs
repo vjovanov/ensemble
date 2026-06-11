@@ -51,8 +51,9 @@ for (const dir of DEC_DIRS) {
   }
 }
 
-// canonicalize ids to the longest slug seen per PREFIX-NNN base (some refs use short forms)
-const baseOf = (id) => (id.match(/^([A-Z]+-\d+)/) ?? [id])[1];
+// canonicalize ids to the longest slug seen per PREFIX-NNN[suffix] base (some refs use short forms).
+// Keep a trailing lowercase suffix (DF-020a vs DF-020b) so split sub-decisions stay distinct.
+const baseOf = (id) => (id.match(/^([A-Z]+-\d+[a-z]?)/) ?? [id])[1];
 const canon = new Map();
 const consider = (id) => { const b = baseOf(id); if (!canon.has(b) || id.length > canon.get(b).length) canon.set(b, id); };
 for (const id of nodes.keys()) consider(id);
@@ -96,7 +97,7 @@ for (const g of order) {
   mer += `  subgraph ${nid(g)}["${g}"]\n`;
   for (const n of ns) {
     const ic = n.status ? statusIcon(n.status) + " " : "";
-    mer += `    ${nid(n.id)}["${ic}${n.id.replace(/^([A-Z]+-\d+).*/, "$1")}<br/><small>${wrap(n.title)}</small>"]\n`;
+    mer += `    ${nid(n.id)}["${ic}${n.id.replace(/^([A-Z]+-\d+[a-z]?).*/, "$1")}<br/><small>${wrap(n.title)}</small>"]\n`;
   }
   mer += "  end\n";
 }
@@ -117,9 +118,9 @@ const seen = new Set();
 const walk = (id, depth) => {
   const n = nodes.get(id); if (!n) return;
   const ic = n.status ? statusIcon(n.status) + " " : "";
-  out += `${"  ".repeat(depth)}- ${ic}**${n.id.replace(/^([A-Z]+-\d+).*/, "$1")}** — ${n.title}\n`;
+  out += `${"  ".repeat(depth)}- ${ic}**${n.id.replace(/^([A-Z]+-\d+[a-z]?).*/, "$1")}** — ${n.title}\n`;
   if (seen.has(id)) return; seen.add(id);
-  for (const c of (childrenOf.get(id) ?? []).sort((a, b) => a.from.localeCompare(b.from))) out += `${"  ".repeat(depth + 1)}↳ ${c.from.replace(/^([A-Z]+-\d+).*/, "$1")} _(${c.rel} it)_\n`;
+  for (const c of (childrenOf.get(id) ?? []).sort((a, b) => a.from.localeCompare(b.from))) out += `${"  ".repeat(depth + 1)}↳ ${c.from.replace(/^([A-Z]+-\d+[a-z]?).*/, "$1")} _(${c.rel} it)_\n`;
 };
 for (const r of roots) walk(r.id, 0);
 
