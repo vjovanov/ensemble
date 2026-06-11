@@ -162,6 +162,15 @@ Rules:
   §DF-007-lead-driven-graphify-skill.5) understates/overstates savings — re-run the baseline arm at the
   same commit before claiming a delta.
 
+## 7. Keep the decision tree current
+
+The decision dependency tree (`docs/decision-tree.md`) is a **derived** view of the grund citations in
+the decision docs — the at-a-glance map of what each decision is downstream of. Regenerate it
+(`node docs/decision-tree.mjs > docs/decision-tree.md`) and commit it **in the same change** whenever a
+`DF`/`DA` (or other decision) is added, revised, or has its status or grounding edited, so the tree never
+drifts from the docs. Like the experiment ledger (§3) and bench profiles (§4), a stale derived doc is a
+hygiene failure.
+
 # REQ-005-research-checkpoints: A frozen base is the only comparison reference; explore in parallel, promote winners
 
 Research advances by branching experiments from an immutable **base** and comparing every result
