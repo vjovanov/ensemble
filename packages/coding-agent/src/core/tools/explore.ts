@@ -619,6 +619,57 @@ async function fallbackSearch(
 		.join("\n\n");
 }
 
+// §DF-020a-explore-whiff-robustness: a graph call "whiffs" when it misses entirely (undefined)
+// or returns near-nothing (below the char threshold). On a whiff the sidekick would otherwise
+// dead-end on a stub and re-ask the same thing several ways — the grpc-go-3258 retry storm (20
+// explore calls clustering into 4 re-ask loops). Instead we run the filesystem search ourselves
+// and return labeled evidence so a single call is decisive. This deliberately relaxes
+// §FS-001-ensemble-explore.7.4.4 (no filesystem degrade in required-graph mode) for the whiff
+// case ONLY: the filesystem tools (search/source_slice) are already exposed to the sidekick even
+// under PI_REQUIRE_GRAPH, so this widens nothing the lead ultimately sees (it only ever gets the
+// sidekick's digest) — it just removes a wasted round-trip. Toggle with PI_EXPLORE_WHIFF_FALLBACK=0.
+const WHIFF_FALLBACK_ENV = "PI_EXPLORE_WHIFF_FALLBACK";
+const WHIFF_MIN_CHARS_ENV = "PI_EXPLORE_WHIFF_MIN_CHARS";
+const DEFAULT_WHIFF_MIN_CHARS = 200;
+
+function whiffFallbackEnabled(): boolean {
+	const raw = process.env[WHIFF_FALLBACK_ENV]?.trim().toLowerCase();
+	return !(raw === "off" || raw === "0" || raw === "false" || raw === "no");
+}
+
+function whiffMinChars(): number {
+	const raw = process.env[WHIFF_MIN_CHARS_ENV]?.trim();
+	if (!raw) return DEFAULT_WHIFF_MIN_CHARS;
+	const value = Number(raw);
+	return Number.isFinite(value) && value >= 0 ? value : DEFAULT_WHIFF_MIN_CHARS;
+}
+
+// Resolve a graph_query/graph_explain result, applying the whiff fallback when the graph misses
+// or under-answers. `requireGraph` only affects the disabled-toggle path (preserves the old stub).
+async function resolveGraphResult(
+	result: string | undefined,
+	term: string,
+	paths: string[] | undefined,
+	cwd: string,
+	maxSnippets: number,
+	requireGraph: boolean,
+): Promise<string> {
+	const isWhiff = result === undefined || result.trim().length < whiffMinChars();
+	if (!isWhiff) return result as string;
+	if (!whiffFallbackEnabled()) {
+		if (result !== undefined) return result;
+		return requireGraph
+			? `No graph result for "${term}". (Required-graph mode: filesystem fallback disabled.)`
+			: fallbackSearch(term, paths, cwd, maxSnippets);
+	}
+	const fs = await fallbackSearch(term, paths, cwd, maxSnippets);
+	const thin = result ? `${result.trim()}\n\n` : "";
+	const header = result
+		? `(Graph returned little for "${term}"; completing from filesystem search:)`
+		: `(No graph node for "${term}"; filesystem search instead:)`;
+	return `${thin}${header}\n${fs}`;
+}
+
 // graphify exits 0 on failure, printing an error/empty-result line to stdout. Treat those as
 // "no result" so callers fall back instead of relaying noise to the model.
 function isGraphifyFailureOutput(stdout: string): boolean {
@@ -982,12 +1033,7 @@ async function runSidekick(
 		graphQuerySchema,
 		async ({ question }, toolSignal) => {
 			const result = await backend.query(question, toolSignal);
-			if (result !== undefined) {
-				return result;
-			}
-			return requireGraph
-				? `No graph result for "${question}". (Required-graph mode: filesystem fallback disabled.)`
-				: fallbackSearch(question, input.paths, context.cwd, maxSnippets);
+			return resolveGraphResult(result, question, input.paths, context.cwd, maxSnippets, requireGraph);
 		},
 	);
 	const graphExplainTool = makeTextTool(
@@ -996,12 +1042,7 @@ async function runSidekick(
 		graphExplainSchema,
 		async ({ node }, toolSignal) => {
 			const result = await backend.explain(node, toolSignal);
-			if (result !== undefined) {
-				return result;
-			}
-			return requireGraph
-				? `No graph result for "${node}". (Required-graph mode: filesystem fallback disabled.)`
-				: fallbackSearch(node, input.paths, context.cwd, maxSnippets);
+			return resolveGraphResult(result, node, input.paths, context.cwd, maxSnippets, requireGraph);
 		},
 	);
 	const graphFetchNodeTool = makeTextTool(
