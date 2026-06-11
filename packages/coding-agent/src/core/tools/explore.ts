@@ -867,6 +867,11 @@ export function exploreSidekickSystemPrompt(graphifyAvailable: boolean, pressure
 				// For bug fixes, trace symptom -> cause before naming the edit site; this overrides the
 				// 3-fact minimality when the cause is not the symptom site.
 				"When the task is to fix a bug or wrong/failing behavior, do NOT stop at the first site whose text matches the symptom. Trace from the symptom to its ROOT CAUSE by following callers and definitions (`node_at`, `graph_explain`), and return the originating site plus the symptom→cause path. Fixing a symptom site while the real cause is elsewhere is the primary correctness failure to avoid — this takes precedence over the 3-fact minimality above.",
+				// §DF-020b: on understanding/flow tasks the caller otherwise re-asks 12-15× (circling the
+				// same 3-5 entities), because the first-pass minimality tells the sidekick to answer narrowly
+				// and "let the caller follow up". Be decisive instead: return the whole local call-chain in
+				// one answer as compact pointers (more STRUCTURE, not more SOURCE — the §DF-015 cost guard).
+				"When the task is to UNDERSTAND how code works, flows, or connects (a how/where/why question, or tracing a call path, resolver, or data flow rather than locating one edit site), be DECISIVE: answer the whole LOCAL CHAIN in one response — the central function plus the adjacent hops on the relevant path (its key caller(s) and callee(s)) — each as a compact `path:line — one-line role` pointer, with at most the single most relevant excerpt. Anticipate the obvious next hop so the caller need not re-ask it. This overrides the \"let the caller ask a follow-up\" minimality for understanding tasks; it does NOT raise the excerpt budget — give more pointers, not more source. Once you can answer, stop searching; do not keep probing the same area.",
 				"Default output budget: <= 120 lines total and <= 4 code excerpts. Prefer 20-60 lines.",
 				"Never return an entire file, class, or long method because it was requested broadly. Return only the exact declarations or slices needed for the task.",
 				"If a tool result is large, summarize what it proves and quote only the smallest exact lines needed as evidence.",
