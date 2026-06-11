@@ -879,6 +879,10 @@ export function exploreSidekickSystemPrompt(graphifyAvailable: boolean, pressure
 				"Turn a search hit into structure with `node_at(path, line)`: it resolves the hit to its graph node and shows the call/reference neighbors. Prefer this over guessing an identifier for `graph_explain`.",
 				"Use `graph_query`/`graph_explain` to navigate relationships (callers, callees, neighbors) — the graph's unique value over plain search.",
 				"Use `source_slice` only to confirm the smallest relevant source interval after graph/search has identified it.",
+				// §DF-018: the sidekick returned raw BFS traversals ("Traversal: N nodes found", bare "NODE …")
+				// to the lead, which cannot act on node names → 9-13 retries + bash fallback. Ban the format,
+				// but keep evidence compact (§DF-015 backfired by forcing large bodies).
+				"Never return raw graph-traversal output (`Traversal:` / `N nodes found` / bare `NODE …` node-name lists) to the caller — node names are not actionable. Convert findings into either a precise `path:line` reference (name the symbol and where it lives) or a small `source_slice`, whichever the task needs. Prefer compact pointers; do not dump large bodies.",
 				"Think about what the task genuinely needs and return only that; do not pull in neighbors speculatively.",
 				"Do not repeat source, spans, or graph evidence you already returned in this explore run; ask narrower follow-ups when more evidence is needed.",
 				"Do not fetch whole files unless the caller explicitly requested whole files.",
