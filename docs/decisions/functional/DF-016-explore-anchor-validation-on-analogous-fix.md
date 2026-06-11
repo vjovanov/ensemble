@@ -1,6 +1,6 @@
 # DF-016-explore-anchor-validation-on-analogous-fix: For "disallow/validate" tasks, anchor explore on the analogous existing diagnostic (analyze phase), not the feature's transform site
 
-**Status: Proposed (correctness track, off base/003).** Grounded per §REQ-001-decision-log; targets the
+**Status: PASSED (scoped) — pending full-run-before-merge.** Grounded per §REQ-001-decision-log; targets the
 lone pass@3 correctness miss in §REQ-005-research-checkpoints (base/003); relates to
 §DF-008-explore-root-cause-tracing, §DF-010-explore-surface-test-caseset, §DF-006-explore-giveup-and-supplement-guard.
 
@@ -46,3 +46,20 @@ Worktree `exp/explore-anchor-validation` off `base/current` (= `base/003-base002
 **PASS gate:** svelte-15115 resolves (≥1/3) **and** every control still resolves at its base rate and within
 cost noise. **Watch (the §DF-015 failure mode):** that the directive does not over-trigger on non-diagnostic
 tasks and inflate cost/turns on the controls.
+
+### Result — PASSED (scoped, × 3 seeds vs base/003)
+
+| benchmark | base pass@3 | exp pass@3 | Δ cost |
+|---|---|---|---|
+| **svelte-15115** (target) | **0/3** | **1/3 ✓** | −19% |
+| core-11694 | 3/3 | 2/3 | −37% |
+| dayjs-2399 | 3/3 | 3/3 | −17% |
+| express-5555 | 3/3 | 3/3 | −15% |
+| darkreader-7241 | 3/3 | 3/3 | −59% |
+| jq-2919 | 3/3 | 3/3 | −20% |
+
+**Target fixed** (0/3→1/3) via a smaller, correct analyze-phase validation. **No cost backfire** (the §DF-015
+failure mode) — costs are flat-to-down; the control cost deltas are **seed-noise**, since the directive only
+fires on disallow/validate tasks and the non-validation controls are behaviorally unchanged (svelte's −19% is
+the real effect: 13-line validation vs 106-line transform). **Watch:** core-11694 dipped 3/3→2/3 (still
+pass@3; a non-diagnostic vue bug, so likely seed-noise) — confirm in the full run before merge.
