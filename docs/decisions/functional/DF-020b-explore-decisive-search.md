@@ -1,12 +1,16 @@
 # DF-020b-explore-decisive-search: for understanding/flow tasks, answer the whole local call-chain in one decisive response (compact pointers, not more source) and stop probing once answerable
 
-**Status: ADOPT (cost) — but the full run exposed a correctness cost on case-set bugs; refine before
-freezing (§DF-023-merge-016-017-018-020b-full-run).** In the K=3 merge, DF-020b's cost win held, but the
-"once you can answer, **stop searching**" clause is the most consistent cause of two full-set regressions on
-**content-not-location / case-set** bugs — **jq-3238 3/3→1/3** (edits the right file `src/builtin.c`; the fix
-is just incomplete — a §DF-010 subset-fix) and **simdjson-2178 2/3→1/3**. Recommended fix: gate the
-stop-clause **off failing-test / bug-fix tasks** (let §DF-008 root-cause tracing take precedence — case-set
-bugs need *more* probing, not less); keep the directive for pure understanding/flow. See §DF-023.4.
+**Status: ADOPT (cost) WITH A GATE FIX — ablation CONFIRMED DF-020b causes the case-set regressions; gate
+its stop-clause off bug-fix tasks, then re-merge (§DF-023-merge-016-017-018-020b-full-run).** In the K=3
+merge, DF-020b's cost win held, but its "once you can answer, **stop searching**" clause caused two full-set
+regressions on **content-not-location / case-set** bugs — **jq-3238 3/3→1/3** (edits the right file
+`src/builtin.c`; the fix is just incomplete — a §DF-010 subset-fix) and **simdjson-2178 2/3→1/3**. A K=3
+**ablation** (the merge *minus* DF-020b, `ablate-no020b-k3`) **recovered both**: jq-3238 1/3→**2/3**,
+simdjson 1/3→**2/3** (back to base). The cost signature confirms the mechanism — with DF-020b simdjson was
+*cheaper* ($0.51) but wrong; without it $0.97 and right, i.e. the stop-clause traded exploration for a
+subset-fix. **Fix: gate the decisive/stop-clause off failing-test / bug-fix tasks** (let §DF-008 root-cause
+tracing govern those — case-set bugs need *more* probing, not less); keep the directive for pure
+understanding/flow (where it won — grpc −46%, etc.). Then re-merge. See §DF-023.4.
 
 **Status (prior): ADOPT — DF-020b v1 is win #2 (with §DF-016) for the merge-3-wins run.** At K=3 the broad v1
 directive cuts cost **−12 to −22%** on every retry-heavy target, controls flat, and **grpc (the watch) holds
