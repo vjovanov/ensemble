@@ -1,6 +1,8 @@
 # DF-017-graph-noise-node-exclusion: Drop vendored / test / generated nodes from graph traversal results
 
-**Status: Proposed (fix 2/3 — held on branch for batch merge + full test).** Grounded per
+**Status: MERGED & full-run-tested — no harm (§DF-023-merge-016-017-018-020b-full-run).** In the K=3 merge,
+`filterGraphNoise` did not cause the jq-3238 regression (jq edits `src/builtin.c`, which the filter does not
+touch — the regression is a DF-020b case-set effect, not this). Carried in the net-positive bundle. Grounded per
 §REQ-001-decision-log; salvages lever #2 of the rejected §DF-015-explore-return-source-on-code-intent;
 subsumes §DF-013-graphify-amalgamation-awareness.
 

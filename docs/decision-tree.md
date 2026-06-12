@@ -39,7 +39,10 @@ flowchart TD
     DF_017_graph_noise_node_exclusion["⬜ DF-017<br/><small>Drop vendored / test / generated …</small>"]
     DF_018_explore_no_raw_node_dumps["⬜ DF-018<br/><small>The sidekick must not return raw …</small>"]
     DF_020a_explore_whiff_robustness["❌ DF-020a<br/><small>when a graph call whiffs (miss or…</small>"]
-    DF_020b_explore_decisive_search["⬜ DF-020b<br/><small>for understanding/flow tasks, ans…</small>"]
+    DF_020b_explore_decisive_search["✅ DF-020b<br/><small>for understanding/flow tasks, ans…</small>"]
+    DF_021_caveman_classic_primitive_levels["⬜ DF-021<br/><small>probe the primitive floor of lead…</small>"]
+    DF_022_sidekick_open_model_swap["⬜ DF-022<br/><small>run the explore sidekick on a sma…</small>"]
+    DF_023_merge_016_017_018_020b_full_run["✅ DF-023<br/><small>DF-023-merge-016-017-018-020b-ful…</small>"]
   end
   subgraph Roadmap["Roadmap"]
     RM_001_bash_sidekick["RM-001<br/><small>bash sidekick</small>"]
@@ -76,12 +79,15 @@ flowchart TD
   DF_015_explore_return_source_on_code_intent -- subsumes --> DF_013_graphify_amalgamation_awareness
   DF_015_explore_return_source_on_code_intent -. relates .-> DF_004_explore_injected_content_cap
   DF_015_explore_return_source_on_code_intent -. relates .-> DF_008_explore_root_cause_tracing
+  DF_016_explore_anchor_validation_on_analogous_fix -. relates .-> DF_023_merge_016_017_018_020b_full_run
   DF_016_explore_anchor_validation_on_analogous_fix -. relates .-> REQ_005_research_checkpoints
   DF_016_explore_anchor_validation_on_analogous_fix -. relates .-> DF_008_explore_root_cause_tracing
   DF_016_explore_anchor_validation_on_analogous_fix -. relates .-> DF_010_explore_surface_test_caseset
   DF_016_explore_anchor_validation_on_analogous_fix -. relates .-> DF_006_explore_giveup_and_supplement_guard
+  DF_017_graph_noise_node_exclusion -. relates .-> DF_023_merge_016_017_018_020b_full_run
   DF_017_graph_noise_node_exclusion -- subsumes --> DF_015_explore_return_source_on_code_intent
   DF_017_graph_noise_node_exclusion -- subsumes --> DF_013_graphify_amalgamation_awareness
+  DF_018_explore_no_raw_node_dumps -. relates .-> DF_023_merge_016_017_018_020b_full_run
   DF_018_explore_no_raw_node_dumps -. relates .-> DF_015_explore_return_source_on_code_intent
   DF_018_explore_no_raw_node_dumps -. relates .-> DF_017_graph_noise_node_exclusion
   DF_020a_explore_whiff_robustness -. relates .-> DF_008_explore_root_cause_tracing
@@ -89,12 +95,22 @@ flowchart TD
   DF_020a_explore_whiff_robustness -. relates .-> DF_004_explore_injected_content_cap
   DF_020a_explore_whiff_robustness -. relates .-> DF_015_explore_return_source_on_code_intent
   DF_020a_explore_whiff_robustness -. relates .-> DF_020b_explore_decisive_search
-  DF_020b_explore_decisive_search -. relates .-> REQ_005_research_checkpoints
-  DF_020b_explore_decisive_search -. relates .-> DF_020a_explore_whiff_robustness
-  DF_020b_explore_decisive_search -. relates .-> REQ_001_decision_log
+  DF_020b_explore_decisive_search -. relates .-> DF_023_merge_016_017_018_020b_full_run
+  DF_020b_explore_decisive_search -. relates .-> DF_010_explore_surface_test_caseset
   DF_020b_explore_decisive_search -. relates .-> DF_008_explore_root_cause_tracing
-  DF_020b_explore_decisive_search -. relates .-> DF_016_explore_anchor_validation_on_analogous_fix
-  DF_020b_explore_decisive_search -. relates .-> DF_015_explore_return_source_on_code_intent
+  DF_021_caveman_classic_primitive_levels -. relates .-> DF_022_sidekick_open_model_swap
+  DF_021_caveman_classic_primitive_levels -. relates .-> DF_015_explore_return_source_on_code_intent
+  DF_021_caveman_classic_primitive_levels -. relates .-> DF_020b_explore_decisive_search
+  DF_022_sidekick_open_model_swap -. relates .-> DF_021_caveman_classic_primitive_levels
+  DF_022_sidekick_open_model_swap -. relates .-> FS_001_ensemble_explore
+  DF_022_sidekick_open_model_swap -. relates .-> DF_018_explore_no_raw_node_dumps
+  DF_022_sidekick_open_model_swap -. relates .-> DF_015_explore_return_source_on_code_intent
+  DF_022_sidekick_open_model_swap -. relates .-> DF_016_explore_anchor_validation_on_analogous_fix
+  DF_022_sidekick_open_model_swap -. relates .-> DF_020b_explore_decisive_search
+  DF_023_merge_016_017_018_020b_full_run -. relates .-> DF_016_explore_anchor_validation_on_analogous_fix
+  DF_023_merge_016_017_018_020b_full_run -. relates .-> DF_017_graph_noise_node_exclusion
+  DF_023_merge_016_017_018_020b_full_run -. relates .-> DF_018_explore_no_raw_node_dumps
+  DF_023_merge_016_017_018_020b_full_run -. relates .-> DF_020b_explore_decisive_search
   DA_001_edit_executor_sidekick -. relates .-> DF_004_explore_injected_content_cap
   DA_001_edit_executor_sidekick -- subsumes --> DA_002_compile_test_fix_sidekick
   DA_002_compile_test_fix_sidekick -- subsumes --> DA_001_edit_executor_sidekick
@@ -119,8 +135,8 @@ flowchart TD
   ↳ DF-008 _(relates it)_
   ↳ DF-009 _(relates it)_
   ↳ DF-010 _(relates it)_
+  ↳ DF-022 _(relates it)_
 - **REQ-001** — decision log
-  ↳ DF-020b _(relates it)_
 - **REQ-002** — benchmark comparison methodology
   ↳ DF-006 _(relates it)_
 - **REQ-003** — strictly better than baseline
@@ -136,7 +152,6 @@ flowchart TD
   ↳ DF-014 _(relates it)_
   ↳ DF-015 _(targets it)_
   ↳ DF-016 _(relates it)_
-  ↳ DF-020b _(relates it)_
 - **RM-001** — bash sidekick
   ↳ DF-003 _(relates it)_
   ↳ DF-005 _(relates it)_

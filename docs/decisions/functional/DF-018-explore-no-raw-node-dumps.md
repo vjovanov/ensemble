@@ -1,6 +1,8 @@
 # DF-018-explore-no-raw-node-dumps: The sidekick must not return raw graph-traversal node-name lists; convert to a path:line ref or small slice
 
-**Status: Proposed (fix 3/3 — held on branch for batch merge + full test).** Grounded per
+**Status: MERGED & full-run-tested — carried in the net-positive bundle (§DF-023-merge-016-017-018-020b-full-run).**
+No regression attributable to it in the K=3 merge (the lone solid-instance regression, jq-3238, is a DF-020b
+case-set effect). Grounded per
 §REQ-001-decision-log; refines (without the backfire) lever #1 of the rejected
 §DF-015-explore-return-source-on-code-intent; pairs with §DF-017-graph-noise-node-exclusion.
 

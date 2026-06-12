@@ -1,6 +1,8 @@
 # DF-016-explore-anchor-validation-on-analogous-fix: For "disallow/validate" tasks, anchor explore on the analogous existing diagnostic (analyze phase), not the feature's transform site
 
-**Status: PASSED (scoped) — pending full-run-before-merge.** Grounded per §REQ-001-decision-log; targets the
+**Status: PASSED — confirmed on the full run (§DF-023-merge-016-017-018-020b-full-run).** In the K=3 merge on
+base002-30, svelte-15115 went **0/3 → 3/3** (−61% cost) — the clean, attributable correctness win of the
+bundle. Grounded per §REQ-001-decision-log; targets the
 lone pass@3 correctness miss in §REQ-005-research-checkpoints (base/003); relates to
 §DF-008-explore-root-cause-tracing, §DF-010-explore-surface-test-caseset, §DF-006-explore-giveup-and-supplement-guard.
 
