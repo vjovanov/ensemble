@@ -242,3 +242,55 @@ Freeze **lightweight** (metrics + patch + manifest + validation; never session/g
 and avoids the 5.2 M-insertion bloat the full-bundle cap-experiment commit caused. Checkpoints live
 **in-repo** (`bench/checkpoints/`) for simplicity; revisit an orphan `results` branch only if they grow
 large.
+
+# REQ-006-reporting-discipline: Report effects against the noise floor, measure the mechanism, compare fixed sets
+
+Resolution is seed-noisy (§REQ-005-research-checkpoints.0) and the scoped sets are small (6–30
+instances, K=3), so the failure mode is **reading noise as signal** — repeatedly seen in the ledger
+(DF-020b's −40 to −63% that was pure seed variance; DF-021's L2 9/9 vs L1 8/9 that was a single
+`svelte-15115` seed-flip). These rules keep claims inside what the data can support. Cite as
+`§REQ-006-reporting-discipline`.
+
+## 1. Report deltas with a noise band; don't claim effects inside it
+
+A one-instance pass@K difference, or a cost delta within run-to-run variance, is **not a result** —
+it is noise until shown otherwise. Always report the **resolved-rate** (seeds-resolved / K·N) next to
+pass@K, never pass@K alone (pass@K is a union and flatters an arm that resolves 1-of-K cheaply). A
+win or a regression is only claimed when it **exceeds the seed-noise band**; for a borderline call,
+add seeds rather than report the borderline number. State pass@K's K explicitly and never compare
+across different K (pass@K rises mechanically with K).
+
+## 2. Measure the mechanism, not just the proxy
+
+When an experiment's hypothesis is about a specific spend category (e.g. "primitive discipline cuts
+`bash:read` replay"), capture that category — snapshot the lead sessions or run
+`lib/token-breakdown.mjs` per arm — so the mechanism is **verifiable**. Total cost alone can neither
+confirm nor refute a category-specific claim (DF-021 could only report total cost because sessions
+were not snapshotted, so *why* cost did not drop is unknown).
+
+## 3. Compare on a fixed instance set; loop/timeout is a separate axis
+
+A cross-arm comparison is valid only on the **same instance set** — never compare arms on different
+survivor subsets (the DF-022 eject-and-carry cascade produced a different surviving set per model, and
+gpt-oss ran only an 8-subset, so cross-model resolution was not apples-to-apples). Report
+**looped / timed-out / empty-patch separately** from "tried-but-unresolved"; resolved-of-N uses
+N = *attempted*, and a non-completion is a distinct outcome (a reliability failure), not silently a
+correctness miss.
+
+## 4. Quarantine ungradeable instances
+
+An instance the eval harness cannot grade fairly — mis-specified or missing test files (e.g.
+`dayjs-2420`'s missing `timezone.test.js`, which scores 0 regardless of patch quality), flaky tests,
+or a watchdog-killed grade (`EVAL_CONTAINER_MAX_S`) — is **excluded from scoring**, not counted as a
+regression. Maintain a quarantine list with the reason; a systematic 0 across every arm (the strong
+baseline included) is the detection signal.
+
+## 5. State the scope; cross-provider cost uses real rates
+
+Findings are scoped to the **lead model + provider** that produced them (currently `oca/gpt-5.5`) —
+say so; do not generalize a lever (e.g. "better explore beats blunter discipline", sidekick
+economics) across models without re-running. **Token** deltas are always valid; **dollar** deltas are
+only valid at real per-token rates — the synthetic prices in `lib/plot-results.mjs`
+($5/$0.5/$30 per Mtok) are for consistent *same-arm relative* comparison, and any cross-provider cost
+claim (e.g. a cheap sidekick) must price each model's tokens at that model's actual rate before a
+dollar figure is reported.
