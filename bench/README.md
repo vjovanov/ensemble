@@ -344,3 +344,70 @@ partial reruns update only the rerun benchmark's resolved number.
 - The eval harness config field names are verified against the current
   `multi-swe-bench` `CliArgs` schema (`mode`/`workdir`/`patch_files`/`dataset_files`/
   `log_dir` are the required ones); bump `eval/run-eval.sh` if the harness schema changes.
+
+---
+
+# DF-022 — Sidekick Model Comparison
+
+> Cite as **DF-022** (`bench/README.md#df-022--sidekick-model-comparison`). Self-contained result:
+> can a cheap open model replace `gpt-5.5` as the `explore` sidekick, and what does it cost?
+
+**What we tested.** Hold the lead model fixed (`oca/gpt-5.5`) and swap only the `explore` **sidekick**
+model (`PI_EXPLORE_MODEL=<provider>:<id>`), to see whether a cheap open model can do the bounded
+exploration the lead would otherwise pay premium rates for. Arm `graph-bash`, full `base/002-30`
+cascade, K=3 (each seed: run → eject instances that loop/time out → grade survivors → carry forward).
+
+**The loop pathology.** Weak sidekicks don't *fail* the task — they fail to **stop**. They re-issue the
+same `source_slice`/`search` call dozens–to–hundreds of times (one file sliced 600+×) instead of
+returning a product, blowing the 1200s agent wall-clock. The `Agent` loop has no turn cap and the
+soft "already returned…" guards are simply ignored. Measured per-run explore-tool calls: gpt-oss
+median 18; Devstral 2 median 97 (max 788); Qwen3-Coder-30B loops on **73%** of instances.
+
+**The fix — repeat-guard** (`explore.ts`, env-gated, default off so baseline is unchanged):
+`PI_EXPLORE_MAX_CALLS` (total tool calls/explore) and `PI_EXPLORE_MAX_REPEAT` (per-identical-call).
+On trip it disables further tool work and forces the sidekick to finalize, salvaging the evidence
+already gathered. At `MAX_CALLS=64, MAX_REPEAT=4` it converts Qwen's loops into completions:
+seed-1 eject **73% → 3%**, and a smoke case (`darkreader`) went from 600s-timeout/0-byte-patch to
+187s/554-byte patch.
+
+**Seed-1 comparison on `base/002-30`** (all arms start from 30 instances; resolved/30 counts a
+loop/eject as a failure — the honest denominator):
+
+| sidekick | size | loop/eject | completed | **resolved /30** | resolved /completed | lead tok/run | sidekick tok/run |
+|---|---|---:|---:|---:|---:|---:|---:|
+| `gpt-5.5` (lead = sidekick) | — | 0% | 30 | **24 (80%)** | 80% | 214K¹ | — |
+| `qwen3-coder-30b` **+ guard** | 30B | 3% (1) | 29 | **21 (70%)** | 72% | 316K | 715K |
+| `devstral-2512` | 123B | 27% (8) | 22 | **18 (60%)** | 85% | 149K | 6.09M² |
+| `qwen3-coder-30b` *(no guard)* | 30B | 73% (22) | 8 | 7 (23%) | 87% | 218K | 659K |
+| `gpt-oss-120b` | 120B | —³ | —³ | —³ | 7/8 (pass@3) | 228K | 76K |
+
+¹ gpt-5.5 baseline is a single flat figure — lead and in-model explore aren't separable (a combined floor).
+² Devstral 2's sidekick tokens are ~97% cacheRead (cheap). ³ gpt-oss ran only on the 8-survivor
+subset (the devstral2 active-ids), so it has no resolved/30.
+
+**Guard durability across seeds (Qwen + guard, K=3, complete):** per-seed resolution 21/29, 22/29,
+23/27; ejects 1 / 0 / 2 (3 total over the whole run vs the unguarded run's 22 in one seed). On the
+**27 instances present in all three seeds: pass@3 = 23/27 (85%)** (resolved in ≥1 seed) and
+**stable@3 = 19/27 (70%)** (resolved in all 3) — a *higher* stable-across-seeds rate than Devstral 2
+(6/22 = 27%) or gpt-oss (5/8 = 62%). The guard's fix holds across seeds; it is not a seed-1 fluke.
+
+**Findings.**
+- **Resolution-of-30:** gpt-5.5 80% > **guarded Qwen 70%** > Devstral 2 60% > unguarded Qwen 23%.
+  Guarded Qwen beats Devstral 2 here *despite lower per-instance quality* (72% vs 85%) because its
+  near-zero eject rate means far more instances even produce a patch — completion rate dominates.
+- **The cheap-sidekick economics paradox.** The point of a cheap sidekick is to move tokens off the
+  premium lead. **Devstral 2 does** (lead 149K < gpt-5.5 baseline 214K — a real offload). **Guarded
+  Qwen does not**: its lead alone (316K) *exceeds* the entire all-gpt-5.5 baseline, because the weaker,
+  guard-truncated digests make the lead work harder — you pay more premium tokens *plus* 715K Qwen
+  tokens. Cheap per-token ≠ cheap overall.
+- **Verdict.** gpt-5.5 = best quality/reliability, all-premium cost. **Devstral 2 (123B) = best
+  cheap-sidekick tradeoff** (genuine lead offload, 85% per-instance quality, moderate loops).
+  **Qwen-30B is viable only with the guard** (rescued 23%→70%) but saves nothing on the premium model.
+  Unguarded Qwen is unusable. Fine-tuning Qwen is therefore optional polish (trim turn count), not a
+  rescue — the harness guard already does the rescue.
+- **Devstral-mini (24B)** is queued, not run: not on OpenRouter, and `MISTRAL_API_KEY`/Vercel keys
+  are unset.
+
+Artifacts: `multiseed/df022-graph-bash-sidekicks/{devstral2-120b,gpt-oss-120b,qwen3-coder-30b,qwen3-coder-30b-guarded}/`
+(per-seed snapshots + `REPORT.txt`), ejects in `dropped.tsv`. Drivers:
+`df022-qwen-cascade.sh` (+ `df022-loop-killer.sh`, an external watchdog superseded by the in-agent guard).

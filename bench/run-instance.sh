@@ -140,6 +140,10 @@ declare -a SKILL_ARGS=()   # extra pi flags (e.g. --skill) for arms that load a 
 # Lets us see whether/how the sidekick reads the parent via caller_context.
 DEBUG_ENV=("PI_EXPLORE_DEBUG=full" "PI_EXPLORE_DEBUG_LOG=$OUT/explore-debug.jsonl")
 rm -f "$OUT/explore-debug.jsonl"
+# §FS-001-ensemble-explore.5.7: sidekick token/cost telemetry stays separate from the lead
+# session so benchmark metrics can report lead-only, sidekick-only, and combined totals.
+EXPLORE_METRICS_ENV=("PI_EXPLORE_METRICS_LOG=$OUT/explore-metrics.jsonl")
+rm -f "$OUT/explore-metrics.jsonl"
 # §DF-014: out-of-band capture of bash (raw output -> digest) for the bash-summary arms.
 BASH_DIGEST_DEBUG=("PI_BASH_DIGEST_DEBUG_LOG=$OUT/bash-digest-debug.jsonl")
 rm -f "$OUT/bash-digest-debug.jsonl"
@@ -158,7 +162,7 @@ case "$ARM" in
     # PI_REQUIRE_GRAPH=1 makes graphify a hard precondition (FS-001 §7.4): pi
     # fail-fasts at startup and explore throws rather than ever falling back.
     # PI_GRAPHIFY_GRAPH_FILE keeps backend artifacts out of the source tree (§FS-001-ensemble-explore.2.1).
-    ENVV=("GRAPHIFY_COMMAND=$GRAPHIFY" "PI_REQUIRE_GRAPH=1" "PI_GRAPHIFY_GRAPH_FILE=$GRAPH_FILE" "PI_BASH_OUTPUT_SUMMARY=0" "${DEBUG_ENV[@]}")
+    ENVV=("GRAPHIFY_COMMAND=$GRAPHIFY" "PI_REQUIRE_GRAPH=1" "PI_GRAPHIFY_GRAPH_FILE=$GRAPH_FILE" "PI_BASH_OUTPUT_SUMMARY=0" "${DEBUG_ENV[@]}" "${EXPLORE_METRICS_ENV[@]}")
     ;;
   classic-graph-bash|graph-bash)
     command -v "$GRAPHIFY" >/dev/null || die "graphify not on PATH (required for $ARM)"
@@ -170,12 +174,12 @@ case "$ARM" in
     GRAPH_FILE="$GRAPH_ARTIFACT_DIR/graph.json"
     [ -f "$GRAPH_FILE" ] || log "WARN: no graph.json produced for $LANG"
     GRAPHIFY_WATCH_ENABLED=1
-    ENVV=("GRAPHIFY_COMMAND=$GRAPHIFY" "PI_REQUIRE_GRAPH=1" "PI_GRAPHIFY_GRAPH_FILE=$GRAPH_FILE" "PI_BASH_OUTPUT_SUMMARY=1" "${BASH_DIGEST_DEBUG[@]}" "${DEBUG_ENV[@]}")
+    ENVV=("GRAPHIFY_COMMAND=$GRAPHIFY" "PI_REQUIRE_GRAPH=1" "PI_GRAPHIFY_GRAPH_FILE=$GRAPH_FILE" "PI_BASH_OUTPUT_SUMMARY=1" "${BASH_DIGEST_DEBUG[@]}" "${DEBUG_ENV[@]}" "${EXPLORE_METRICS_ENV[@]}")
     ;;
   sidekick-fs)
     # Force graphify unavailable so the sidekick uses the filesystem fallback.
     rm -rf "$ARM_SRC/graphify-out"
-    ENVV=("GRAPHIFY_COMMAND=$BENCH_DIR/no-graphify" "PI_BASH_OUTPUT_SUMMARY=0" "${DEBUG_ENV[@]}")  # nonexistent -> commandAvailable=false
+    ENVV=("GRAPHIFY_COMMAND=$BENCH_DIR/no-graphify" "PI_BASH_OUTPUT_SUMMARY=0" "${DEBUG_ENV[@]}" "${EXPLORE_METRICS_ENV[@]}")  # nonexistent -> commandAvailable=false
     ;;
   classic-bash)
     EXPLORATION="classic"
@@ -242,17 +246,19 @@ else
 fi
 node -e '
   const fs=require("fs");
-  const [out,commit,dirty,model,provider,arm,inst,lang,expl,rg,dbg,bashSummary]=process.argv.slice(1);
+  const [out,commit,dirty,model,provider,arm,inst,lang,expl,rg,dbg,bashSummary,exploreModelOverride]=process.argv.slice(1);
   fs.writeFileSync(out+"/manifest.json", JSON.stringify({
     instance:inst, arm, language:lang,
     commit, dirty:dirty==="true",
     model, provider, exploration:expl, require_graph:rg==="1",
     bash_output_summary: bashSummary==="1",
+    explore_model_override: exploreModelOverride || null,
     explore_debug: dbg,
     tool_calls: {lead:"session/*.jsonl", sidekick: dbg==="full" ? "explore-debug.jsonl" : null},
+    sidekick_metrics: expl==="sidekick" ? "explore-metrics.jsonl" : null,
     prompts_dir: "prompts/",
   },null,2)+"\n");
-' "$OUT" "$COMMIT" "$DIRTY" "$MODEL" "${PROVIDER:-}" "$ARM" "$ID" "$LANG" "$EXPLORATION" "$REQUIRE_GRAPH" "$DBG" "$BASH_OUTPUT_SUMMARY"
+' "$OUT" "$COMMIT" "$DIRTY" "$MODEL" "${PROVIDER:-}" "$ARM" "$ID" "$LANG" "$EXPLORATION" "$REQUIRE_GRAPH" "$DBG" "$BASH_OUTPUT_SUMMARY" "${PI_EXPLORE_MODEL:-}"
 if [ "$ARM" = "classic" ] || [ "$ARM" = "classic-bash" ] || [ "$ARM" = "codex" ] || [ "$ARM" = "classic-graphify" ]; then
   mkdir -p "$OUT/prompts"
   if [ "$ARM" = "codex" ]; then
@@ -368,9 +374,9 @@ if [ "$ARM" = "codex" ]; then
     printf '{"arm":"codex","note":"no events"}\n' > "$OUT/metrics.json"
   fi
 elif [ -n "$SESSION_FILE" ]; then
-  node "$BENCH_DIR/lib/parse-session.mjs" "$SESSION_FILE" --arm "$ARM" --price "$PRICE" \
+  node "$BENCH_DIR/lib/parse-session.mjs" "$SESSION_FILE" --arm "$ARM" --price "$PRICE" --sidekick-metrics "$OUT/explore-metrics.jsonl" \
     > "$OUT/metrics.json"
-  log "metrics: $(node -e 'const m=require(process.argv[1]);console.log(`tokens=${m.totalTokens} cost=$${m.costUsd} turns=${m.assistantTurns} explore=${m.exploreCalls} strict=${m.strictOk}`)' "$OUT/metrics.json")"
+  log "metrics: $(node -e 'const m=require(process.argv[1]);const s=m.sidekick||{};const t=m.total||m;console.log(`tokens=${m.totalTokens} cost=$${m.costUsd} turns=${m.assistantTurns} sidekickTokens=${s.totalTokens||0} totalTokens=${t.totalTokens} totalCost=$${t.costUsd} explore=${m.exploreCalls} strict=${m.strictOk}`)' "$OUT/metrics.json")"
 else
   log "WARN: no session jsonl found (DRY_RUN or agent failed); writing empty metrics"
   printf '{"arm":"%s","note":"no session"}\n' "$ARM" > "$OUT/metrics.json"

@@ -54,6 +54,12 @@ choosing the lookup strategy and MUST return the least evidence needed for the c
 MUST NOT repeat evidence it already returned unchanged in the same explore run; overlapping
 source slices are rejected or narrowed before they reach the caller.
 
+The explore agent normally uses the caller model. Deployments MAY set `PI_EXPLORE_MODEL` to
+`<provider>:<model-id>` to run only the explore agent on a different registered model while the
+caller model remains unchanged. If the override is absent, malformed, or names an unknown model,
+the tool MUST fall back to the caller model so an experimental sidekick-model setting cannot
+silently change the caller's model or make `explore` unavailable.
+
 #### 2.1.1 Bundled first-pass exploration
 
 For implementation or bug-fix tasks, the caller SHOULD make its first `explore` request a bundled
@@ -193,6 +199,13 @@ caller-context savings metric, because the intended deployment runs the explore 
 cheaper local 24B-class network. Benchmark reports MAY show sidekick usage separately for
 operator visibility, but graph-vs-classic savings are judged by the caller-visible context
 needed to reach the same task outcome.
+
+When benchmark telemetry is enabled, `explore` MUST record sidekick usage with the same
+dimensions used for lead usage: model, input tokens, output tokens, cache reads, cache writes,
+total tokens, cost, and assistant turns. Benchmark artifacts MUST keep the caller-visible lead
+metric separate from the sidekick metric and MAY additionally publish a combined total for
+operator visibility; the lead-only fields remain the compatibility surface for historical
+graph-vs-classic comparisons.
 
 ## 6. Registry lifecycle
 

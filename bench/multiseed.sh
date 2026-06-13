@@ -38,7 +38,7 @@ for k in $(seq 1 "$K"); do
   INSTANCES="$INST_PATHS" ARMS="$ARMS_IN" ./eval/run-eval.sh >>"$LOG" 2>&1 || log "grade nonzero (seed $k)"
   for id in $INSTS; do for arm in $ARMS_IN; do
     sd="$OUT/s${k}/${id}__${arm}"; mkdir -p "$sd"
-    for f in metrics.json patch.diff manifest.json; do [ -f "raw/${id}__${arm}/$f" ] && cp "raw/${id}__${arm}/$f" "$sd/"; done
+    for f in metrics.json patch.diff manifest.json explore-metrics.jsonl; do [ -f "raw/${id}__${arm}/$f" ] && cp "raw/${id}__${arm}/$f" "$sd/"; done
     v="results/validation/${arm}/${id}.json"; [ -f "$v" ] && { mkdir -p "$OUT/s${k}/validation/${arm}"; cp "$v" "$OUT/s${k}/validation/${arm}/"; }
   done; done
   log "seed $k snapshot -> $OUT/s${k}"

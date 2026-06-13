@@ -1,0 +1,65 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="626" font-family="-apple-system,Segoe UI,Roboto,sans-serif" font-size="13">
+<rect width="900" height="626" fill="white"/>
+<text x="64" y="24" font-size="16" font-weight="700">DF-022 — explore sidekick: successes &amp; lead-model tokens vs classic (base/002-30, seed 1)</text>
+<text x="64" y="34" font-weight="700">Successes (resolved)</text>
+<line x1="94" y1="230" x2="876" y2="230" stroke="#eee"/>
+<text x="86" y="234" text-anchor="end" fill="#888">0</text>
+<line x1="94" y1="166.66666666666669" x2="876" y2="166.66666666666669" stroke="#eee"/>
+<text x="86" y="170.66666666666669" text-anchor="end" fill="#888">10</text>
+<line x1="94" y1="103.33333333333334" x2="876" y2="103.33333333333334" stroke="#eee"/>
+<text x="86" y="107.33333333333334" text-anchor="end" fill="#888">20</text>
+<line x1="94" y1="40" x2="876" y2="40" stroke="#eee"/>
+<text x="86" y="44" text-anchor="end" fill="#888">30</text>
+<rect x="94" y="90.66666666666669" width="78" height="139.33333333333331" fill="#4C78A8" stroke="#1b3a5b" stroke-width="2"/>
+<text x="133" y="84.66666666666669" text-anchor="middle" font-weight="700">22/30</text>
+<rect x="222" y="78" width="78" height="152" fill="#72B7B2"/>
+<text x="261" y="72" text-anchor="middle" font-weight="700">24/30</text>
+<rect x="350" y="109.66666666666667" width="78" height="120.33333333333333" fill="#54A24B"/>
+<text x="389" y="103.66666666666667" text-anchor="middle" font-weight="700">19/22</text>
+<rect x="478" y="198.33333333333334" width="78" height="31.666666666666664" fill="#B07AA1" fill-opacity="0.45" stroke="#B07AA1" stroke-width="1.5" stroke-dasharray="4 3"/>
+<text x="517" y="192.33333333333334" text-anchor="middle" font-weight="700">5/8</text>
+<rect x="606" y="185.66666666666666" width="78" height="44.333333333333336" fill="#E45756"/>
+<text x="645" y="179.66666666666666" text-anchor="middle" font-weight="700">7/8</text>
+<rect x="734" y="97" width="78" height="133" fill="#F58518"/>
+<text x="773" y="91" text-anchor="middle" font-weight="700">21/29</text>
+<text x="64" y="334" font-weight="700">Lead-model tokens / run (gpt-5.5)  ·  dashed = classic baseline</text>
+<line x1="94" y1="530" x2="876" y2="530" stroke="#eee"/>
+<text x="86" y="534" text-anchor="end" fill="#888">0k</text>
+<line x1="94" y1="475.7142857142857" x2="876" y2="475.7142857142857" stroke="#eee"/>
+<text x="86" y="479.7142857142857" text-anchor="end" fill="#888">100k</text>
+<line x1="94" y1="421.42857142857144" x2="876" y2="421.42857142857144" stroke="#eee"/>
+<text x="86" y="425.42857142857144" text-anchor="end" fill="#888">200k</text>
+<line x1="94" y1="367.1428571428571" x2="876" y2="367.1428571428571" stroke="#eee"/>
+<text x="86" y="371.1428571428571" text-anchor="end" fill="#888">300k</text>
+<line x1="94" y1="359.43808571428576" x2="876" y2="359.43808571428576" stroke="#1b3a5b" stroke-width="1.5" stroke-dasharray="6 4"/>
+<rect x="94" y="359.43808571428576" width="78" height="170.56191428571427" fill="#4C78A8" stroke="#1b3a5b" stroke-width="2"/>
+<text x="133" y="341.43808571428576" text-anchor="middle" font-weight="700">314k</text>
+<text x="133" y="355.43808571428576" text-anchor="middle" font-size="11" fill="#2e7d32">baseline</text>
+<rect x="222" y="413.6505142857143" width="78" height="116.34948571428572" fill="#72B7B2"/>
+<text x="261" y="395.6505142857143" text-anchor="middle" font-weight="700">214k</text>
+<text x="261" y="409.6505142857143" text-anchor="middle" font-size="11" fill="#2e7d32">-32%</text>
+<rect x="350" y="431.09197142857147" width="78" height="98.90802857142856" fill="#54A24B"/>
+<text x="389" y="413.09197142857147" text-anchor="middle" font-weight="700">182k</text>
+<text x="389" y="427.09197142857147" text-anchor="middle" font-size="11" fill="#2e7d32">-42%</text>
+<rect x="478" y="406.3604857142857" width="78" height="123.63951428571428" fill="#B07AA1"/>
+<text x="517" y="388.3604857142857" text-anchor="middle" font-weight="700">228k</text>
+<text x="517" y="402.3604857142857" text-anchor="middle" font-size="11" fill="#2e7d32">-28%</text>
+<rect x="606" y="411.497" width="78" height="118.503" fill="#E45756"/>
+<text x="645" y="393.497" text-anchor="middle" font-weight="700">218k</text>
+<text x="645" y="407.497" text-anchor="middle" font-size="11" fill="#2e7d32">-31%</text>
+<rect x="734" y="358.2747428571429" width="78" height="171.72525714285715" fill="#F58518"/>
+<text x="773" y="340.2747428571429" text-anchor="middle" font-weight="700">316k</text>
+<text x="773" y="354.2747428571429" text-anchor="middle" font-size="11" fill="#c0392b">+1%</text>
+<text x="133" y="596" text-anchor="middle" font-weight="700">classic</text>
+<text x="133" y="611" text-anchor="middle" fill="#666" font-size="11">no sidekick</text>
+<text x="261" y="596" text-anchor="middle" font-weight="700">gpt-5.5</text>
+<text x="261" y="611" text-anchor="middle" fill="#666" font-size="11">sidekick</text>
+<text x="389" y="596" text-anchor="middle" font-weight="700">devstral2</text>
+<text x="389" y="611" text-anchor="middle" fill="#666" font-size="11">123B</text>
+<text x="517" y="596" text-anchor="middle" font-weight="700">gpt-oss</text>
+<text x="517" y="611" text-anchor="middle" fill="#666" font-size="11">120B · 8-subset</text>
+<text x="645" y="596" text-anchor="middle" font-weight="700">qwen-30B</text>
+<text x="645" y="611" text-anchor="middle" fill="#666" font-size="11">no guard</text>
+<text x="773" y="596" text-anchor="middle" font-weight="700">qwen-30B</text>
+<text x="773" y="611" text-anchor="middle" fill="#666" font-size="11">+ guard</text>
+</svg>
