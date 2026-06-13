@@ -1,0 +1,13 @@
+diff --git c/programs/zstdcli.c i/programs/zstdcli.c
+index 1cb16ef50e..28206ccf2a 100644
+--- c/programs/zstdcli.c
++++ i/programs/zstdcli.c
+@@ -1176,7 +1176,7 @@ int main(int argCount, const char* argv[])
+                         operation=zom_decompress; argument++; break;
+ 
+                     /* Force stdout, even if stdout==console */
+-                case 'c': forceStdout=1; outFileName=stdoutmark; removeSrcFile=0; argument++; break;
++                case 'c': forceStdout=1; outFileName=stdoutmark; argument++; break;
+ 
+                     /* do not store filename - gzip compatibility - nothing to do */
+                 case 'n': argument++; break;

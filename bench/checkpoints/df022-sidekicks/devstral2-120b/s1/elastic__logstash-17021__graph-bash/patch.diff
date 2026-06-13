@@ -1,0 +1,30 @@
+diff --git c/logstash-core/src/main/java/org/logstash/common/BufferedTokenizerExt.java i/logstash-core/src/main/java/org/logstash/common/BufferedTokenizerExt.java
+index be1c64d235..ce5069dd8b 100644
+--- c/logstash-core/src/main/java/org/logstash/common/BufferedTokenizerExt.java
++++ i/logstash-core/src/main/java/org/logstash/common/BufferedTokenizerExt.java
+@@ -88,17 +88,23 @@ public class BufferedTokenizerExt extends RubyObject {
+             }
+             this.inputSize = inputSize + entitiesSize;
+         }
+-        input.append(entities.shift(context));
++        appendToInput(entities.shift(context));
+         if (entities.isEmpty()) {
+             return RubyUtil.RUBY.newArray();
+         }
+         entities.unshift(input.join(context));
+         input.clear();
+-        input.append(entities.pop(context));
++        appendToInput(entities.pop(context));
+         inputSize = ((RubyString) input.first()).size();
+         return entities;
+     }
+ 
++    private void appendToInput(final IRubyObject token) {
++        // Do not use RubyArray.add/addAll here: those methods treat their arguments as Java values
++        // and route RubyString instances through Java string conversion, which can transcode bytes.
++        input.append(token);
++    }
++
+     /**
+      * Flush the contents of the input buffer, i.e. return the input buffer even though
+      * a token has not yet been encountered

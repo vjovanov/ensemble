@@ -1,0 +1,34 @@
+diff --git c/lib/compress/zstd_compress.c i/lib/compress/zstd_compress.c
+index 3a48e7dcd4..df60ff1b58 100644
+--- c/lib/compress/zstd_compress.c
++++ i/lib/compress/zstd_compress.c
+@@ -1466,9 +1466,12 @@ ZSTD_adjustCParams_internal(ZSTD_compressionParameters cPar,
+         cPar.windowLog = ZSTD_WINDOWLOG_ABSOLUTEMIN;  /* minimum wlog required for valid frame header */
+ 
+     if (mode == ZSTD_cpm_createCDict && ZSTD_CDictIndicesAreTagged(&cPar)) {
+-        U32 const maxShortCacheHashLog = 32 - ZSTD_SHORT_CACHE_TAG_BITS;
+-        if (cPar.hashLog > maxShortCacheHashLog) {
+-            cPar.hashLog = maxShortCacheHashLog;
++        U32 const maxShortCacheTableLog = 32 - ZSTD_SHORT_CACHE_TAG_BITS;
++        if (cPar.hashLog > maxShortCacheTableLog) {
++            cPar.hashLog = maxShortCacheTableLog;
++        }
++        if (cPar.chainLog > maxShortCacheTableLog) {
++            cPar.chainLog = maxShortCacheTableLog;
+         }
+     }
+ 
+@@ -1513,7 +1516,12 @@ ZSTD_compressionParameters ZSTD_getCParamsFromCCtxParams(
+     ZSTD_overrideCParams(&cParams, &CCtxParams->cParams);
+     assert(!ZSTD_checkCParams(cParams));
+     /* srcSizeHint == 0 means 0 */
+-    return ZSTD_adjustCParams_internal(cParams, srcSizeHint, dictSize, mode);
++    cParams = ZSTD_adjustCParams_internal(cParams, srcSizeHint, dictSize, mode);
++    if (ZSTD_rowMatchFinderUsed(cParams.strategy, ZSTD_resolveRowMatchFinderMode(CCtxParams->useRowMatchFinder, &cParams))) {
++        U32 const maxRowHashLog = 28;
++        if (cParams.hashLog > maxRowHashLog) cParams.hashLog = maxRowHashLog;
++    }
++    return cParams;
+ }
+ 
+ static size_t

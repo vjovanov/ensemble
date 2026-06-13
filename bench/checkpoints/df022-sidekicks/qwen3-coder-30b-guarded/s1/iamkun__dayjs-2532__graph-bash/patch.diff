@@ -1,0 +1,17 @@
+diff --git c/src/plugin/timezone/index.js i/src/plugin/timezone/index.js
+index 832fb4a73b..2c4eca82c0 100644
+--- c/src/plugin/timezone/index.js
++++ i/src/plugin/timezone/index.js
+@@ -103,6 +103,12 @@ export default (o, c, d) => {
+       const newOffset = ins.utcOffset()
+       ins = ins.add(oldOffset - newOffset, MIN)
+     }
++    if (ins.$u) {
++      const timestamp = ins.valueOf()
++      ins.$d = new Date(timestamp)
++      delete ins.$offset
++      ins.init()
++    }
+     ins.$x.$timezone = timezone
+     return ins
+   }

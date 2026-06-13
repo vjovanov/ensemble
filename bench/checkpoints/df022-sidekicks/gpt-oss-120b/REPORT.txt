@@ -1,0 +1,13 @@
+multi-seed report: multiseed/df022-graph-bash-sidekicks/gpt-oss-120b  (K=3)
+
+== graph-bash ==
+  darkreader             pass@3=Y (3/3)  $0.24/run
+  grpc                   pass@3=Y (3/3)  $0.54/run
+  iamkun                 pass@3=n (0/3)  -
+  sharkdp                pass@3=Y (3/3)  $0.28/run
+  sveltejs               pass@3=Y (2/3)  $0.57/run
+  tokio-rs               pass@3=Y (3/3)  $0.23/run
+  vuejs                  pass@3=Y (2/3)  $0.60/run
+  zeromicro              pass@3=Y (3/3)  $0.22/run
+  pass@3: 7/8   stable(all 3): 5/8
+

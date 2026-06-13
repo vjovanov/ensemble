@@ -1,0 +1,34 @@
+diff --git c/balancer/grpclb/grpclb_remote_balancer.go i/balancer/grpclb/grpclb_remote_balancer.go
+index e70ce75007..5efc018c26 100644
+--- c/balancer/grpclb/grpclb_remote_balancer.go
++++ i/balancer/grpclb/grpclb_remote_balancer.go
+@@ -266,6 +266,19 @@ func (ccw *remoteBalancerCCWrapper) close() {
+ 	ccw.wg.Wait()
+ }
+ 
++func (lb *lbBalancer) processFallbackResponse() {
++	if grpclog.V(2) {
++		grpclog.Infof("lbBalancer: processing fallback response")
++	}
++	lb.mu.Lock()
++	defer lb.mu.Unlock()
++
++	// Set serverListReceived to true so the timer-based fallback goroutine does
++	// not attempt to enter fallback again after this explicit fallback response.
++	lb.serverListReceived = true
++	lb.refreshSubConns(lb.resolvedBackendAddrs, true, lb.usePickFirst)
++}
++
+ func (ccw *remoteBalancerCCWrapper) readServerList(s *balanceLoadClientStream) error {
+ 	for {
+ 		reply, err := s.Recv()
+@@ -278,6 +291,9 @@ func (ccw *remoteBalancerCCWrapper) readServerList(s *balanceLoadClientStream) e
+ 		if serverList := reply.GetServerList(); serverList != nil {
+ 			ccw.lb.processServerList(serverList)
+ 		}
++		if _, ok := reply.GetLoadBalanceResponseType().(*lbpb.LoadBalanceResponse_FallbackResponse); ok {
++			ccw.lb.processFallbackResponse()
++		}
+ 	}
+ }
+ 

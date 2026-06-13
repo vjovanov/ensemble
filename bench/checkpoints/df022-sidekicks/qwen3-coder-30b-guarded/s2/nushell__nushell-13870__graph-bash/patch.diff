@@ -1,0 +1,19 @@
+diff --git c/crates/nu-protocol/src/process/child.rs i/crates/nu-protocol/src/process/child.rs
+index 320427a819..6cd1bbaa1c 100644
+--- c/crates/nu-protocol/src/process/child.rs
++++ i/crates/nu-protocol/src/process/child.rs
+@@ -182,7 +182,13 @@ impl ChildProcess {
+             Vec::new()
+         };
+ 
+-        self.exit_status.wait(self.span)?.check_ok(self.span)?;
++        // The byte stream is being consumed as input to another Nushell command.
++        // Wait for the child to finish so the process is reaped, but don't turn a
++        // non-zero exit status into an error here. Non-zero statuses are reported
++        // when the external command is the final pipeline output (via `wait()`),
++        // while commands that consume the external's stdout decide how to handle
++        // empty/partial input themselves.
++        let _ = self.exit_status.wait(self.span)?;
+ 
+         Ok(bytes)
+     }

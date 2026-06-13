@@ -1,0 +1,43 @@
+diff --git c/src/buf/buf_impl.rs i/src/buf/buf_impl.rs
+index c44d4fb384..c63f0b0ddf 100644
+--- c/src/buf/buf_impl.rs
++++ i/src/buf/buf_impl.rs
+@@ -66,6 +66,20 @@ macro_rules! buf_get_impl {
+     }};
+ }
+ 
++#[inline]
++fn sign_extend(val: u64, nbytes: usize) -> i64 {
++    let shift = match 8usize.checked_sub(nbytes) {
++        Some(n) => n * 8,
++        None => panic_does_not_fit(8, nbytes),
++    };
++
++    if shift == 64 {
++        0
++    } else {
++        ((val << shift) as i64) >> shift
++    }
++}
++
+ /// Read bytes from a buffer.
+ ///
+ /// A buffer stores bytes in memory such that read operations are infallible.
+@@ -923,7 +937,7 @@ pub trait Buf {
+     /// This function panics if there is not enough remaining data in `self`, or
+     /// if `nbytes` is greater than 8.
+     fn get_int(&mut self, nbytes: usize) -> i64 {
+-        buf_get_impl!(be => self, i64, nbytes);
++        sign_extend(self.get_uint(nbytes), nbytes)
+     }
+ 
+     /// Gets a signed n-byte integer from `self` in little-endian byte order.
+@@ -944,7 +958,7 @@ pub trait Buf {
+     /// This function panics if there is not enough remaining data in `self`, or
+     /// if `nbytes` is greater than 8.
+     fn get_int_le(&mut self, nbytes: usize) -> i64 {
+-        buf_get_impl!(le => self, i64, nbytes);
++        sign_extend(self.get_uint_le(nbytes), nbytes)
+     }
+ 
+     /// Gets a signed n-byte integer from `self` in native-endian byte order.

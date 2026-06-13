@@ -1,0 +1,77 @@
+diff --git c/api/index.js i/api/index.js
+index a3d9f2a9c0..6d909dbab7 100644
+--- c/api/index.js
++++ i/api/index.js
+@@ -37,6 +37,7 @@ export default async (req, res) => {
+     number_format,
+     border_color,
+     rank_icon,
++    show,
+     show_total_reviews,
+   } = req.query;
+   res.setHeader("Content-Type", "image/svg+xml");
+@@ -96,6 +97,7 @@ export default async (req, res) => {
+         locale: locale ? locale.toLowerCase() : null,
+         disable_animations: parseBoolean(disable_animations),
+         rank_icon,
++        show: parseArray(show),
+         show_total_reviews: parseBoolean(show_total_reviews),
+       }),
+     );
+diff --git c/src/cards/stats-card.js i/src/cards/stats-card.js
+index 9b5763e848..455418b274 100644
+--- c/src/cards/stats-card.js
++++ i/src/cards/stats-card.js
+@@ -112,6 +112,7 @@ const renderStatsCard = (stats = {}, options = { hide: [] }) => {
+     locale,
+     disable_animations = false,
+     rank_icon = "default",
++    show = [],
+     show_total_reviews = false,
+   } = options;
+ 
+@@ -161,7 +162,7 @@ const renderStatsCard = (stats = {}, options = { hide: [] }) => {
+     id: "prs",
+   };
+ 
+-  if (show_total_reviews) {
++  if (show.includes("reviews") || show_total_reviews) {
+     STATS.reviews = {
+       icon: icons.reviews,
+       label: i18n.t("statcard.reviews"),
+diff --git c/src/cards/types.d.ts i/src/cards/types.d.ts
+index cec7b7f705..8663b2da56 100644
+--- c/src/cards/types.d.ts
++++ i/src/cards/types.d.ts
+@@ -27,6 +27,7 @@ export type StatCardOptions = CommonOptions & {
+   ring_color: string;
+   text_bold: boolean;
+   rank_icon: RankIcon;
++  show: string[];
+   show_total_reviews: boolean;
+ };
+ 
+diff --git c/src/common/utils.js i/src/common/utils.js
+index 3e77731738..ebfa88f8c3 100644
+--- c/src/common/utils.js
++++ i/src/common/utils.js
+@@ -96,12 +96,17 @@ const parseBoolean = (value) => {
+ /**
+  * Parse string to array of strings.
+  *
+- * @param {string} str The string to parse.
++ * @param {string | string[]} str The string to parse.
+  * @returns {string[]} The array of strings.
+  */
+ const parseArray = (str) => {
+   if (!str) return [];
+-  return str.split(",");
++  const arrayString = Array.isArray(str) ? str.join(",") : str;
++  return arrayString
++    .replace(/^\[|\]$/g, "")
++    .split(",")
++    .map((item) => item.trim())
++    .filter(Boolean);
+ };
+ 
+ /**

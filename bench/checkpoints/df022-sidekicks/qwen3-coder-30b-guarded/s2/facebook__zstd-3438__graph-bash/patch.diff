@@ -1,0 +1,82 @@
+diff --git c/lib/compress/zstd_compress.c i/lib/compress/zstd_compress.c
+index 3a48e7dcd4..ef060c3129 100644
+--- c/lib/compress/zstd_compress.c
++++ i/lib/compress/zstd_compress.c
+@@ -250,6 +250,17 @@ static ZSTD_paramSwitch_e ZSTD_resolveRowMatchFinderMode(ZSTD_paramSwitch_e mode
+     return mode;
+ }
+ 
++static ZSTD_compressionParameters
++ZSTD_limitCParamsForRowMatchFinder(ZSTD_compressionParameters cParams,
++                                   ZSTD_paramSwitch_e useRowMatchFinder)
++{
++    if (ZSTD_rowMatchFinderUsed(cParams.strategy, useRowMatchFinder)) {
++        U32 const maxRowHashLog = 28; /* 32-bit hash: 24-bit hash + 4-bit row */
++        if (cParams.hashLog > maxRowHashLog) cParams.hashLog = maxRowHashLog;
++    }
++    return cParams;
++}
++
+ /* Returns block splitter usage (generally speaking, when using slower/stronger compression modes) */
+ static ZSTD_paramSwitch_e ZSTD_resolveBlockSplitterMode(ZSTD_paramSwitch_e mode,
+                                                         const ZSTD_compressionParameters* const cParams) {
+@@ -1466,9 +1477,12 @@ ZSTD_adjustCParams_internal(ZSTD_compressionParameters cPar,
+         cPar.windowLog = ZSTD_WINDOWLOG_ABSOLUTEMIN;  /* minimum wlog required for valid frame header */
+ 
+     if (mode == ZSTD_cpm_createCDict && ZSTD_CDictIndicesAreTagged(&cPar)) {
+-        U32 const maxShortCacheHashLog = 32 - ZSTD_SHORT_CACHE_TAG_BITS;
+-        if (cPar.hashLog > maxShortCacheHashLog) {
+-            cPar.hashLog = maxShortCacheHashLog;
++        U32 const maxShortCacheLog = 32 - ZSTD_SHORT_CACHE_TAG_BITS;
++        if (cPar.hashLog > maxShortCacheLog) {
++            cPar.hashLog = maxShortCacheLog;
++        }
++        if (cPar.chainLog > maxShortCacheLog) {
++            cPar.chainLog = maxShortCacheLog;
+         }
+     }
+ 
+@@ -1513,7 +1527,11 @@ ZSTD_compressionParameters ZSTD_getCParamsFromCCtxParams(
+     ZSTD_overrideCParams(&cParams, &CCtxParams->cParams);
+     assert(!ZSTD_checkCParams(cParams));
+     /* srcSizeHint == 0 means 0 */
+-    return ZSTD_adjustCParams_internal(cParams, srcSizeHint, dictSize, mode);
++    cParams = ZSTD_adjustCParams_internal(cParams, srcSizeHint, dictSize, mode);
++    {   ZSTD_paramSwitch_e const useRowMatchFinder = ZSTD_resolveRowMatchFinderMode(CCtxParams->useRowMatchFinder, &cParams);
++        cParams = ZSTD_limitCParamsForRowMatchFinder(cParams, useRowMatchFinder);
++    }
++    return cParams;
+ }
+ 
+ static size_t
+@@ -5262,8 +5280,9 @@ ZSTD_CDict* ZSTD_createCDict_advanced2(
+     }
+ 
+     DEBUGLOG(3, "ZSTD_createCDict_advanced2: DDS: %u", cctxParams.enableDedicatedDictSearch);
+-    cctxParams.cParams = cParams;
+     cctxParams.useRowMatchFinder = ZSTD_resolveRowMatchFinderMode(cctxParams.useRowMatchFinder, &cParams);
++    cParams = ZSTD_limitCParamsForRowMatchFinder(cParams, cctxParams.useRowMatchFinder);
++    cctxParams.cParams = cParams;
+ 
+     cdict = ZSTD_createCDict_advanced_internal(dictSize,
+                         dictLoadMethod, cctxParams.cParams,
+@@ -5337,8 +5356,9 @@ const ZSTD_CDict* ZSTD_initStaticCDict(
+                                  ZSTD_compressionParameters cParams)
+ {
+     ZSTD_paramSwitch_e const useRowMatchFinder = ZSTD_resolveRowMatchFinderMode(ZSTD_ps_auto, &cParams);
++    ZSTD_compressionParameters const limitedCParams = ZSTD_limitCParamsForRowMatchFinder(cParams, useRowMatchFinder);
+     /* enableDedicatedDictSearch == 1 ensures matchstate is not too small in case this CDict will be used for DDS + row hash */
+-    size_t const matchStateSize = ZSTD_sizeof_matchState(&cParams, useRowMatchFinder, /* enableDedicatedDictSearch */ 1, /* forCCtx */ 0);
++    size_t const matchStateSize = ZSTD_sizeof_matchState(&limitedCParams, useRowMatchFinder, /* enableDedicatedDictSearch */ 1, /* forCCtx */ 0);
+     size_t const neededSize = ZSTD_cwksp_alloc_size(sizeof(ZSTD_CDict))
+                             + (dictLoadMethod == ZSTD_dlm_byRef ? 0
+                                : ZSTD_cwksp_alloc_size(ZSTD_cwksp_align(dictSize, sizeof(void*))))
+@@ -5362,7 +5382,7 @@ const ZSTD_CDict* ZSTD_initStaticCDict(
+     if (workspaceSize < neededSize) return NULL;
+ 
+     ZSTD_CCtxParams_init(&params, 0);
+-    params.cParams = cParams;
++    params.cParams = limitedCParams;
+     params.useRowMatchFinder = useRowMatchFinder;
+     cdict->useRowMatchFinder = useRowMatchFinder;
+ 

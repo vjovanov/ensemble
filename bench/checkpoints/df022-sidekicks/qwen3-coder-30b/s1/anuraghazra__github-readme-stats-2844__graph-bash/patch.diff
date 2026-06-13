@@ -1,0 +1,71 @@
+diff --git c/api/index.js i/api/index.js
+index a3d9f2a9c0..6c1e95c04b 100644
+--- c/api/index.js
++++ i/api/index.js
+@@ -14,6 +14,7 @@ export default async (req, res) => {
+   const {
+     username,
+     hide,
++    show,
+     hide_title,
+     hide_border,
+     card_width,
+@@ -75,6 +76,7 @@ export default async (req, res) => {
+     return res.send(
+       renderStatsCard(stats, {
+         hide: parseArray(hide),
++        show: parseArray(show),
+         show_icons: parseBoolean(show_icons),
+         hide_title: parseBoolean(hide_title),
+         hide_border: parseBoolean(hide_border),
+diff --git c/src/cards/stats-card.js i/src/cards/stats-card.js
+index 9b5763e848..3053531bb9 100644
+--- c/src/cards/stats-card.js
++++ i/src/cards/stats-card.js
+@@ -91,6 +91,7 @@ const renderStatsCard = (stats = {}, options = { hide: [] }) => {
+   } = stats;
+   const {
+     hide = [],
++    show = [],
+     show_icons = false,
+     hide_title = false,
+     hide_border = false,
+@@ -161,7 +162,7 @@ const renderStatsCard = (stats = {}, options = { hide: [] }) => {
+     id: "prs",
+   };
+ 
+-  if (show_total_reviews) {
++  if (show.includes("reviews") || show_total_reviews) {
+     STATS.reviews = {
+       icon: icons.reviews,
+       label: i18n.t("statcard.reviews"),
+diff --git c/src/cards/types.d.ts i/src/cards/types.d.ts
+index cec7b7f705..926229623c 100644
+--- c/src/cards/types.d.ts
++++ i/src/cards/types.d.ts
+@@ -14,6 +14,7 @@ export type CommonOptions = {
+ 
+ export type StatCardOptions = CommonOptions & {
+   hide: string[];
++  show: string[];
+   show_icons: boolean;
+   hide_title: boolean;
+   hide_border: boolean;
+diff --git c/src/common/utils.js i/src/common/utils.js
+index 3e77731738..2c0538d7eb 100644
+--- c/src/common/utils.js
++++ i/src/common/utils.js
+@@ -101,7 +101,12 @@ const parseBoolean = (value) => {
+  */
+ const parseArray = (str) => {
+   if (!str) return [];
+-  return str.split(",");
++  return str
++    .trim()
++    .replace(/^\[|\]$/g, "")
++    .split(",")
++    .map((item) => item.trim())
++    .filter(Boolean);
+ };
+ 
+ /**

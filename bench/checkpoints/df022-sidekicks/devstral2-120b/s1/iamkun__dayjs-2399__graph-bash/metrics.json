@@ -1,0 +1,45 @@
+{
+  "model": "oca/gpt-5.5",
+  "arm": "graph-bash",
+  "input": 37389,
+  "output": 7822,
+  "cacheRead": 149504,
+  "cacheWrite": 0,
+  "totalTokens": 194715,
+  "costUsd": 0.4964,
+  "assistantTurns": 18,
+  "exploreCalls": 13,
+  "exploreFallbacks": 0,
+  "lead": {
+    "model": "oca/gpt-5.5",
+    "input": 37389,
+    "output": 7822,
+    "cacheRead": 149504,
+    "cacheWrite": 0,
+    "totalTokens": 194715,
+    "costUsd": 0.4964,
+    "assistantTurns": 18
+  },
+  "sidekick": {
+    "model": "mistralai/devstral-2512",
+    "input": 47403,
+    "output": 7327,
+    "cacheRead": 311856,
+    "cacheWrite": 0,
+    "totalTokens": 366586,
+    "costUsd": 0.0461,
+    "assistantTurns": 59
+  },
+  "total": {
+    "model": "oca/gpt-5.5 + mistralai/devstral-2512",
+    "input": 84792,
+    "output": 15149,
+    "cacheRead": 461360,
+    "cacheWrite": 0,
+    "totalTokens": 561301,
+    "costUsd": 0.5425,
+    "assistantTurns": 77
+  },
+  "strictOk": true,
+  "strictNote": "13 graph-derived explore calls"
+}

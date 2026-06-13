@@ -1,0 +1,8 @@
+{
+  "instance": "tokio-rs__bytes-732",
+  "arm": "graph-bash",
+  "status": "resolved",
+  "resolved": true,
+  "updatedAt": "2026-06-13T08:57:30.834Z",
+  "report": "/home/vjovanov/p/ensemble/bench/results/graph-bash/final_report.json"
+}

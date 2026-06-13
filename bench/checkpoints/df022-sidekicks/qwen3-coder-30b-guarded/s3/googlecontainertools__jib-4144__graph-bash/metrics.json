@@ -1,0 +1,45 @@
+{
+  "model": "oca/gpt-5.5",
+  "arm": "graph-bash",
+  "input": 56196,
+  "output": 4508,
+  "cacheRead": 364032,
+  "cacheWrite": 0,
+  "totalTokens": 424736,
+  "costUsd": 0.5982,
+  "assistantTurns": 27,
+  "exploreCalls": 7,
+  "exploreFallbacks": 0,
+  "lead": {
+    "model": "oca/gpt-5.5",
+    "input": 56196,
+    "output": 4508,
+    "cacheRead": 364032,
+    "cacheWrite": 0,
+    "totalTokens": 424736,
+    "costUsd": 0.5982,
+    "assistantTurns": 27
+  },
+  "sidekick": {
+    "model": "qwen/qwen3-coder-30b-a3b-instruct",
+    "input": 0,
+    "output": 0,
+    "cacheRead": 0,
+    "cacheWrite": 0,
+    "totalTokens": 0,
+    "costUsd": 0,
+    "assistantTurns": 7
+  },
+  "total": {
+    "model": "oca/gpt-5.5 + qwen/qwen3-coder-30b-a3b-instruct",
+    "input": 56196,
+    "output": 4508,
+    "cacheRead": 364032,
+    "cacheWrite": 0,
+    "totalTokens": 424736,
+    "costUsd": 0.5982,
+    "assistantTurns": 34
+  },
+  "strictOk": true,
+  "strictNote": "7 graph-derived explore calls"
+}

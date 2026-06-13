@@ -1,0 +1,69 @@
+diff --git c/internal/resolver/dns/dns_resolver.go i/internal/resolver/dns/dns_resolver.go
+index 7705ca22eb..e31361e478 100644
+--- c/internal/resolver/dns/dns_resolver.go
++++ i/internal/resolver/dns/dns_resolver.go
+@@ -204,8 +204,17 @@ func (d *dnsResolver) watcher() {
+ 		case <-d.rn:
+ 		}
+ 
+-		state := d.lookup()
+-		d.cc.UpdateState(*state)
++		state, err := d.lookup()
++		if err != nil {
++			select {
++			case <-d.ctx.Done():
++				return
++			default:
++			}
++			d.cc.ReportError(err)
++		} else {
++			d.cc.UpdateState(*state)
++		}
+ 
+ 		// Sleep to prevent excessive re-resolutions. Incoming resolution requests
+ 		// will be queued in d.rn.
+@@ -284,12 +293,15 @@ func (d *dnsResolver) lookupTXT() *serviceconfig.ParseResult {
+ 	return d.cc.ParseServiceConfig(sc)
+ }
+ 
+-func (d *dnsResolver) lookupHost() []resolver.Address {
++func (d *dnsResolver) lookupHost() ([]resolver.Address, error) {
+ 	var newAddrs []resolver.Address
+ 	addrs, err := d.resolver.LookupHost(d.ctx, d.host)
+ 	if err != nil {
+ 		grpclog.Warningf("grpc: failed dns A record lookup due to %v.\n", err)
+-		return nil
++		if netErr, ok := err.(net.Error); ok && (netErr.Timeout() || netErr.Temporary()) {
++			return nil, err
++		}
++		return nil, nil
+ 	}
+ 	for _, a := range addrs {
+ 		a, ok := formatIP(a)
+@@ -300,18 +312,22 @@ func (d *dnsResolver) lookupHost() []resolver.Address {
+ 		addr := a + ":" + d.port
+ 		newAddrs = append(newAddrs, resolver.Address{Addr: addr})
+ 	}
+-	return newAddrs
++	return newAddrs, nil
+ }
+ 
+-func (d *dnsResolver) lookup() *resolver.State {
++func (d *dnsResolver) lookup() (*resolver.State, error) {
+ 	srv := d.lookupSRV()
++	host, err := d.lookupHost()
++	if err != nil {
++		return nil, err
++	}
+ 	state := &resolver.State{
+-		Addresses: append(d.lookupHost(), srv...),
++		Addresses: append(host, srv...),
+ 	}
+ 	if !d.disableServiceConfig {
+ 		state.ServiceConfig = d.lookupTXT()
+ 	}
+-	return state
++	return state, nil
+ }
+ 
+ // formatIP returns ok = false if addr is not a valid textual representation of an IP address.

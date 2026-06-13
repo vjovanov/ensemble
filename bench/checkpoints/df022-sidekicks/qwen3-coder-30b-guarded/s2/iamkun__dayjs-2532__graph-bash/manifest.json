@@ -1,0 +1,20 @@
+{
+  "instance": "iamkun__dayjs-2532",
+  "arm": "graph-bash",
+  "language": "js",
+  "commit": "1808a5f80d84ce2bca7743fa5ba80c32c5e49c96",
+  "dirty": true,
+  "model": "oca/gpt-5.5",
+  "provider": "OCA",
+  "exploration": "sidekick",
+  "require_graph": true,
+  "bash_output_summary": true,
+  "explore_model_override": "openrouter:qwen/qwen3-coder-30b-a3b-instruct",
+  "explore_debug": "full",
+  "tool_calls": {
+    "lead": "session/*.jsonl",
+    "sidekick": "explore-debug.jsonl"
+  },
+  "sidekick_metrics": "explore-metrics.jsonl",
+  "prompts_dir": "prompts/"
+}

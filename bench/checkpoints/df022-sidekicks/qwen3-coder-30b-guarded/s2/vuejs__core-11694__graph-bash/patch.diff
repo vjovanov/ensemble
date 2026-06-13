@@ -1,0 +1,22 @@
+diff --git c/packages/reactivity/src/dep.ts i/packages/reactivity/src/dep.ts
+index 4ce73ac995..145d0d6455 100644
+--- c/packages/reactivity/src/dep.ts
++++ i/packages/reactivity/src/dep.ts
+@@ -1,6 +1,6 @@
+-import { extend, isArray, isIntegerKey, isMap, isSymbol } from '@vue/shared'
++import { def, extend, isArray, isIntegerKey, isMap, isSymbol } from '@vue/shared'
+ import type { ComputedRefImpl } from './computed'
+-import { type TrackOpTypes, TriggerOpTypes } from './constants'
++import { ReactiveFlags, type TrackOpTypes, TriggerOpTypes } from './constants'
+ import {
+   type DebuggerEventExtraInfo,
+   EffectFlags,
+@@ -154,6 +154,8 @@ export class Dep {
+   }
+ }
+ 
++def(Dep.prototype, ReactiveFlags.SKIP, true)
++
+ function addSub(link: Link) {
+   const computed = link.dep.computed
+   // computed getting its first subscriber

@@ -1,0 +1,19 @@
+multi-seed report: multiseed/df022-graph-bash-sidekicks/qwen3-coder-30b  (K=1)
+
+== graph-bash ==
+  anuraghazra            pass@1=Y (1/1)  $0.36/run
+  elastic                pass@1=n (0/1)  -
+  facebook               pass@1=Y (1/1)  $0.10/run
+  ponylang               pass@1=Y (1/1)  $0.71/run
+  sharkdp                pass@1=Y (1/1)  $0.10/run
+  tokio-rs               pass@1=Y (1/1)  $0.22/run
+  tokio-rs               pass@1=Y (1/1)  $0.51/run
+  vuejs                  pass@1=Y (1/1)  $0.31/run
+  pass@1: 7/8   stable(all 1): 7/8
+
+
+== cascade attrition (full 30-instance base002, K=3) ==
+seed 1: 30 active -> 22 ejected (timeout/loop) -> 8 survivors -> 7/8 resolved
+seed 2:  8 active ->  8 ejected (all looped)    -> 0 survivors
+seed 3:  (not reached — 0 active)
+stable across seeds run: 0/8  (no instance completed twice)

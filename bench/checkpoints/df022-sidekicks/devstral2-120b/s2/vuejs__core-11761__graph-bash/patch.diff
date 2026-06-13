@@ -1,0 +1,13 @@
+diff --git c/packages/reactivity/src/arrayInstrumentations.ts i/packages/reactivity/src/arrayInstrumentations.ts
+index 6cf7602eca..a9dcbcfa5d 100644
+--- c/packages/reactivity/src/arrayInstrumentations.ts
++++ i/packages/reactivity/src/arrayInstrumentations.ts
+@@ -244,7 +244,7 @@ function apply(
+   const methodFn = arr[method]
+   // @ts-expect-error
+   if (methodFn !== arrayProto[method]) {
+-    const result = methodFn.apply(arr, args)
++    const result = methodFn.apply(self, args)
+     return needsWrap ? toReactive(result) : result
+   }
+ 

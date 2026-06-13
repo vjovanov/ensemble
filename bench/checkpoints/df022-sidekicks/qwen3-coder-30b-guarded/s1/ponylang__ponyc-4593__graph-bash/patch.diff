@@ -1,0 +1,100 @@
+diff --git c/packages/cli/command_parser.pony i/packages/cli/command_parser.pony
+index a5acce8eab..8ac10866f5 100644
+--- c/packages/cli/command_parser.pony
++++ i/packages/cli/command_parser.pony
+@@ -143,7 +143,44 @@ class CommandParser
+       return Help.general(_root_spec())
+     end
+ 
+-    // Fill in option values from env or from coded defaults.
++    // Fill in option values from env or from coded defaults for this command
++    // and any parent commands.
++    match _populate_option_defaults(options, envsmap)
++    | let se: SyntaxError => return se
++    end
++
++    // Check for missing options on this command and any parent commands.
++    match _check_required_options(options)
++    | let se: SyntaxError => return se
++    end
++
++    // Check for missing args and error if found.
++    while arg_pos < _spec.args().size() do
++      try
++        let ars = _spec.args()(arg_pos)?
++        if not args.contains(ars.name()) then // latest arg may be a seq
++          if ars.required() then
++            return SyntaxError(ars.name(), "missing value for required argument")
++          end
++          args.update(ars.name(), Arg(ars, ars._default_p()))
++        end
++      end
++      arg_pos = arg_pos + 1
++    end
++
++    // Specifying only the parent and not a leaf command is an error.
++    if _spec.is_parent() then
++      return SyntaxError(_spec.name(), "missing subcommand")
++    end
++
++    // A successfully parsed and populated leaf Command.
++    Command._create(_spec, _fullname(), consume options, args)
++
++  fun _populate_option_defaults(
++    options: Map[String, Option] ref,
++    envsmap: Map[String, String] box)
++    : (None | SyntaxError)
++  =>
+     for os in _spec.options().values() do
+       if not options.contains(os.name()) then
+         // Lookup and use env vars before code defaults
+@@ -168,7 +205,15 @@ class CommandParser
+       end
+     end
+ 
+-    // Check for missing options and error if any exist.
++    match _parent
++    | let p: CommandParser box => p._populate_option_defaults(options, envsmap)
++    else
++      None
++    end
++
++  fun _check_required_options(options: Map[String, Option] ref)
++    : (None | SyntaxError)
++  =>
+     for os in _spec.options().values() do
+       if not options.contains(os.name()) then
+         if os.required() then
+@@ -177,28 +222,12 @@ class CommandParser
+       end
+     end
+ 
+-    // Check for missing args and error if found.
+-    while arg_pos < _spec.args().size() do
+-      try
+-        let ars = _spec.args()(arg_pos)?
+-        if not args.contains(ars.name()) then // latest arg may be a seq
+-          if ars.required() then
+-            return SyntaxError(ars.name(), "missing value for required argument")
+-          end
+-          args.update(ars.name(), Arg(ars, ars._default_p()))
+-        end
+-      end
+-      arg_pos = arg_pos + 1
+-    end
+-
+-    // Specifying only the parent and not a leaf command is an error.
+-    if _spec.is_parent() then
+-      return SyntaxError(_spec.name(), "missing subcommand")
++    match _parent
++    | let p: CommandParser box => p._check_required_options(options)
++    else
++      None
+     end
+ 
+-    // A successfully parsed and populated leaf Command.
+-    Command._create(_spec, _fullname(), consume options, args)
+-
+   fun _parse_long_option(
+     token: String,
+     args: Array[String] ref)

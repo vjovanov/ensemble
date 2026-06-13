@@ -1,0 +1,20 @@
+diff --git c/packages/reactivity/src/dep.ts i/packages/reactivity/src/dep.ts
+index 4ce73ac995..360faf1e14 100644
+--- c/packages/reactivity/src/dep.ts
++++ i/packages/reactivity/src/dep.ts
+@@ -1,6 +1,6 @@
+ import { extend, isArray, isIntegerKey, isMap, isSymbol } from '@vue/shared'
+ import type { ComputedRefImpl } from './computed'
+-import { type TrackOpTypes, TriggerOpTypes } from './constants'
++import { ReactiveFlags, type TrackOpTypes, TriggerOpTypes } from './constants'
+ import {
+   type DebuggerEventExtraInfo,
+   EffectFlags,
+@@ -23,6 +23,7 @@ export let globalVersion = 0
+  */
+ export class Dep {
+   version = 0
++  readonly [ReactiveFlags.SKIP] = true
+   /**
+    * Link between this dep and the current active effect
+    */

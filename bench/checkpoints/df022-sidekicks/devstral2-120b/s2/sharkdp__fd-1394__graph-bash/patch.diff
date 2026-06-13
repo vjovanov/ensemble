@@ -1,0 +1,22 @@
+diff --git c/src/cli.rs i/src/cli.rs
+index a60260e875..c59e035638 100644
+--- c/src/cli.rs
++++ i/src/cli.rs
+@@ -26,7 +26,7 @@ use crate::filter::SizeFilter;
+     max_term_width = 98,
+     args_override_self = true,
+     group(ArgGroup::new("execs").args(&["exec", "exec_batch", "list_details"]).conflicts_with_all(&[
+-            "max_results", "has_results", "count"])),
++            "max_results", "max_one_result", "has_results", "count"])),
+ )]
+ pub struct Opts {
+     /// Include hidden directories and files in the search results (default:
+@@ -515,7 +515,7 @@ pub struct Opts {
+     #[arg(
+         short = '1',
+         hide_short_help = true,
+-        overrides_with("max_results"),
++        conflicts_with("max_results"),
+         help = "Limit search to a single result",
+         long_help
+     )]

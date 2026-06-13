@@ -1,0 +1,70 @@
+diff --git c/api/index.js i/api/index.js
+index a3d9f2a9c0..6d909dbab7 100644
+--- c/api/index.js
++++ i/api/index.js
+@@ -37,6 +37,7 @@ export default async (req, res) => {
+     number_format,
+     border_color,
+     rank_icon,
++    show,
+     show_total_reviews,
+   } = req.query;
+   res.setHeader("Content-Type", "image/svg+xml");
+@@ -96,6 +97,7 @@ export default async (req, res) => {
+         locale: locale ? locale.toLowerCase() : null,
+         disable_animations: parseBoolean(disable_animations),
+         rank_icon,
++        show: parseArray(show),
+         show_total_reviews: parseBoolean(show_total_reviews),
+       }),
+     );
+diff --git c/src/cards/stats-card.js i/src/cards/stats-card.js
+index 9b5763e848..c05e56ce62 100644
+--- c/src/cards/stats-card.js
++++ i/src/cards/stats-card.js
+@@ -112,6 +112,7 @@ const renderStatsCard = (stats = {}, options = { hide: [] }) => {
+     locale,
+     disable_animations = false,
+     rank_icon = "default",
++    show = [],
+     show_total_reviews = false,
+   } = options;
+ 
+@@ -161,7 +162,7 @@ const renderStatsCard = (stats = {}, options = { hide: [] }) => {
+     id: "prs",
+   };
+ 
+-  if (show_total_reviews) {
++  if (show_total_reviews || show.includes("reviews")) {
+     STATS.reviews = {
+       icon: icons.reviews,
+       label: i18n.t("statcard.reviews"),
+diff --git c/src/cards/types.d.ts i/src/cards/types.d.ts
+index cec7b7f705..7fa0e460a6 100644
+--- c/src/cards/types.d.ts
++++ i/src/cards/types.d.ts
+@@ -14,6 +14,7 @@ export type CommonOptions = {
+ 
+ export type StatCardOptions = CommonOptions & {
+   hide: string[];
++  show?: string[];
+   show_icons: boolean;
+   hide_title: boolean;
+   hide_border: boolean;
+diff --git c/src/common/utils.js i/src/common/utils.js
+index 3e77731738..d14b919dce 100644
+--- c/src/common/utils.js
++++ i/src/common/utils.js
+@@ -101,7 +101,11 @@ const parseBoolean = (value) => {
+  */
+ const parseArray = (str) => {
+   if (!str) return [];
+-  return str.split(",");
++  return str
++    .replace(/^\[|\]$/g, "")
++    .split(",")
++    .map((item) => item.trim())
++    .filter(Boolean);
+ };
+ 
+ /**

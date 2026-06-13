@@ -1,0 +1,39 @@
+diff --git c/packages/reactivity/src/baseHandlers.ts i/packages/reactivity/src/baseHandlers.ts
+index 8f21e35400..5916c0b5d8 100644
+--- c/packages/reactivity/src/baseHandlers.ts
++++ i/packages/reactivity/src/baseHandlers.ts
+@@ -165,7 +165,12 @@ class MutableReactiveHandler extends BaseReactiveHandler {
+       isArray(target) && isIntegerKey(key)
+         ? Number(key) < target.length
+         : hasOwn(target, key)
+-    const result = Reflect.set(target, key, value, receiver)
++    const result = Reflect.set(
++      target,
++      key,
++      value,
++      isRef(target) ? target : receiver,
++    )
+     // don't trigger if target is something up in the prototype chain of original
+     if (target === toRaw(receiver)) {
+       if (!hadKey) {
+diff --git c/packages/reactivity/src/dep.ts i/packages/reactivity/src/dep.ts
+index 4ce73ac995..54fa21a344 100644
+--- c/packages/reactivity/src/dep.ts
++++ i/packages/reactivity/src/dep.ts
+@@ -1,6 +1,6 @@
+-import { extend, isArray, isIntegerKey, isMap, isSymbol } from '@vue/shared'
++import { def, extend, isArray, isIntegerKey, isMap, isSymbol } from '@vue/shared'
+ import type { ComputedRefImpl } from './computed'
+-import { type TrackOpTypes, TriggerOpTypes } from './constants'
++import { ReactiveFlags, type TrackOpTypes, TriggerOpTypes } from './constants'
+ import {
+   type DebuggerEventExtraInfo,
+   EffectFlags,
+@@ -40,6 +40,7 @@ export class Dep {
+   subsHead?: Link
+ 
+   constructor(public computed?: ComputedRefImpl | undefined) {
++    def(this, ReactiveFlags.SKIP, true)
+     if (__DEV__) {
+       this.subsHead = undefined
+     }

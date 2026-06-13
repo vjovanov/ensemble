@@ -1,0 +1,26 @@
+diff --git c/src/jv.c i/src/jv.c
+index b763272bcf..9d88d4c42d 100644
+--- c/src/jv.c
++++ i/src/jv.c
+@@ -974,6 +974,8 @@ int jv_array_length(jv j) {
+ 
+ jv jv_array_get(jv j, int idx) {
+   assert(JVP_HAS_KIND(j, JV_KIND_ARRAY));
++  if (idx < 0)
++    idx = jvp_array_length(j) + idx;
+   jv* slot = jvp_array_read(j, idx);
+   jv val;
+   if (slot) {
+diff --git c/src/jv_aux.c i/src/jv_aux.c
+index 133fb54ccb..4a7c549a94 100644
+--- c/src/jv_aux.c
++++ i/src/jv_aux.c
+@@ -74,8 +74,6 @@ jv jv_get(jv t, jv k) {
+   } else if (jv_get_kind(t) == JV_KIND_ARRAY && jv_get_kind(k) == JV_KIND_NUMBER) {
+     if(jv_is_integer(k)){
+       int idx = (int)jv_number_value(k);
+-      if (idx < 0)
+-        idx += jv_array_length(jv_copy(t));
+       v = jv_array_get(t, idx);
+       if (!jv_is_valid(v)) {
+         jv_free(v);

@@ -1,0 +1,30 @@
+diff --git c/packages/reactivity/src/arrayInstrumentations.ts i/packages/reactivity/src/arrayInstrumentations.ts
+index 6cf7602eca..c86bf959ca 100644
+--- c/packages/reactivity/src/arrayInstrumentations.ts
++++ i/packages/reactivity/src/arrayInstrumentations.ts
+@@ -242,11 +242,6 @@ function apply(
+   const needsWrap = arr !== self && !isShallow(self)
+   // @ts-expect-error our code is limited to es2016 but user code is not
+   const methodFn = arr[method]
+-  // @ts-expect-error
+-  if (methodFn !== arrayProto[method]) {
+-    const result = methodFn.apply(arr, args)
+-    return needsWrap ? toReactive(result) : result
+-  }
+ 
+   let wrappedFn = fn
+   if (arr !== self) {
+@@ -260,6 +255,13 @@ function apply(
+       }
+     }
+   }
++  // @ts-expect-error
++  if (methodFn !== arrayProto[method]) {
++    const methodArgs = args ? Array.from(args) : [wrappedFn]
++    methodArgs[0] = wrappedFn
++    const result = methodFn.apply(arr, methodArgs)
++    return needsWrap ? toReactive(result) : result
++  }
+   const result = methodFn.call(arr, wrappedFn, thisArg)
+   return needsWrap && wrappedRetFn ? wrappedRetFn(result) : result
+ }

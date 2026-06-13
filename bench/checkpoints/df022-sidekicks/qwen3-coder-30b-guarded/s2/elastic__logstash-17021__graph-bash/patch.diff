@@ -1,0 +1,37 @@
+diff --git c/logstash-core/src/main/java/org/logstash/common/BufferedTokenizerExt.java i/logstash-core/src/main/java/org/logstash/common/BufferedTokenizerExt.java
+index be1c64d235..52876ab842 100644
+--- c/logstash-core/src/main/java/org/logstash/common/BufferedTokenizerExt.java
++++ i/logstash-core/src/main/java/org/logstash/common/BufferedTokenizerExt.java
+@@ -88,17 +88,30 @@ public class BufferedTokenizerExt extends RubyObject {
+             }
+             this.inputSize = inputSize + entitiesSize;
+         }
+-        input.append(entities.shift(context));
++        appendWithoutConversion(entities.shift(context));
+         if (entities.isEmpty()) {
+             return RubyUtil.RUBY.newArray();
+         }
+         entities.unshift(input.join(context));
+         input.clear();
+-        input.append(entities.pop(context));
++        appendWithoutConversion(entities.pop(context));
+         inputSize = ((RubyString) input.first()).size();
+         return entities;
+     }
+ 
++    /**
++     * Appends an existing Ruby object to the accumulator using RubyArray's Ruby API.
++     *
++     * RubyArray also implements Java Collection APIs, but add/addAll convert elements
++     * as Java objects and can transcode RubyString bytes (for example ISO-8859-1 data)
++     * through UTF-8. Keeping the original IRubyObject preserves its bytes and encoding.
++     *
++     * @param entity Token fragment to append
++     */
++    private void appendWithoutConversion(final IRubyObject entity) {
++        input.append(entity);
++    }
++
+     /**
+      * Flush the contents of the input buffer, i.e. return the input buffer even though
+      * a token has not yet been encountered

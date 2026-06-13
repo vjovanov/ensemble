@@ -1,0 +1,8 @@
+{
+  "instance": "grpc__grpc-go-3351",
+  "arm": "graph-bash",
+  "status": "resolved",
+  "resolved": true,
+  "updatedAt": "2026-06-13T04:12:08.314Z",
+  "report": "/home/vjovanov/p/ensemble/bench/results/graph-bash/final_report.json"
+}

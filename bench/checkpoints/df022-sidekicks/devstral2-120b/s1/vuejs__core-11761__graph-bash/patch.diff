@@ -1,0 +1,16 @@
+diff --git c/packages/reactivity/src/arrayInstrumentations.ts i/packages/reactivity/src/arrayInstrumentations.ts
+index 6cf7602eca..77765e23ed 100644
+--- c/packages/reactivity/src/arrayInstrumentations.ts
++++ i/packages/reactivity/src/arrayInstrumentations.ts
+@@ -244,7 +244,10 @@ function apply(
+   const methodFn = arr[method]
+   // @ts-expect-error
+   if (methodFn !== arrayProto[method]) {
+-    const result = methodFn.apply(arr, args)
++    // When the method is overridden in an Array subclass, call it with the
++    // reactive proxy as receiver so accesses performed by the override (or by
++    // native methods called via super) are tracked and return reactive values.
++    const result = methodFn.apply(self, args)
+     return needsWrap ? toReactive(result) : result
+   }
+ 

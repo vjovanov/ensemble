@@ -1,0 +1,8 @@
+{
+  "instance": "elastic__logstash-17021",
+  "arm": "graph-bash",
+  "status": "unresolved",
+  "resolved": false,
+  "updatedAt": "2026-06-13T14:08:49.185Z",
+  "report": "/home/vjovanov/p/ensemble/bench/results/graph-bash/final_report.json"
+}

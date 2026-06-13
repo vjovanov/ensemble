@@ -1,0 +1,8 @@
+{
+  "instance": "googlecontainertools__jib-4144",
+  "arm": "graph-bash",
+  "status": "unresolved",
+  "resolved": false,
+  "updatedAt": "2026-06-13T13:04:26.618Z",
+  "report": "/home/vjovanov/p/ensemble/bench/results/graph-bash/final_report.json"
+}

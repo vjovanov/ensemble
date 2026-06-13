@@ -1,0 +1,22 @@
+diff --git c/src/plugin/utc/index.js i/src/plugin/utc/index.js
+index f1473570b5..2016a3387e 100644
+--- c/src/plugin/utc/index.js
++++ i/src/plugin/utc/index.js
+@@ -89,8 +89,15 @@ export default (option, Dayjs, dayjs) => {
+     const offset = Math.abs(input) <= 16 ? input * 60 : input
+     let ins = this
+     if (keepLocalTime) {
+-      ins.$offset = offset
+-      ins.$u = input === 0
++      if (input === 0) {
++        ins.$u = true
++        delete ins.$offset
++        ins.$d = new Date(Date.UTC(ins.$y, ins.$M, ins.$D, ins.$H, ins.$m, ins.$s, ins.$ms))
++        ins.init()
++      } else {
++        ins.$offset = offset
++        ins.$u = false
++      }
+       return ins
+     }
+     if (input !== 0) {

@@ -1,0 +1,59 @@
+diff --git c/src/builtin.c i/src/builtin.c
+index 717a07528a..9780bc5012 100644
+--- c/src/builtin.c
++++ i/src/builtin.c
+@@ -880,19 +880,30 @@ static jv f_group_by_impl(jq_state *jq, jv input, jv keys) {
+ }
+ 
+ #ifdef HAVE_LIBONIG
++struct regex_names_arg {
++  jv captures;
++  OnigRegion *region;
++  int zero_width;
++};
++
+ static int f_match_name_iter(const UChar* name, const UChar *name_end, int ngroups,
+     int *groups, regex_t *reg, void *arg) {
+-  jv captures = *(jv*)arg;
++  struct regex_names_arg *named = arg;
++  jv captures = named->captures;
+   for (int i = 0; i < ngroups; ++i) {
+     jv cap = jv_array_get(jv_copy(captures),groups[i]-1);
+     if (jv_get_kind(cap) == JV_KIND_OBJECT) {
+       cap = jv_object_set(cap, jv_string("name"), jv_string_sized((const char*)name, name_end-name));
++      if (named->zero_width && named->region->beg[groups[i]] == -1) {
++        cap = jv_object_set(cap, jv_string("offset"), jv_number(-1));
++        cap = jv_object_set(cap, jv_string("string"), jv_null());
++      }
+       captures = jv_array_set(captures,groups[i]-1,cap);
+     } else {
+       jv_free(cap);
+     }
+   }
+-  *(jv *)arg = captures;
++  named->captures = captures;
+   return 0;
+ }
+ 
+@@ -1012,7 +1023,9 @@ static jv f_match(jq_state *jq, jv input, jv regex, jv modifiers, jv testmode) {
+           cap = jv_object_set(cap, jv_string("name"), jv_null());
+           captures = jv_array_append(captures, cap);
+         }
+-        onig_foreach_name(reg, f_match_name_iter, &captures);
++        struct regex_names_arg named = {captures, region, 1};
++        onig_foreach_name(reg, f_match_name_iter, &named);
++        captures = named.captures;
+         match = jv_object_set(match, jv_string("captures"), captures);
+         result = jv_array_append(result, match);
+         // ensure '"qux" | match("(?=u)"; "g")' matches just once
+@@ -1069,7 +1082,9 @@ static jv f_match(jq_state *jq, jv input, jv regex, jv modifiers, jv testmode) {
+         cap = jv_object_set(cap, jv_string("name"), jv_null());
+         captures = jv_array_append(captures,cap);
+       }
+-      onig_foreach_name(reg,f_match_name_iter,&captures);
++      struct regex_names_arg named = {captures, region, 0};
++      onig_foreach_name(reg,f_match_name_iter,&named);
++      captures = named.captures;
+       match = jv_object_set(match, jv_string("captures"), captures);
+       result = jv_array_append(result, match);
+       start = (const UChar*)(input_string+region->end[0]);

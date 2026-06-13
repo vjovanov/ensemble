@@ -1,0 +1,96 @@
+diff --git c/crates/nu-command/src/system/run_external.rs i/crates/nu-command/src/system/run_external.rs
+index 70a00bc815..e9a3e7ad80 100644
+--- c/crates/nu-command/src/system/run_external.rs
++++ i/crates/nu-command/src/system/run_external.rs
+@@ -117,6 +117,7 @@ impl Command for External {
+         // we'll setup a pipe that merge two streams into one.
+         let stdout = stack.stdout();
+         let stderr = stack.stderr();
++        let ignore_exit_code = matches!(stdout, OutDest::Pipe) || matches!(stderr, OutDest::Pipe);
+         let merged_stream = if matches!(stdout, OutDest::Pipe) && matches!(stderr, OutDest::Pipe) {
+             let (reader, writer) = os_pipe::pipe()?;
+             command.stdout(writer.try_clone()?);
+@@ -180,12 +181,15 @@ impl Command for External {
+         }
+ 
+         // Wrap the output into a `PipelineData::ByteStream`.
+-        let child = ChildProcess::new(
++        let mut child = ChildProcess::new(
+             child,
+             merged_stream,
+             matches!(stderr, OutDest::Pipe),
+             call.head,
+         )?;
++        if ignore_exit_code {
++            child.ignore_exit_code();
++        }
+         Ok(PipelineData::ByteStream(
+             ByteStream::child(child, call.head),
+             None,
+diff --git c/crates/nu-protocol/src/process/child.rs i/crates/nu-protocol/src/process/child.rs
+index 320427a819..f5cadd0c63 100644
+--- c/crates/nu-protocol/src/process/child.rs
++++ i/crates/nu-protocol/src/process/child.rs
+@@ -110,6 +110,7 @@ pub struct ChildProcess {
+     pub stderr: Option<ChildPipe>,
+     exit_status: ExitStatusFuture,
+     span: Span,
++    ignore_exit_code: bool,
+ }
+ 
+ impl ChildProcess {
+@@ -156,6 +157,7 @@ impl ChildProcess {
+                 .map(ExitStatusFuture::Running)
+                 .unwrap_or(ExitStatusFuture::Finished(Ok(ExitStatus::Exited(0)))),
+             span,
++            ignore_exit_code: false,
+         }
+     }
+ 
+@@ -163,10 +165,26 @@ impl ChildProcess {
+         self.exit_status = ExitStatusFuture::Finished(Ok(ExitStatus::Exited(exit_code)));
+     }
+ 
++    pub fn ignore_exit_code(&mut self) {
++        self.ignore_exit_code = true;
++    }
++
+     pub fn span(&self) -> Span {
+         self.span
+     }
+ 
++    fn check_exit_status(
++        ignore_exit_code: bool,
++        span: Span,
++        exit_status: ExitStatus,
++    ) -> Result<(), ShellError> {
++        if ignore_exit_code && matches!(exit_status, ExitStatus::Exited(_)) {
++            Ok(())
++        } else {
++            exit_status.check_ok(span)
++        }
++    }
++
+     pub fn into_bytes(mut self) -> Result<Vec<u8>, ShellError> {
+         if self.stderr.is_some() {
+             debug_assert!(false, "stderr should not exist");
+@@ -182,7 +200,8 @@ impl ChildProcess {
+             Vec::new()
+         };
+ 
+-        self.exit_status.wait(self.span)?.check_ok(self.span)?;
++        let exit_status = self.exit_status.wait(self.span)?;
++        Self::check_exit_status(self.ignore_exit_code, self.span, exit_status)?;
+ 
+         Ok(bytes)
+     }
+@@ -223,7 +242,8 @@ impl ChildProcess {
+             consume_pipe(stderr).err_span(self.span)?;
+         }
+ 
+-        self.exit_status.wait(self.span)?.check_ok(self.span)
++        let exit_status = self.exit_status.wait(self.span)?;
++        Self::check_exit_status(self.ignore_exit_code, self.span, exit_status)
+     }
+ 
+     pub fn try_wait(&mut self) -> Result<Option<ExitStatus>, ShellError> {

@@ -1,0 +1,40 @@
+diff --git c/clap_builder/src/parser/parser.rs i/clap_builder/src/parser/parser.rs
+index 2949c3e138..f981effb86 100644
+--- c/clap_builder/src/parser/parser.rs
++++ i/clap_builder/src/parser/parser.rs
+@@ -1570,16 +1570,16 @@ impl Parser<'_> {
+             self.cmd.get_subcommands_mut(),
+         );
+ 
+-        // Add the arg to the matches to build a proper usage string
+-        if let Some((name, _)) = did_you_mean.as_ref() {
+-            if let Some(arg) = self.cmd.get_keymap().get(&name.as_ref()) {
+-                self.start_custom_arg(matcher, arg, ValueSource::CommandLine);
+-            }
+-        }
++        // Add the arg to the usage string without mutating the matches.
++        let did_you_mean_arg = did_you_mean
++            .as_ref()
++            .and_then(|(name, _)| self.cmd.get_keymap().get(&name.as_ref()))
++            .filter(|arg| !arg.is_hide_set())
++            .map(|arg| arg.get_id().clone());
+         let did_you_mean = did_you_mean.map(|(arg, cmd)| (format!("--{arg}"), cmd));
+ 
+         let required = self.cmd.required_graph();
+-        let used: Vec<Id> = matcher
++        let mut used: Vec<Id> = matcher
+             .arg_ids()
+             .filter(|arg_id| {
+                 matcher.check_explicit(arg_id, &crate::builder::ArgPredicate::IsPresent)
+@@ -1587,6 +1587,11 @@ impl Parser<'_> {
+             .filter(|n| self.cmd.find(n).map(|a| !a.is_hide_set()).unwrap_or(true))
+             .cloned()
+             .collect();
++        if let Some(id) = did_you_mean_arg {
++            if !used.contains(&id) {
++                used.push(id);
++            }
++        }
+ 
+         // `did_you_mean` is a lot more likely and should cause us to skip the `--` suggestion
+         // with the one exception being that the CLI is trying to capture arguments

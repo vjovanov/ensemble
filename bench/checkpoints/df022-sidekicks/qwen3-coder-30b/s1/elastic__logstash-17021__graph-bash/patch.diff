@@ -1,0 +1,31 @@
+diff --git c/logstash-core/src/main/java/org/logstash/common/BufferedTokenizerExt.java i/logstash-core/src/main/java/org/logstash/common/BufferedTokenizerExt.java
+index be1c64d235..8a175c6fe2 100644
+--- c/logstash-core/src/main/java/org/logstash/common/BufferedTokenizerExt.java
++++ i/logstash-core/src/main/java/org/logstash/common/BufferedTokenizerExt.java
+@@ -88,17 +88,24 @@ public class BufferedTokenizerExt extends RubyObject {
+             }
+             this.inputSize = inputSize + entitiesSize;
+         }
+-        input.append(entities.shift(context));
++        appendRubyObject(input, entities.shift(context));
+         if (entities.isEmpty()) {
+             return RubyUtil.RUBY.newArray();
+         }
+         entities.unshift(input.join(context));
+         input.clear();
+-        input.append(entities.pop(context));
++        appendRubyObject(input, entities.pop(context));
+         inputSize = ((RubyString) input.first()).size();
+         return entities;
+     }
+ 
++    @SuppressWarnings("rawtypes")
++    private static void appendRubyObject(final RubyArray input, final IRubyObject element) {
++        // Use RubyArray#append(IRubyObject) instead of Java collection methods such as add/addAll,
++        // which coerce RubyString values through Java String and can alter their encoding.
++        input.append(element);
++    }
++
+     /**
+      * Flush the contents of the input buffer, i.e. return the input buffer even though
+      * a token has not yet been encountered
