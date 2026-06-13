@@ -72,6 +72,9 @@ mkdir -p "$WORK_DIR" "$RAW_DIR" "$RAW_HISTORY_DIR" "$PATCH_DIR" "$INST_DIR" "$RE
 # graphify's own shipped skill (skill.md), for the classic-graphify arm. Defaults to the bundled
 # copy in the installed graphifyy package; override if installed elsewhere.
 : "${GRAPHIFY_SKILL:=$HOME/.local/share/uv/tools/graphifyy/lib/python3.11/site-packages/graphify/skill.md}"
+# §DF-021 caveman: primitive-discipline skill layered on the classic-caveman arm's lead.
+# Select the level file per run (level1-trimmed / level2-caveman / level3-stone-tool).
+: "${CAVEMAN_SKILL:=$BENCH_DIR/skills/caveman/level1-trimmed.md}"
 : "${DRY_RUN:=0}"                   # 1 = skip the paid agent call; exercise plumbing only
 : "${NO_CLASSIC:=0}"                # 1 = remove classic from ARMS
 : "${REUSE_CLASSIC:=0}"             # 1 = skip classic agent runs but keep classic in reports

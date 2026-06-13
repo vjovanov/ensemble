@@ -191,6 +191,16 @@ case "$ARM" in
     rm -rf "$ARM_SRC/graphify-out"
     ENVV=("GRAPHIFY_COMMAND=$BENCH_DIR/no-graphify" "PI_BASH_OUTPUT_SUMMARY=0")
     ;;
+  classic-caveman)
+    # classic plumbing (NO graph, NO explore sidekick) + a primitive-discipline "caveman" skill
+    # layered on the lead via --skill. CAVEMAN_SKILL selects the level (L1 trimmed / L2 caveman /
+    # L3 stone-tool). Same A/B template as classic-graphify; isolates prompt discipline. §DF-021.
+    [ -f "$CAVEMAN_SKILL" ] || die "caveman skill not found: $CAVEMAN_SKILL (set CAVEMAN_SKILL)"
+    EXPLORATION="classic"
+    rm -rf "$ARM_SRC/graphify-out"
+    SKILL_ARGS=(--skill "$CAVEMAN_SKILL")
+    ENVV=("GRAPHIFY_COMMAND=$BENCH_DIR/no-graphify" "PI_BASH_OUTPUT_SUMMARY=0")
+    ;;
   classic-graphify)
     # classic exploration (NO pi explore sidekick) + graphify's OWN shipped skill (skill.md):
     # the lead drives graphify directly via bash. Build the graph IN-TREE so the lead's
@@ -259,9 +269,12 @@ node -e '
     prompts_dir: "prompts/",
   },null,2)+"\n");
 ' "$OUT" "$COMMIT" "$DIRTY" "$MODEL" "${PROVIDER:-}" "$ARM" "$ID" "$LANG" "$EXPLORATION" "$REQUIRE_GRAPH" "$DBG" "$BASH_OUTPUT_SUMMARY" "${PI_EXPLORE_MODEL:-}"
-if [ "$ARM" = "classic" ] || [ "$ARM" = "classic-bash" ] || [ "$ARM" = "codex" ] || [ "$ARM" = "classic-graphify" ]; then
+if [ "$ARM" = "classic" ] || [ "$ARM" = "classic-bash" ] || [ "$ARM" = "codex" ] || [ "$ARM" = "classic-graphify" ] || [ "$ARM" = "classic-caveman" ]; then
   mkdir -p "$OUT/prompts"
-  if [ "$ARM" = "codex" ]; then
+  if [ "$ARM" = "classic-caveman" ]; then
+    printf 'classic-caveman arm (§DF-021): classic exploration + a primitive-discipline skill on the lead\n(%s). No graph, no explore sidekick. Base pi system prompt pinned by commit %s.\n' "$CAVEMAN_SKILL" "$COMMIT" > "$OUT/prompts/NOTE.txt"
+    cp "$CAVEMAN_SKILL" "$OUT/prompts/caveman-skill.md" 2>/dev/null || true
+  elif [ "$ARM" = "codex" ]; then
     printf 'codex arm (reference): OpenAI Codex CLI (cdx exec) run on the same task prompt and base commit.\nUses Codex'\''s own agent on the same model (gpt-5.5/oca) at reasoning effort=medium (matched to classic), not pi.\nFor orientation per GRUND-002; resolved verdict only.\n' > "$OUT/prompts/NOTE.txt"
   elif [ "$ARM" = "classic-graphify" ]; then
     printf 'classic-graphify arm: classic exploration (NO pi explore sidekick) + graphify'\''s OWN shipped skill\n(%s). Lead drives graphify directly via bash against the in-tree graphify-out/ graph.\nBase pi system prompt pinned by commit %s. A/B vs classic-graph (same graph, sidekick vs. skill).\n' "$GRAPHIFY_SKILL" "$COMMIT" > "$OUT/prompts/NOTE.txt"
