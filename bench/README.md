@@ -385,6 +385,14 @@ loop/eject as a failure — the honest denominator):
 ² Devstral 2's sidekick tokens are ~97% cacheRead (cheap). ³ gpt-oss ran only on the 8-survivor
 subset (the devstral2 active-ids), so it has no resolved/30.
 
+![DF-022 sidekick comparison — successes and lead-model tokens vs classic](plots/df022-sidekicks.svg)
+
+**Reading the chart.** Top: successes (resolved/attempted) — a good sidekick keeps resolutions at or
+above `classic`. Bottom: lead-model (gpt-5.5) tokens per run vs the `classic` baseline (dashed) — a
+good sidekick *cuts* it (`devstral2` -42%); guarded Qwen is the lone arm that doesn't (+1%, its
+guard-truncated digests make the lead work as hard as classic). `gpt-oss` is drawn translucent
+because it ran only the 8-instance subset. Regenerate: `node lib/plot-df022.mjs`.
+
 **Guard durability across seeds (Qwen + guard, K=3, complete):** per-seed resolution 21/29, 22/29,
 23/27; ejects 1 / 0 / 2 (3 total over the whole run vs the unguarded run's 22 in one seed). On the
 **27 instances present in all three seeds: pass@3 = 23/27 (85%)** (resolved in ≥1 seed) and
