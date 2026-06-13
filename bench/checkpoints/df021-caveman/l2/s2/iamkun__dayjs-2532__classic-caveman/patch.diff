@@ -1,0 +1,20 @@
+diff --git c/src/plugin/timezone/index.js i/src/plugin/timezone/index.js
+index 832fb4a73b..cf38b0a8d2 100644
+--- c/src/plugin/timezone/index.js
++++ i/src/plugin/timezone/index.js
+@@ -91,6 +91,15 @@ export default (o, c, d) => {
+   }
+ 
+   const proto = c.prototype
++  const oldClone = proto.clone
++  proto.clone = function () {
++    if (this.$x && this.$x.$timezone && this.$offset === 0) {
++      const ins = d(this.format('YYYY-MM-DD HH:mm:ss:SSS'), { locale: this.$L }).utcOffset(0, true)
++      ins.$x = this.$x
++      return ins
++    }
++    return oldClone.call(this)
++  }
+ 
+   proto.tz = function (timezone = defaultTimezone, keepLocalTime) {
+     const oldOffset = this.utcOffset()

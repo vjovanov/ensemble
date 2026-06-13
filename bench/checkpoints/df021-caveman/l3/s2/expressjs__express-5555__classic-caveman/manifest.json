@@ -1,0 +1,20 @@
+{
+  "instance": "expressjs__express-5555",
+  "arm": "classic-caveman",
+  "language": "js",
+  "commit": "717672fd38e95b06f103e959e2df624a60d6be1a",
+  "dirty": false,
+  "model": "oca/gpt-5.5",
+  "provider": "OCA",
+  "exploration": "classic",
+  "require_graph": false,
+  "bash_output_summary": false,
+  "explore_model_override": null,
+  "explore_debug": "off",
+  "tool_calls": {
+    "lead": "session/*.jsonl",
+    "sidekick": null
+  },
+  "sidekick_metrics": null,
+  "prompts_dir": "prompts/"
+}

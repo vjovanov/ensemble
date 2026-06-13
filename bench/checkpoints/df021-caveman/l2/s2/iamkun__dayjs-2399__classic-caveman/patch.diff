@@ -1,0 +1,39 @@
+diff --git c/src/plugin/utc/index.js i/src/plugin/utc/index.js
+index f1473570b5..4596664bd3 100644
+--- c/src/plugin/utc/index.js
++++ i/src/plugin/utc/index.js
+@@ -53,7 +53,8 @@ export default (option, Dayjs, dayjs) => {
+ 
+   const oldInit = proto.init
+   proto.init = function () {
+-    if (this.$u) {
++    if (this.$u && (this.$utils().u(this.$offset) ||
++      (this.$x && this.$x.$localOffset === 0))) {
+       const { $d } = this
+       this.$y = $d.getUTCFullYear()
+       this.$M = $d.getUTCMonth()
+@@ -89,8 +90,12 @@ export default (option, Dayjs, dayjs) => {
+     const offset = Math.abs(input) <= 16 ? input * 60 : input
+     let ins = this
+     if (keepLocalTime) {
++      const localTimezoneOffset = this.$u ? 0 : this.$d.getTimezoneOffset()
+       ins.$offset = offset
+       ins.$u = input === 0
++      if (ins.$u) {
++        ins.$x.$localOffset = localTimezoneOffset
++      }
+       return ins
+     }
+     if (input !== 0) {
+@@ -113,8 +118,10 @@ export default (option, Dayjs, dayjs) => {
+   }
+ 
+   proto.valueOf = function () {
++    const localOffset = !this.$x || this.$utils().u(this.$x.$localOffset)
++      ? this.$d.getTimezoneOffset() : this.$x.$localOffset
+     const addedOffset = !this.$utils().u(this.$offset)
+-      ? this.$offset + (this.$x.$localOffset || this.$d.getTimezoneOffset()) : 0
++      ? this.$offset + localOffset : 0
+     return this.$d.valueOf() - (addedOffset * MILLISECONDS_A_MINUTE)
+   }
+ 

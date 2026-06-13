@@ -1,0 +1,52 @@
+diff --git c/clap_builder/src/parser/arg_matcher.rs i/clap_builder/src/parser/arg_matcher.rs
+index 065165d3a4..d6c388236b 100644
+--- c/clap_builder/src/parser/arg_matcher.rs
++++ i/clap_builder/src/parser/arg_matcher.rs
+@@ -13,7 +13,7 @@ use crate::util::FlatMap;
+ use crate::util::Id;
+ use crate::INTERNAL_ERROR_MSG;
+ 
+-#[derive(Debug, Default)]
++#[derive(Clone, Debug, Default)]
+ pub(crate) struct ArgMatcher {
+     matches: ArgMatches,
+     pending: Option<PendingArg>,
+diff --git c/clap_builder/src/parser/parser.rs i/clap_builder/src/parser/parser.rs
+index 2949c3e138..50b9de8af3 100644
+--- c/clap_builder/src/parser/parser.rs
++++ i/clap_builder/src/parser/parser.rs
+@@ -1546,7 +1546,7 @@ impl Parser<'_> {
+     fn did_you_mean_error(
+         &mut self,
+         arg: &str,
+-        matcher: &mut ArgMatcher,
++        matcher: &ArgMatcher,
+         remaining_args: &[&OsStr],
+         trailing_values: bool,
+     ) -> ClapError {
+@@ -1570,19 +1570,21 @@ impl Parser<'_> {
+             self.cmd.get_subcommands_mut(),
+         );
+ 
+-        // Add the arg to the matches to build a proper usage string
++        // Add the arg to a copy of the matches to build a proper usage string
++        // without treating suggestions as parsed arguments when ignoring errors.
++        let mut usage_matcher = matcher.clone();
+         if let Some((name, _)) = did_you_mean.as_ref() {
+             if let Some(arg) = self.cmd.get_keymap().get(&name.as_ref()) {
+-                self.start_custom_arg(matcher, arg, ValueSource::CommandLine);
++                self.start_custom_arg(&mut usage_matcher, arg, ValueSource::CommandLine);
+             }
+         }
+         let did_you_mean = did_you_mean.map(|(arg, cmd)| (format!("--{arg}"), cmd));
+ 
+         let required = self.cmd.required_graph();
+-        let used: Vec<Id> = matcher
++        let used: Vec<Id> = usage_matcher
+             .arg_ids()
+             .filter(|arg_id| {
+-                matcher.check_explicit(arg_id, &crate::builder::ArgPredicate::IsPresent)
++                usage_matcher.check_explicit(arg_id, &crate::builder::ArgPredicate::IsPresent)
+             })
+             .filter(|n| self.cmd.find(n).map(|a| !a.is_hide_set()).unwrap_or(true))
+             .cloned()

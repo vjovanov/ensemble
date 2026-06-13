@@ -1,0 +1,45 @@
+{
+  "model": "oca/gpt-5.5",
+  "arm": "classic-caveman",
+  "input": 54677,
+  "output": 11014,
+  "cacheRead": 587264,
+  "cacheWrite": 0,
+  "totalTokens": 652955,
+  "costUsd": 0.8974,
+  "assistantTurns": 30,
+  "exploreCalls": 0,
+  "exploreFallbacks": 0,
+  "lead": {
+    "model": "oca/gpt-5.5",
+    "input": 54677,
+    "output": 11014,
+    "cacheRead": 587264,
+    "cacheWrite": 0,
+    "totalTokens": 652955,
+    "costUsd": 0.8974,
+    "assistantTurns": 30
+  },
+  "sidekick": {
+    "model": "",
+    "input": 0,
+    "output": 0,
+    "cacheRead": 0,
+    "cacheWrite": 0,
+    "totalTokens": 0,
+    "costUsd": 0,
+    "assistantTurns": 0
+  },
+  "total": {
+    "model": "oca/gpt-5.5",
+    "input": 54677,
+    "output": 11014,
+    "cacheRead": 587264,
+    "cacheWrite": 0,
+    "totalTokens": 652955,
+    "costUsd": 0.8974,
+    "assistantTurns": 30
+  },
+  "strictOk": null,
+  "strictNote": ""
+}

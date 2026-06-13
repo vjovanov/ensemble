@@ -419,3 +419,51 @@ because it ran only the 8-instance subset. Regenerate: `node lib/plot-df022.mjs`
 Artifacts: `multiseed/df022-graph-bash-sidekicks/{devstral2-120b,gpt-oss-120b,qwen3-coder-30b,qwen3-coder-30b-guarded}/`
 (per-seed snapshots + `REPORT.txt`), ejects in `dropped.tsv`. Drivers:
 `df022-qwen-cascade.sh` (+ `df022-loop-killer.sh`, an external watchdog superseded by the in-agent guard).
+
+---
+
+# DF-021 — Caveman Primitive Ladder
+
+> Cite as **DF-021** (`bench/README.md#df-021--caveman-primitive-ladder`). Counterpart to DF-022
+> (sidekick sophistication); this probes the floor from the opposite end — how *primitive* can the
+> lead's own exploration discipline be before correctness breaks, and does it cut cost?
+
+**What we tested.** `classic` only (lead drives bash; no graph, no sidekick), with a ladder of
+primitive-discipline skills layered via `--skill` (new `classic-caveman` arm): **L0** plain classic
+(baseline) → **L1** trimmed toolbelt (rg-first, read the located span, stop) → **L2** caveman (same
+discipline, terse ALL-CAPS) → **L3** stone-tool (hard budget: ≤3 searches, ≤3 narrow reads, never
+re-read). K=3 on 9 scoped instances (4 retry-heavy where read-replay is largest, 2 controls, 3 JS/TS
+wide-read). Premise: `classic`'s cost is ~58% `bash:read`, so a "locate once, read small, fix"
+discipline should cut the read-replay — cost falling L0→L1→L2→L3 while correctness holds then breaks.
+
+![DF-021 caveman ladder — pass@K and cost/run across primitive levels](plots/df021-caveman.svg)
+
+| level | discipline | pass@K (/9) | mean $/run | Δ cost vs L0 |
+|---|---|---:|---:|---:|
+| **L0** | plain classic | 8/9 | $0.591 | baseline |
+| **L1** | trimmed (prose) | 8/9 | $0.683 | **+15%** |
+| **L2** | caveman (blunt) | 9/9 | $0.622 | **+5%** |
+| **L3** | stone-tool (budget) | 8/9 | $0.675 | **+14%** |
+
+**Result — the premise is falsified on this set (a clean negative).**
+- **Correctness held flat, even at the floor.** pass@K stays 8–9/9 across every level; the
+  deliberately-too-primitive L3 did **not** break it. `svelte-15115` is the only persistent miss and
+  it fails at **L0 too** (flaky everywhere), so it isn't a caveman-induced break.
+- **Cost did not fall — it rose.** Every caveman level costs *more* per run than plain classic
+  (+5% to +15%), with no monotonic L1→L2→L3 decline. The primitive-discipline skills add prompt
+  overhead and don't translate into less read-replay here.
+- **No keeper.** No level meets the PASS gate (pass@K ≥ L0 **and** cost down). Plain `classic` (L0)
+  is both the cheapest and ties on correctness — you can't get cheaper by making the prompt blunter.
+- **L1 vs L2 (prose vs blunt) is within seed noise** — L2's 9/9 vs L1's 8/9 is a single `svelte`
+  seed-flip, and both levels are flaky per-seed (many instances rescued only by pass@K). The
+  ALL-CAPS register carries no signal; L1 would be the keeper *if* any level cut cost (none does).
+
+**Takeaway:** the cost lever is *better* exploration (graph/sidekick — DF-015/DF-022), not *blunter*
+self-discipline. Prompt-level primitivism neither breaks nor helps; classic is already at its floor.
+
+**Caveats.** L0 is a frozen 2-seed checkpoint (`checkpoints/003-base002-30`) on an earlier code
+state; caveman levels ran 3-seed on the current branch, so the L0↔Ln cost delta has a code-state
+confound (the internal L1/L2/L3 "more-primitive ≠ cheaper" finding does not). Per-level `bash:read`
+attribution wasn't captured (sessions not snapshotted) — total cost is the evidence. Frozen results:
+`checkpoints/df021-caveman/`. Arm: `bench/run-instance.sh` (`classic-caveman`), skills under
+`bench/skills/caveman/`, driver `bench/df021-caveman.sh`, chart `node lib/plot-df021.mjs`.

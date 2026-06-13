@@ -1,0 +1,16 @@
+diff --git c/src/plugin/utc/index.js i/src/plugin/utc/index.js
+index f1473570b5..16bcd477ec 100644
+--- c/src/plugin/utc/index.js
++++ i/src/plugin/utc/index.js
+@@ -91,6 +91,11 @@ export default (option, Dayjs, dayjs) => {
+     if (keepLocalTime) {
+       ins.$offset = offset
+       ins.$u = input === 0
++      if (input === 0) {
++        ins.$d = ins.toDate()
++        ins.$offset = undefined
++        ins.init()
++      }
+       return ins
+     }
+     if (input !== 0) {

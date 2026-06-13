@@ -1,0 +1,20 @@
+{
+  "instance": "grpc__grpc-go-3258",
+  "arm": "classic-caveman",
+  "language": "go",
+  "commit": "3b1d52b223a0dd8fb9fb9692be465b386f5345d6",
+  "dirty": true,
+  "model": "oca/gpt-5.5",
+  "provider": "OCA",
+  "exploration": "classic",
+  "require_graph": false,
+  "bash_output_summary": false,
+  "explore_model_override": null,
+  "explore_debug": "off",
+  "tool_calls": {
+    "lead": "session/*.jsonl",
+    "sidekick": null
+  },
+  "sidekick_metrics": null,
+  "prompts_dir": "prompts/"
+}

@@ -1,0 +1,58 @@
+diff --git c/clap_builder/src/parser/parser.rs i/clap_builder/src/parser/parser.rs
+index 2949c3e138..be004a17d0 100644
+--- c/clap_builder/src/parser/parser.rs
++++ i/clap_builder/src/parser/parser.rs
+@@ -1570,23 +1570,48 @@ impl Parser<'_> {
+             self.cmd.get_subcommands_mut(),
+         );
+ 
+-        // Add the arg to the matches to build a proper usage string
+-        if let Some((name, _)) = did_you_mean.as_ref() {
++        // Add the arg to the usage to build a proper usage string without
++        // mutating the matches.  If the error is ignored, the suggested arg
++        // shouldn't suppress default values as if it had been used.
++        let (suggested_arg_ids, overridden_arg_ids) = if let Some((name, _)) = did_you_mean.as_ref()
++        {
+             if let Some(arg) = self.cmd.get_keymap().get(&name.as_ref()) {
+-                self.start_custom_arg(matcher, arg, ValueSource::CommandLine);
++                let mut suggested = vec![arg.get_id().clone()];
++                suggested.extend(self.cmd.groups_for_arg(arg.get_id()));
++
++                let mut overridden = arg.overrides.iter().cloned().collect::<Vec<_>>();
++                for arg_id in matcher.arg_ids() {
++                    if let Some(overrider) = self.cmd.find(arg_id) {
++                        if overrider.overrides.contains(arg.get_id()) {
++                            overridden.push(overrider.get_id().clone());
++                        }
++                    }
++                }
++
++                (suggested, overridden)
++            } else {
++                (Vec::new(), Vec::new())
+             }
+-        }
++        } else {
++            (Vec::new(), Vec::new())
++        };
+         let did_you_mean = did_you_mean.map(|(arg, cmd)| (format!("--{arg}"), cmd));
+ 
+         let required = self.cmd.required_graph();
+-        let used: Vec<Id> = matcher
++        let mut used: Vec<Id> = matcher
+             .arg_ids()
+             .filter(|arg_id| {
+                 matcher.check_explicit(arg_id, &crate::builder::ArgPredicate::IsPresent)
+             })
++            .filter(|n| !overridden_arg_ids.contains(n))
+             .filter(|n| self.cmd.find(n).map(|a| !a.is_hide_set()).unwrap_or(true))
+             .cloned()
+             .collect();
++        for id in suggested_arg_ids {
++            if self.cmd.find(&id).map(|a| !a.is_hide_set()).unwrap_or(true) && !used.contains(&id) {
++                used.push(id);
++            }
++        }
+ 
+         // `did_you_mean` is a lot more likely and should cause us to skip the `--` suggestion
+         // with the one exception being that the CLI is trying to capture arguments

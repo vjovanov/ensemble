@@ -1,0 +1,22 @@
+diff --git c/src/index.js i/src/index.js
+index d26a401a6f..42cfad1df1 100644
+--- c/src/index.js
++++ i/src/index.js
+@@ -405,7 +405,16 @@ class Dayjs {
+   }
+ 
+   clone() {
+-    return Utils.w(this.$d, this)
++    const that = Utils.w(this.$d, this)
++    that.$y = this.$y
++    that.$M = this.$M
++    that.$D = this.$D
++    that.$W = this.$W
++    that.$H = this.$H
++    that.$m = this.$m
++    that.$s = this.$s
++    that.$ms = this.$ms
++    return that
+   }
+ 
+   toDate() {

@@ -1,0 +1,105 @@
+diff --git c/packages/svelte/src/compiler/phases/3-transform/client/visitors/ConstTag.js i/packages/svelte/src/compiler/phases/3-transform/client/visitors/ConstTag.js
+index 7e33aea435..aca107ced7 100644
+--- c/packages/svelte/src/compiler/phases/3-transform/client/visitors/ConstTag.js
++++ i/packages/svelte/src/compiler/phases/3-transform/client/visitors/ConstTag.js
+@@ -1,10 +1,11 @@
+-/** @import { Expression, Pattern } from 'estree' */
++/** @import { CallExpression, Expression, Pattern } from 'estree' */
+ /** @import { AST } from '#compiler' */
+ /** @import { ComponentContext } from '../types' */
+ import { dev } from '../../../../state.js';
+ import { extract_identifiers } from '../../../../utils/ast.js';
+ import * as b from '../../../../utils/builders.js';
+ import { create_derived } from '../utils.js';
++import { get_rune } from '../../../scope.js';
+ import { get_value } from './shared/declarations.js';
+ 
+ /**
+@@ -13,17 +14,19 @@ import { get_value } from './shared/declarations.js';
+  */
+ export function ConstTag(node, context) {
+ 	const declaration = node.declaration.declarations[0];
++	const init = /** @type {Expression} */ (declaration.init);
++	const rune = get_rune(init, context.state.scope);
+ 	// TODO we can almost certainly share some code with $derived(...)
+ 	if (declaration.id.type === 'Identifier') {
+-		context.state.init.push(
+-			b.const(
+-				declaration.id,
+-				create_derived(
+-					context.state,
+-					b.thunk(/** @type {Expression} */ (context.visit(declaration.init)))
+-				)
+-			)
+-		);
++		const value =
++			rune === '$derived' || rune === '$derived.by'
++				? /** @type {Expression} */ (
++						context.visit(/** @type {CallExpression} */ (init).arguments[0])
++					)
++				: /** @type {Expression} */ (context.visit(init));
++		const fn = rune === '$derived.by' ? value : b.thunk(value);
++
++		context.state.init.push(b.const(declaration.id, create_derived(context.state, fn)));
+ 
+ 		context.state.transform[declaration.id.name] = { read: get_value };
+ 
+@@ -46,15 +49,25 @@ export function ConstTag(node, context) {
+ 
+ 		const child_state = { ...context.state, transform };
+ 
++		let value =
++			rune === '$derived' || rune === '$derived.by'
++				? /** @type {Expression} */ (
++						context.visit(/** @type {CallExpression} */ (init).arguments[0], child_state)
++					)
++				: /** @type {Expression} */ (context.visit(init, child_state));
++
++		if (rune === '$derived.by') {
++			const derived = b.id(context.state.scope.generate('derived'));
++			context.state.init.push(b.const(derived, value));
++			value = b.call(derived);
++		}
++
+ 		// TODO optimise the simple `{ x } = y` case — we can just return `y`
+ 		// instead of destructuring it only to return a new object
+ 		const fn = b.arrow(
+ 			[],
+ 			b.block([
+-				b.const(
+-					/** @type {Pattern} */ (context.visit(declaration.id, child_state)),
+-					/** @type {Expression} */ (context.visit(declaration.init, child_state))
+-				),
++				b.const(/** @type {Pattern} */ (context.visit(declaration.id, child_state)), value),
+ 				b.return(b.object(identifiers.map((node) => b.prop('init', node, node))))
+ 			])
+ 		);
+diff --git c/packages/svelte/src/compiler/phases/3-transform/server/visitors/ConstTag.js i/packages/svelte/src/compiler/phases/3-transform/server/visitors/ConstTag.js
+index 5f6aea8338..5deee0bd09 100644
+--- c/packages/svelte/src/compiler/phases/3-transform/server/visitors/ConstTag.js
++++ i/packages/svelte/src/compiler/phases/3-transform/server/visitors/ConstTag.js
+@@ -1,7 +1,8 @@
+-/** @import { Expression, Pattern } from 'estree' */
++/** @import { CallExpression, Expression, Pattern } from 'estree' */
+ /** @import { AST } from '#compiler' */
+ /** @import { ComponentContext } from '../types.js' */
+ import * as b from '../../../../utils/builders.js';
++import { get_rune } from '../../../scope.js';
+ 
+ /**
+  * @param {AST.ConstTag} node
+@@ -10,7 +11,12 @@ import * as b from '../../../../utils/builders.js';
+ export function ConstTag(node, context) {
+ 	const declaration = node.declaration.declarations[0];
+ 	const id = /** @type {Pattern} */ (context.visit(declaration.id));
+-	const init = /** @type {Expression} */ (context.visit(declaration.init));
++	const init = /** @type {Expression} */ (declaration.init);
++	const rune = get_rune(init, context.state.scope);
++	const value =
++		rune === '$derived' || rune === '$derived.by'
++			? /** @type {Expression} */ (context.visit(/** @type {CallExpression} */ (init).arguments[0]))
++			: /** @type {Expression} */ (context.visit(init));
+ 
+-	context.state.init.push(b.const(id, init));
++	context.state.init.push(b.const(id, rune === '$derived.by' ? b.call(value) : value));
+ }

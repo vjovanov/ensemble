@@ -1,0 +1,13 @@
+diff --git c/src/plugin/utc/index.js i/src/plugin/utc/index.js
+index f1473570b5..b589307dba 100644
+--- c/src/plugin/utc/index.js
++++ i/src/plugin/utc/index.js
+@@ -53,7 +53,7 @@ export default (option, Dayjs, dayjs) => {
+ 
+   const oldInit = proto.init
+   proto.init = function () {
+-    if (this.$u) {
++    if (this.$u && !(this.$x && this.$x.$timezone && this.$offset === 0)) {
+       const { $d } = this
+       this.$y = $d.getUTCFullYear()
+       this.$M = $d.getUTCMonth()

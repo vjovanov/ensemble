@@ -1,0 +1,31 @@
+diff --git c/packages/svelte/src/compiler/phases/2-analyze/visitors/ConstTag.js i/packages/svelte/src/compiler/phases/2-analyze/visitors/ConstTag.js
+index 3f5e0473c5..8d07cac562 100644
+--- c/packages/svelte/src/compiler/phases/2-analyze/visitors/ConstTag.js
++++ i/packages/svelte/src/compiler/phases/2-analyze/visitors/ConstTag.js
+@@ -1,6 +1,7 @@
+ /** @import { AST } from '#compiler' */
+ /** @import { Context } from '../types' */
+ import * as e from '../../../errors.js';
++import { get_rune } from '../../scope.js';
+ import { validate_opening_tag } from './shared/utils.js';
+ 
+ /**
+@@ -10,6 +11,18 @@ import { validate_opening_tag } from './shared/utils.js';
+ export function ConstTag(node, context) {
+ 	if (context.state.analysis.runes) {
+ 		validate_opening_tag(node, context.state, '@');
++
++		const init = node.declaration.declarations[0].init;
++		const rune = get_rune(init, context.state.scope);
++
++		if (
++			rune === '$state' ||
++			rune === '$state.raw' ||
++			rune === '$derived' ||
++			rune === '$derived.by'
++		) {
++			e.state_invalid_placement(init, rune);
++		}
+ 	}
+ 
+ 	const parent = context.path.at(-1);

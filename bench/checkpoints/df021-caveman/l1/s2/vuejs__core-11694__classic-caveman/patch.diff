@@ -1,0 +1,42 @@
+diff --git c/packages/reactivity/src/baseHandlers.ts i/packages/reactivity/src/baseHandlers.ts
+index 8f21e35400..57aca0cf7d 100644
+--- c/packages/reactivity/src/baseHandlers.ts
++++ i/packages/reactivity/src/baseHandlers.ts
+@@ -165,7 +165,14 @@ class MutableReactiveHandler extends BaseReactiveHandler {
+       isArray(target) && isIntegerKey(key)
+         ? Number(key) < target.length
+         : hasOwn(target, key)
+-    const result = Reflect.set(target, key, value, receiver)
++    const result = Reflect.set(
++      target,
++      key,
++      value,
++      // if this is a proxy wrapping a ref, use the raw ref as receiver so
++      // that we don't have to call `toRaw` on the ref in all its class methods
++      isRef(target) ? target : receiver,
++    )
+     // don't trigger if target is something up in the prototype chain of original
+     if (target === toRaw(receiver)) {
+       if (!hadKey) {
+diff --git c/packages/reactivity/src/dep.ts i/packages/reactivity/src/dep.ts
+index 4ce73ac995..3b4bf5aff8 100644
+--- c/packages/reactivity/src/dep.ts
++++ i/packages/reactivity/src/dep.ts
+@@ -1,6 +1,6 @@
+ import { extend, isArray, isIntegerKey, isMap, isSymbol } from '@vue/shared'
+ import type { ComputedRefImpl } from './computed'
+-import { type TrackOpTypes, TriggerOpTypes } from './constants'
++import { ReactiveFlags, type TrackOpTypes, TriggerOpTypes } from './constants'
+ import {
+   type DebuggerEventExtraInfo,
+   EffectFlags,
+@@ -154,6 +154,9 @@ export class Dep {
+   }
+ }
+ 
++// Deps contain circular references to effects and should never be observed.
++Object.defineProperty(Dep.prototype, ReactiveFlags.SKIP, { value: true })
++
+ function addSub(link: Link) {
+   const computed = link.dep.computed
+   // computed getting its first subscriber
