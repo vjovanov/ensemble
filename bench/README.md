@@ -166,6 +166,26 @@ framing makes that one run comparable, and it lands as the most expensive arm (i
 so it isn't a like-for-like fix cost). The historical single-seed benchmarks-20 milestone (graph-bash
 11/20 ⊇ classic 8/20) is in `docs/experiments.md`.
 
+### How experiments are chosen
+
+Two layers — *which experiment*, then *which benchmarks within it*:
+
+- **The lever (which experiment).** Everything is aimed at the one cost driver this benchmark surfaced:
+  `classic`'s spend is **~58% `bash:read`** (the spend-attribution above) — the lead re-reading source it
+  found via shell, replayed into context every turn. Candidate experiments are tracked in the ledger
+  ([`docs/experiments.md`](../docs/experiments.md), §REQ-004) and decision log (§REQ-001) and judged by
+  whether they move that lever. The two completed tracks attack it from opposite ends:
+  **DF-022** (sophistication — move exploration onto a cheap/smart sidekick) and **DF-021** (primitive —
+  how blunt the lead's own discipline can be), both counterparts to the explore-quality work (DF-015/020b).
+- **The scoped set (which benchmarks).** Instances are picked to make both a cost win *and* a correctness
+  break visible if they exist: **retry-heavy** cases (grpc-go-3258, simdjson-2178, dayjs-2532/2399) where
+  `bash:read` replay is largest; **controls** (clap-5873, express-5555) to catch backfire on easy tasks;
+  and **JS/TS wide-read** wins (svelte-15115, core-11694, darkreader-7241) to catch correctness breakage
+  when discipline gets too primitive.
+- **Methodology constants** (§REQ-005): **K=3 seeds** (no single-seed screens), pass@K = resolved in any
+  seed, always vs a **frozen baseline** (classic L0 / control sidekick). Verdict per experiment is in its
+  citable section (DF-021, DF-022 below) and the ledger.
+
 ### Next experiments
 
 Full ledger + rationale: [`docs/experiments.md`](../docs/experiments.md). Given the base/002 data we run
