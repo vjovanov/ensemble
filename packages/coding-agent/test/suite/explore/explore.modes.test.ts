@@ -1,4 +1,4 @@
-import { chmodSync, cpSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { chmodSync, cpSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -17,6 +17,7 @@ import {
 	graphBackendEnabled,
 	requireGraphMode,
 	requireGraphUnavailableMessage,
+	resolveExploreModelOverride,
 	setExploreDebugSink,
 } from "../../../src/core/tools/explore.ts";
 
@@ -150,7 +151,13 @@ describe("required-graph mode (§FS-001-ensemble-explore.7.4)", () => {
 });
 
 describe("explore debug visibility (§FS-003-agent-protocol.10)", () => {
-	const envKeys = ["PI_EXPLORE_DEBUG", "GRAPHIFY_COMMAND", "PI_REQUIRE_GRAPH", "PI_GRAPHIFY_GRAPH_FILE"] as const;
+	const envKeys = [
+		"PI_EXPLORE_DEBUG",
+		"PI_EXPLORE_METRICS_LOG",
+		"GRAPHIFY_COMMAND",
+		"PI_REQUIRE_GRAPH",
+		"PI_GRAPHIFY_GRAPH_FILE",
+	] as const;
 	let saved: Record<string, string | undefined>;
 	const registrations: FauxProviderRegistration[] = [];
 	beforeEach(() => {
@@ -305,5 +312,74 @@ describe("explore debug visibility (§FS-003-agent-protocol.10)", () => {
 			expect(e.args).toBeUndefined();
 			expect(e.resultPreview).toBeUndefined();
 		}
+	});
+
+	it("writes sidekick usage metrics to the configured sidecar (§FS-001-ensemble-explore.5.7)", async () => {
+		const registration = registerFauxProvider({
+			models: [
+				{
+					id: "sidekick-metered",
+					cost: { input: 1, output: 2, cacheRead: 0.1, cacheWrite: 3 },
+				},
+			],
+		});
+		registrations.push(registration);
+		registration.setResponses([fauxAssistantMessage("Selected OrderService.")]);
+
+		const dir = stageTsFixture();
+		const metricsLog = join(mkdtempSync(join(tmpdir(), "explore-metrics-")), "sidekick.jsonl");
+		process.env.PI_EXPLORE_METRICS_LOG = metricsLog;
+		const def = createExploreToolDefinition(dir);
+		const context = fakeContext(dir, registration.getModel());
+		await def.execute("explore-metrics", { task: "find OrderService" }, undefined, undefined, context);
+
+		const events = readFileSync(metricsLog, "utf8")
+			.trim()
+			.split("\n")
+			.map((line) => JSON.parse(line) as Record<string, unknown>);
+		expect(events).toHaveLength(1);
+		const event = events[0];
+		expect(event.type).toBe("sidekick_usage");
+		expect(event.status).toBe("ok");
+		expect(event.model).toBe("sidekick-metered");
+		expect(event.assistantTurns).toBe(1);
+		expect(event.input).toEqual(expect.any(Number));
+		expect(event.output).toEqual(expect.any(Number));
+		expect(event.totalTokens).toBeGreaterThan(0);
+		expect(event.costUsd).toBeGreaterThan(0);
+	});
+});
+
+describe("explore sidekick model override (§FS-001-ensemble-explore.2.1)", () => {
+	const envKeys = ["PI_EXPLORE_MODEL"] as const;
+	let saved: Record<string, string | undefined>;
+	beforeEach(() => {
+		saved = Object.fromEntries(envKeys.map((k) => [k, process.env[k]]));
+	});
+	afterEach(() => {
+		for (const k of envKeys) {
+			if (saved[k] === undefined) delete process.env[k];
+			else process.env[k] = saved[k];
+		}
+	});
+
+	it("returns undefined when no override is configured", () => {
+		delete process.env.PI_EXPLORE_MODEL;
+		expect(resolveExploreModelOverride()).toBeUndefined();
+	});
+
+	it("resolves a registered provider:model override", () => {
+		process.env.PI_EXPLORE_MODEL = "openrouter:mistralai/devstral-2512";
+		const model = resolveExploreModelOverride();
+		expect(model?.provider).toBe("openrouter");
+		expect(model?.id).toBe("mistralai/devstral-2512");
+	});
+
+	it("falls back to the caller model for malformed or unknown overrides", () => {
+		process.env.PI_EXPLORE_MODEL = "mistralai/devstral-2512";
+		expect(resolveExploreModelOverride()).toBeUndefined();
+
+		process.env.PI_EXPLORE_MODEL = "openrouter:not-a-real-model";
+		expect(resolveExploreModelOverride()).toBeUndefined();
 	});
 });

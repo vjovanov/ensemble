@@ -1,13 +1,18 @@
 import { access, appendFile, mkdir, readdir, readFile, stat } from "node:fs/promises";
 import { dirname, extname, isAbsolute, relative as relativePath, resolve as resolvePath, sep } from "node:path";
-import { Agent, type AgentTool, type ThinkingLevel } from "@earendil-works/pi-agent-core";
+import { Agent, type AgentMessage, type AgentTool, type ThinkingLevel } from "@earendil-works/pi-agent-core";
 import {
 	type Api,
+	calculateCost,
 	clampThinkingLevel,
+	getModels,
+	getProviders,
 	type ImageContent,
+	type KnownProvider,
 	type Model,
 	streamSimple,
 	type TextContent,
+	type Usage,
 } from "@earendil-works/pi-ai";
 import { Text } from "@earendil-works/pi-tui";
 import { spawn } from "child_process";
@@ -42,6 +47,14 @@ const SNIPPET_CONTEXT_LINES = 2;
 const MAX_SOURCE_SLICE_LINES = 80;
 const MAX_SOURCE_SLICE_BYTES = 16 * 1024;
 const EXPLORE_RESULT_BYTES_ENV = "PI_EXPLORE_MAX_RESULT_BYTES";
+const EXPLORE_MODEL_ENV = "PI_EXPLORE_MODEL";
+const EXPLORE_METRICS_LOG_ENV = "PI_EXPLORE_METRICS_LOG";
+// §DF-022 repeat-guard: weak sidekick models loop, re-issuing the same tool call hundreds of
+// times instead of returning a product. These cap total tool calls / per-call repeats; on trip,
+// tools are disabled and the model is forced to finalize (partial evidence salvaged if needed).
+// Both default to 0 (disabled) so default behaviour is unchanged.
+const EXPLORE_MAX_CALLS_ENV = "PI_EXPLORE_MAX_CALLS";
+const EXPLORE_MAX_REPEAT_ENV = "PI_EXPLORE_MAX_REPEAT";
 const DEFAULT_EXPLORE_MAX_RESULT_BYTES = 24 * 1024;
 // §FS-003-agent-protocol.10.3: bound captured payloads like §FS-002-caller-context.6.
 const DEBUG_PAYLOAD_PREVIEW_BYTES = 2_000;
@@ -139,6 +152,21 @@ export interface ExploreDebugEvent {
 
 export type ExploreDebugSink = (event: ExploreDebugEvent) => void;
 
+export interface ExploreSidekickMetricsEvent {
+	type: "sidekick_usage";
+	status: "ok" | "aborted";
+	model: string;
+	provider: string;
+	input: number;
+	output: number;
+	cacheRead: number;
+	cacheWrite: number;
+	totalTokens: number;
+	cost: Usage["cost"];
+	costUsd: number;
+	assistantTurns: number;
+}
+
 // §FS-003-agent-protocol.10.3: off by default; "1"/"true"/"yes"/"metadata" -> metadata; "full" -> full.
 export function exploreDebugLevel(): ExploreDebugLevel {
 	const raw = process.env.PI_EXPLORE_DEBUG?.trim().toLowerCase();
@@ -191,6 +219,75 @@ function defaultExploreDebugSink(cwd: string): ExploreDebugSink {
 
 function resolveExploreDebugSink(cwd: string): ExploreDebugSink {
 	return debugSinkOverride ?? defaultExploreDebugSink(cwd);
+}
+
+function emptyUsage(): Usage {
+	return {
+		input: 0,
+		output: 0,
+		cacheRead: 0,
+		cacheWrite: 0,
+		totalTokens: 0,
+		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+	};
+}
+
+function addUsage(total: Usage, usage: Usage): void {
+	total.input += usage.input || 0;
+	total.output += usage.output || 0;
+	total.cacheRead += usage.cacheRead || 0;
+	total.cacheWrite += usage.cacheWrite || 0;
+	total.totalTokens = total.input + total.output + total.cacheRead + total.cacheWrite;
+}
+
+// §FS-001-ensemble-explore.5.7: sidekick usage is recorded separately from lead usage, with
+// the same token/cost dimensions, so benchmark reports can show lead-only and total economics.
+function summarizeSidekickUsage(
+	model: Model<Api>,
+	messages: readonly AgentMessage[],
+	status: ExploreSidekickMetricsEvent["status"],
+): ExploreSidekickMetricsEvent {
+	const usage = emptyUsage();
+	let assistantTurns = 0;
+	for (const message of messages) {
+		if (message.role !== "assistant") {
+			continue;
+		}
+		assistantTurns++;
+		addUsage(usage, message.usage);
+	}
+	calculateCost(model, usage);
+	return {
+		type: "sidekick_usage",
+		status,
+		model: model.id,
+		provider: model.provider,
+		input: usage.input,
+		output: usage.output,
+		cacheRead: usage.cacheRead,
+		cacheWrite: usage.cacheWrite,
+		totalTokens: usage.totalTokens,
+		cost: usage.cost,
+		costUsd: usage.cost.total,
+		assistantTurns,
+	};
+}
+
+let metricsLogChain: Promise<void> = Promise.resolve();
+
+async function emitSidekickMetrics(cwd: string, event: ExploreSidekickMetricsEvent): Promise<void> {
+	const path = process.env[EXPLORE_METRICS_LOG_ENV]?.trim();
+	if (!path) {
+		return;
+	}
+	try {
+		const line = `${JSON.stringify({ ts: new Date().toISOString(), cwd, ...event })}\n`;
+		metricsLogChain = metricsLogChain
+			.then(() => mkdir(dirname(path), { recursive: true }))
+			.then(() => appendFile(path, line))
+			.catch(() => {});
+		await metricsLogChain;
+	} catch {}
 }
 
 // §FS-003-agent-protocol.10.1: observation only — the wrapped tools return identical results.
@@ -247,6 +344,89 @@ function instrumentToolsForDebug(tools: AgentTool[], level: ExploreDebugLevel, s
 				});
 				throw error;
 			}
+		},
+	}));
+}
+
+// §DF-022 repeat-guard. A weak sidekick that keeps re-issuing the same tool call never terminates
+// on its own (the soft "already returned…" messages are ignored). This caps total calls and
+// per-(tool+args) repeats. Once tripped it is sticky: every further call returns a terminal
+// "stop, finalize now" message instead of doing work, so each subsequent model turn is cheap and
+// the model is steered to emit its final answer; as a backstop it aborts after a short grace.
+// Successful tool outputs are buffered so runSidekick can salvage a partial product on abort.
+interface RepeatGuard {
+	maxCalls: number; // 0 = no total cap
+	maxRepeat: number; // 0 = no per-key cap
+	total: number;
+	perKey: Map<string, number>;
+	tripped: boolean;
+	postTrip: number;
+	evidence: string[];
+	evidenceBytes: number;
+	abort?: () => void;
+}
+
+const GUARD_GRACE = 6; // tool calls allowed after trip before forcing abort
+const GUARD_EVIDENCE_MAX = 32 * 1024;
+
+function exploreGuardLimit(envName: string): number {
+	const raw = process.env[envName]?.trim();
+	if (!raw) return 0;
+	const value = Number(raw);
+	return Number.isFinite(value) && value > 0 ? Math.floor(value) : 0;
+}
+
+function wrapToolsWithRepeatGuard(tools: AgentTool[], guard: RepeatGuard): AgentTool[] {
+	if (guard.maxCalls <= 0 && guard.maxRepeat <= 0) {
+		return tools;
+	}
+	const terminal = (n: number) => ({
+		content: [
+			{
+				type: "text" as const,
+				text:
+					`Exploration budget reached (${n} tool calls). Stop calling tools now. ` +
+					"Reply with your FINAL answer: summarize the relevant code evidence you have already " +
+					"gathered, citing file:line. Do not call any tool again.",
+			},
+		],
+		details: undefined,
+		isError: false,
+	});
+	return tools.map((tool) => ({
+		...tool,
+		execute: async (toolCallId, params, signal, onUpdate) => {
+			if (guard.tripped) {
+				guard.postTrip++;
+				if (guard.abort && guard.postTrip >= GUARD_GRACE) {
+					guard.abort();
+				}
+				return terminal(guard.total);
+			}
+			let key: string;
+			try {
+				key = `${tool.name}:${JSON.stringify(params)}`;
+			} catch {
+				key = `${tool.name}:${String(params)}`;
+			}
+			guard.total++;
+			const repeats = (guard.perKey.get(key) ?? 0) + 1;
+			guard.perKey.set(key, repeats);
+			const overTotal = guard.maxCalls > 0 && guard.total >= guard.maxCalls;
+			const overRepeat = guard.maxRepeat > 0 && repeats > guard.maxRepeat;
+			if (overTotal || overRepeat) {
+				guard.tripped = true;
+				return terminal(guard.total);
+			}
+			const result = await tool.execute(toolCallId, params, signal, onUpdate);
+			if (guard.evidenceBytes < GUARD_EVIDENCE_MAX) {
+				const text = getToolResultText(result);
+				if (text) {
+					guard.evidence.push(text);
+					guard.evidenceBytes += Buffer.byteLength(text, "utf-8");
+				}
+			}
+			return result;
 		},
 	}));
 }
@@ -913,6 +1093,34 @@ function exploreMaxResultBytes(): number {
 	return Number.isFinite(value) && value > 0 ? value : DEFAULT_EXPLORE_MAX_RESULT_BYTES;
 }
 
+// §FS-001-ensemble-explore.2.1: deployments may move the bounded explore agent to another
+// registered model without changing the caller model. Invalid overrides degrade to the caller.
+export function resolveExploreModelOverride(): Model<Api> | undefined {
+	const raw = process.env[EXPLORE_MODEL_ENV]?.trim();
+	if (!raw) return undefined;
+
+	const separator = raw.indexOf(":");
+	if (separator <= 0 || separator === raw.length - 1) {
+		console.warn(`${EXPLORE_MODEL_ENV} must be "<provider>:<model-id>"; using the caller model.`);
+		return undefined;
+	}
+
+	const provider = raw.slice(0, separator);
+	const modelId = raw.slice(separator + 1);
+	const knownProvider = getProviders().find((candidate) => candidate === provider);
+	if (!knownProvider) {
+		console.warn(`${EXPLORE_MODEL_ENV} provider "${provider}" is not registered; using the caller model.`);
+		return undefined;
+	}
+
+	const model = getModels(knownProvider as KnownProvider).find((candidate) => candidate.id === modelId);
+	if (!model) {
+		console.warn(`${EXPLORE_MODEL_ENV} model "${raw}" is not registered; using the caller model.`);
+		return undefined;
+	}
+	return model as Model<Api>;
+}
+
 // Explore evidence is persistent in the caller's transcript and replays into cacheRead every
 // later turn, so one large whole-file return dominates cost. Cap it at a line boundary and point
 // the lead to read() for full content. §DF-004-explore-injected-content-cap
@@ -946,7 +1154,7 @@ async function runSidekick(
 	requireGraph: boolean,
 	signal?: AbortSignal,
 ): Promise<string | undefined> {
-	const model = context.model;
+	const model = resolveExploreModelOverride() ?? context.model;
 	if (!model) {
 		return undefined;
 	}
@@ -1088,7 +1296,19 @@ async function runSidekick(
 	// behaviour nor the product (§10.1, §11.4).
 	const debugLevel = exploreDebugLevel();
 	const debugSink = debugLevel === "off" ? undefined : resolveExploreDebugSink(context.cwd);
-	const tools = debugSink ? instrumentToolsForDebug(baseTools, debugLevel, debugSink) : baseTools;
+	const debugTools = debugSink ? instrumentToolsForDebug(baseTools, debugLevel, debugSink) : baseTools;
+	// §DF-022: cap runaway tool-call loops on weak sidekick models (no-op unless the env caps are set).
+	const repeatGuard: RepeatGuard = {
+		maxCalls: exploreGuardLimit(EXPLORE_MAX_CALLS_ENV),
+		maxRepeat: exploreGuardLimit(EXPLORE_MAX_REPEAT_ENV),
+		total: 0,
+		perKey: new Map(),
+		tripped: false,
+		postTrip: 0,
+		evidence: [],
+		evidenceBytes: 0,
+	};
+	const tools = wrapToolsWithRepeatGuard(debugTools, repeatGuard);
 
 	// Tune verbosity to the caller's current context fill (§FS-001-ensemble-explore.2.1.1):
 	// terse while the lead context is small, stricter once accumulated context is already large.
@@ -1119,6 +1339,7 @@ async function runSidekick(
 		toolExecution: "sequential",
 	});
 	const abortSidekick = () => sidekick.abort();
+	repeatGuard.abort = abortSidekick;
 	signal?.addEventListener("abort", abortSidekick, { once: true });
 	try {
 		const focus = input.paths && input.paths.length > 0 ? `\nFocus paths: ${input.paths.join(", ")}` : "";
@@ -1143,11 +1364,38 @@ async function runSidekick(
 				});
 			} catch {}
 		};
+		// §DF-022: if the guard tripped and the model never produced a final text answer, return the
+		// evidence it already gathered rather than nothing (undefined would force a classic fallback).
+		const salvageGuardedProduct = (): string | undefined => {
+			if (!repeatGuard.tripped || repeatGuard.evidence.length === 0) {
+				return undefined;
+			}
+			const salvaged = capExploreOutput(
+				`Exploration stopped at the call budget (${repeatGuard.total} tool calls); partial evidence gathered:\n\n${repeatGuard.evidence.join("\n\n")}`,
+				exploreMaxResultBytes(),
+			);
+			return salvaged.length > 0 ? salvaged : undefined;
+		};
 		const last = sidekick.state.messages
 			.slice()
 			.reverse()
 			.find((message) => message.role === "assistant");
+		await emitSidekickMetrics(
+			context.cwd,
+			summarizeSidekickUsage(
+				model,
+				sidekick.state.messages,
+				!last || last.role !== "assistant" || last.stopReason === "error" || last.stopReason === "aborted"
+					? "aborted"
+					: "ok",
+			),
+		);
 		if (!last || last.role !== "assistant" || last.stopReason === "error" || last.stopReason === "aborted") {
+			const salvaged = salvageGuardedProduct();
+			if (salvaged) {
+				emitProduct("ok", salvaged);
+				return salvaged;
+			}
 			emitProduct("aborted");
 			return undefined;
 		}
@@ -1157,6 +1405,13 @@ async function runSidekick(
 			.join("\n")
 			.trim();
 		const capped = text.length > 0 ? capExploreOutput(text, exploreMaxResultBytes()) : "";
+		if (capped.length === 0) {
+			const salvaged = salvageGuardedProduct();
+			if (salvaged) {
+				emitProduct("ok", salvaged);
+				return salvaged;
+			}
+		}
 		emitProduct("ok", capped);
 		return capped.length > 0 ? capped : undefined;
 	} finally {

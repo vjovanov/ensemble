@@ -1,5 +1,5 @@
 import { constants } from "node:fs";
-import { access as fsAccess, appendFile, open as fsOpen } from "node:fs/promises";
+import { appendFile, access as fsAccess, open as fsOpen } from "node:fs/promises";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import {
 	type Api,
@@ -964,7 +964,7 @@ export function createBashToolDefinition(
 				if (!failed && isBuildTestCommand(command)) {
 					const verdict = await summarizeOutput(snapshot, exitCode, "ok");
 					if (verdict) {
-						return { content: [{ type: "text", text: verdict }] };
+						return { content: [{ type: "text", text: verdict }], details: undefined };
 					}
 				}
 				// Success returns as-is (standard truncation), like the no-sidekick arm; the
