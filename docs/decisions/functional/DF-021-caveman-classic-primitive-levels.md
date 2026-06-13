@@ -1,6 +1,15 @@
 # DF-021-caveman-classic-primitive-levels: probe the primitive floor of lead exploration — layer increasingly blunt "caveman" skills onto the `classic` arm and find where cost drops and where correctness breaks
 
-**Status: PREPARED (not run) — parallel track, runs after the next exploration set merges.** Grounded per
+**Status: DONE — FAILED (negative), 2026-06-13.** Ran L1/L2/L3 × K=3 on the 9 scoped instances vs
+frozen `classic` L0. **No keeper:** correctness held flat (pass@K L0 8/9, L1 8/9, L2 9/9, L3 8/9 — the
+L3 floor did not break; `svelte-15115` is flaky at L0 too), but **cost did not fall** — every caveman
+level cost *more* per run than plain classic (L1 +15%, L2 +5%, L3 +14% vs L0 $0.591/run), no monotonic
+L1→L2→L3 decline. L1↔L2 (prose vs blunt) is within seed noise → the ALL-CAPS register carries no
+signal. The cost lever is *better* exploration (graph/sidekick), not blunter self-discipline. Results:
+`bench/README.md` §DF-021, `bench/checkpoints/df021-caveman/`. Caveat: L0 is a 2-seed frozen checkpoint
+on an earlier code state (cost delta has a code confound; the internal L1/L2/L3 result does not).
+
+Grounded per
 §REQ-001-decision-log; this is the **primitive-end** counterpart to the sidekick-sophistication track
 (§DF-022-sidekick-open-model-swap) and attacks the same cost lever from the opposite direction as
 §DF-015-explore-return-source-on-code-intent / §DF-020b-explore-decisive-search. Scope per the operator:
